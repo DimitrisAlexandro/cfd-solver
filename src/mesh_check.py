@@ -45,6 +45,16 @@ def check(path, verbose=True):
     n_bl = int(d["n_bl"]) if "n_bl" in d else 0     # cells [0, n_bl) = boundary layer
     errors = []
 
+    # degenerate edges, relative to the cell's own size (a global distance
+    # threshold would wrongly flag legitimate tiny wall cells at high Re).
+    # Clusters of tiny-but-shapely cells are caught by the size-ratio stats.
+    degenerate = 0
+    for c in cells:
+        L = np.linalg.norm(P[np.roll(c, -1)] - P[c], axis=1)
+        degenerate += L.min() < 1e-9 * L.max()
+    if degenerate:
+        errors.append(f"{degenerate} cells with a degenerate (zero-length) edge")
+
     areas, cents = np.empty(len(cells)), np.empty((len(cells), 2))
     for i, c in enumerate(cells):
         areas[i], cents[i] = poly_area_centroid(P[c])
