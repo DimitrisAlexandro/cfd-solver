@@ -48,21 +48,35 @@ def build_mesh(naca="2412", n_side=120, reynolds=1e6, yplus=1.0, growth=1.15,
                n_layers=60, farfield_radius=20.0, n_farfield=64,
                h_near=0.02, grad=0.12, wake_length=5.0, wake_h=0.01,
                wake_grad=0.03, alpha_deg=0.0, min_angle=25.0, seed_offset=0.87,
-               verbose=True):
+               wall=None, h1=None, label=None, verbose=True):
+    """wall: optional (M,2) closed loop spanning roughly x in [0,1] (any body);
+    default is the NACA airfoil. h1: optional first-layer height (default
+    from y+ and Re, which assumes a turbulent boundary layer)."""
     t0 = time.time()
     log = print if verbose else (lambda *a, **k: None)
 
     # 1-2) wall + boundary layer ------------------------------------------
-    wall = naca4(naca, n_side)
-    h1 = first_cell_height(reynolds, yplus)
+    if wall is None:
+        wall = naca4(naca, n_side)
+        label = label or f"NACA {naca}"
+    else:
+        wall = np.asarray(wall, float)
+        if 0.5 * np.sum(wall[:, 0] * np.roll(wall[:, 1], -1)
+                        - np.roll(wall[:, 0], -1) * wall[:, 1]) < 0:
+            wall = wall[::-1]                            # make it counter-clockwise
+        label = label or "custom wall"
+    if h1 is None:
+        h1 = first_cell_height(reynolds, yplus)
+        h1_note = f"(y+={yplus}, Re={reynolds:.2e})"
+    else:
+        h1_note = "(user-set)"
     layers, canon = extrude(wall, h1, growth=growth, n_layers=n_layers, verbose=verbose)
     K, M = layers.shape[0] - 1, layers.shape[1]
     points = [p for layer in layers for p in layer]           # index k*M + i
     cells = bl_cells(K, M, canon)
     n_bl = len(cells)
-    log(f"[BL]   NACA {naca}: {len(wall)} wall points ({M - len(wall)} fan copies), "
-        f"first height {h1:.3e} c (y+={yplus}, Re={reynolds:.2e}), {K} layers, "
-        f"{n_bl} cells")
+    log(f"[BL]   {label}: {len(wall)} wall points ({M - len(wall)} fan copies), "
+        f"first height {h1:.3e} {h1_note}, {K} layers, {n_bl} cells")
 
     # 3) constrained triangulation ----------------------------------------
     outer = layers[-1]

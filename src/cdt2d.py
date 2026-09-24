@@ -498,6 +498,12 @@ class CDT:
         status, tt = self.locate(px, py, start=t, stop_at_segment=True)
         if status != 'in' or self.region[tt] != domain_region:
             return None
+        # never insert (almost) on top of an existing vertex: the apex of a
+        # segment is a fixed location, so a retry would stack duplicates
+        L = math.hypot(ex, ey)
+        for v in self.tv[tt]:
+            if math.hypot(x[v] - px, y[v] - py) < 0.5 * L:
+                return None
         res = self._insert_at(px, py, tt, check_encroach=True)
         return res[2] if res[0] == 'ok' else None
 
