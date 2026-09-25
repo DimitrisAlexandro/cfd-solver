@@ -23,6 +23,7 @@ def test_airfoil_mesh(tmp_path, naca, re, alpha, n_side):
     assert s["tri_below_20deg"] == 0
     assert s["nonorth_max"] < 55
     assert s["interface_size_ratio_max"] < 8
+    assert s["core_size_ratio_max"] < 10          # no clusters of tiny cells
     back = hm.load_npz(f)
     assert len(back["cells"]) == len(mesh["cells"]) and back["n_bl"] == mesh["n_bl"]
 

@@ -1,0 +1,28 @@
+DOMAIN SIZE (Re 1000, alpha 4):
+  R =   20 c   Cd 0.12450   Cl 0.20457
+  R =   40 c   Cd 0.12452   Cl 0.20540
+  R =   80 c   Cd 0.12430   Cl 0.20586
+GRID CONVERGENCE (Re 1000):
+  alpha 0  refine x0.7 (  9725 cells)   Cd 0.11929   Cl 0.00015   x_sep None
+  alpha 0  refine x1.0 ( 18993 cells)   Cd 0.11955   Cl -0.00024   x_sep None
+  alpha 0  refine x1.4 ( 36327 cells)   Cd 0.11953   Cl 0.00006   x_sep None
+    Cd: medium->fine change 0.015 %, coarse->medium 0.22 %, oscillatory (not monotonic); GCI(fine, p=2) 0.020 %, Richardson estimate 0.11951
+  alpha 4  refine x0.7 (  9693 cells)   Cd 0.12303   Cl 0.20835   x_sep 0.8119257804878048
+  alpha 4  refine x1.0 ( 19021 cells)   Cd 0.12452   Cl 0.20540   x_sep 0.8397462666666666
+  alpha 4  refine x1.4 ( 36327 cells)   Cd 0.12445   Cl 0.20564   x_sep 0.8393666
+    Cd: medium->fine change 0.058 %, coarse->medium 1.20 %, oscillatory (not monotonic); GCI(fine, p=2) 0.075 %, Richardson estimate 0.12437
+ALPHA SWEEP (Re 1000) vs XFOIL:
+  alpha   Cl       Cl_xfoil   Cd       Cd_xfoil   x_sep
+    0   -0.0002   -0.0000   0.11955   0.11635   attached
+    1    0.0548    0.0546   0.11987   0.11666   attached
+    2    0.1085    0.1077   0.12080   0.11761   attached
+    3    0.1591    0.1582   0.12234   0.11931   attached
+    4    0.2054    0.2052   0.12452   0.12190   0.840
+    5    0.2458    0.2476   0.12732   0.12557   0.706
+    6    0.2793    0.2858   0.13087   0.13042   0.587
+    7    0.3056    0.3198   0.13517   0.13641   0.485
+  lift slope near alpha 0: 3.116 per rad  (Kurtulus 2015: ~pi = 3.142; XFOIL: 3.085)
+Cd AT ALPHA 0 vs LITERATURE:
+  Re  1000: this solver 0.1195 | XFOIL 0.1163 | Di Ilio et al. 2020 (LBM) 0.119, Kurtulus 2015 (Fluent) 0.12
+  Re  2000: this solver 0.0833 | XFOIL 0.0835 | Di Ilio et al. 2020 (LBM) 0.084
+  Re  5000: this solver 0.0524 | XFOIL 0.0541 | Di Ilio et al. 2020 (LBM) 0.052

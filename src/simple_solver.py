@@ -216,10 +216,15 @@ class SimpleSolver:
         self.history.append(res)
         return res
 
-    def solve(self, tol=1e-6, max_iter=5000, verbose=True, every=100):
+    def solve(self, tol=1e-6, max_iter=5000, verbose=True, every=100, callback=None):
+        """callback(it, residuals) is called after every iteration (monitoring,
+        live history files). Sets self.converged."""
         t0 = time.time()
+        self.converged = False
         for it in range(1, max_iter + 1):
             r = self.iterate()
+            if callback is not None:
+                callback(it, r)
             if verbose and (it % every == 0 or it == 1):
                 print(f"  it {it:5d}  cont {r['cont']:.2e}  Ux {r['Ux']:.2e}  "
                       f"Uy {r['Uy']:.2e}  ({time.time() - t0:.1f}s)")
@@ -227,6 +232,7 @@ class SimpleSolver:
                 if verbose:
                     print(f"  converged in {it} iterations ({time.time() - t0:.1f}s), "
                           f"residuals < {tol:g}")
+                self.converged = True
                 return it
         if verbose:
             print(f"  NOT converged after {max_iter} iterations: {r}")
