@@ -48,10 +48,13 @@ def build_mesh(naca="2412", n_side=120, reynolds=1e6, yplus=1.0, growth=1.15,
                n_layers=60, farfield_radius=20.0, n_farfield=64,
                h_near=0.02, grad=0.12, wake_length=5.0, wake_h=0.01,
                wake_grad=0.03, alpha_deg=0.0, min_angle=25.0, seed_offset=0.87,
-               wall=None, h1=None, label=None, verbose=True):
+               wall=None, h1=None, label=None, bl_ar_cap=1.0, verbose=True):
     """wall: optional (M,2) closed loop spanning roughly x in [0,1] (any body);
     default is the NACA airfoil. h1: optional first-layer height (default
-    from y+ and Re, which assumes a turbulent boundary layer)."""
+    from y+ and Re, which assumes a turbulent boundary layer).
+    bl_ar_cap: outer boundary-layer cells are capped at this height / spacing
+    ratio (1 = square). Use float('inf') for uniform layer heights (a thick
+    laminar boundary layer; set its depth with n_layers)."""
     t0 = time.time()
     log = print if verbose else (lambda *a, **k: None)
 
@@ -70,7 +73,8 @@ def build_mesh(naca="2412", n_side=120, reynolds=1e6, yplus=1.0, growth=1.15,
         h1_note = f"(y+={yplus}, Re={reynolds:.2e})"
     else:
         h1_note = "(user-set)"
-    layers, canon = extrude(wall, h1, growth=growth, n_layers=n_layers, verbose=verbose)
+    layers, canon = extrude(wall, h1, growth=growth, n_layers=n_layers, ar_cap=bl_ar_cap,
+                            verbose=verbose)
     K, M = layers.shape[0] - 1, layers.shape[1]
     points = [p for layer in layers for p in layer]           # index k*M + i
     cells = bl_cells(K, M, canon)

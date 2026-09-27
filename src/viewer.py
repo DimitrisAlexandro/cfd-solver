@@ -9,10 +9,12 @@ or a mesher .npz:
     python viewer.py ../cases/cyl_re40 --plots                # wall + history plots
     python viewer.py ../cases/cyl_re40 --monitor              # live residuals while running
     python viewer.py CASE --field Cp --view near --screenshot cp.png   # no window
+    python viewer.py CASE --plots --screenshot plots.png               # plots to PNG
+    python viewer.py CASE --animate vorticity                          # transient: GIF
 
 Keys in the 3D window
     n / b     next / previous field          g   toggle cell edges
-    1 2 3 4   full / near / leading edge / trailing edge view
+    1 2 3 4 5 full / near / leading edge / trailing edge / wake view
     j         jump to the next-worst cell for the current field (quality check)
     m         toggle streamlines              o   open wall + history plots
     x         save screenshot to the case folder
@@ -48,6 +50,7 @@ FIELD_STYLE = {
     "continuity_error": ("RdBu_r", "sym", "abs"),
 }
 MESH_FIELDS_FIRST = ["min_angle", "nonorthogonality", "size_ratio", "aspect_ratio"]
+VIEW_KEYS = {"full": "1", "near": "2", "le": "3", "te": "4", "wake": "5"}
 FLOW_FIELDS_FIRST = ["U_mag", "Cp", "vorticity", "p"]
 
 
@@ -122,11 +125,12 @@ def view_windows(grid, bnd, patches):
         if wid:
             wall = bnd.extract_cells(np.where(bnd.cell_data["patch_id"] == wid[0])[0])
     if wall is None or wall.n_points == 0:
-        return {"1": full, "2": full, "3": full, "4": full}
+        return {"1": full, "2": full, "3": full, "4": full, "5": full}
     wx0, wx1, wy0, wy1 = wall.bounds[:4]
     c = wx1 - wx0
     return {"1": full,
             "2": (wx0 + 0.8 * c, (wy0 + wy1) / 2, 0.8 * c),
+            "5": (wx0 + 2.3 * c, (wy0 + wy1) / 2, 1.6 * c),          # body + wake (vortex street)
             "3": (wx0 + 0.05 * c, (wy0 + wy1) / 2, 0.12 * c),
             "4": (wx1 - 0.02 * c, (wy0 + wy1) / 2, 0.12 * c)}
 
@@ -252,7 +256,7 @@ class Viewer:
         if c:
             lines.append(f"Cd = {c['Cd']:.4f}   Cl = {c['Cl']:.4f}   "
                          f"(Re = {self.meta.get('Re')}, alpha = {self.meta.get('alpha_deg')} deg)")
-        lines.append("keys: n/b field  g edges  1-4 views  j worst cell  m streamlines  "
+        lines.append("keys: n/b field  g edges  1-5 views  j worst cell  m streamlines  "
                      "o plots  x screenshot")
         t = self.pl.add_text("\n".join(lines), position="upper_left", font_size=11, name="info")
         _boxed(t)
@@ -312,7 +316,7 @@ class Viewer:
         self.pl.add_key_event("n", step(+1))
         self.pl.add_key_event("b", step(-1))
         self.pl.add_key_event("g", edges)
-        for k in "1234":
+        for k in "12345":
             self.pl.add_key_event(k, lambda k=k: (set_view(self.pl, self.wins[k]), self.pl.render()))
         self.pl.add_key_event("j", self._worst)
         self.pl.add_key_event("m", lambda: (self._toggle_stream(), self.pl.render()))
@@ -337,6 +341,21 @@ def _read_csv(p):
     return np.genfromtxt(p, delimiter=",", names=True)
 
 
+def _wall_panels(ax_cp, ax_cf, walls):
+    w = _read_csv(walls[0])
+    for side, mk, lab in ((1, "-", "upper"), (-1, "--", "lower")):
+        s = w["side"] == side
+        o = np.argsort(w["x"][s])
+        ax_cp.plot(w["x"][s][o], w["Cp"][s][o], mk, label=f"Cp {lab}")
+        ax_cf.plot(w["x"][s][o], w["Cf"][s][o], mk, label=f"Cf {lab}")
+    ax_cp.invert_yaxis()
+    ax_cp.set_title("Wall pressure coefficient (Cp axis inverted)")
+    ax_cf.axhline(0, color="k", lw=0.8)
+    ax_cf.set_title(f"Skin friction (Cf < 0: reversed flow)   y+ max {w['yplus'].max():.2f}")
+    for a in (ax_cp, ax_cf):
+        a.set_xlabel("x"); a.legend(); a.grid(alpha=.3)
+
+
 def plots(folder, show=True, save=None):
     import matplotlib
     if not show:
@@ -348,35 +367,62 @@ def plots(folder, show=True, save=None):
     if not hist.exists() and not walls:
         print("no results in", folder, "(run the case first)")
         return
-    fig, ax = plt.subplots(2, 2, figsize=(13, 8.5))
-    if hist.exists():
-        h = _read_csv(hist)
+    h = _read_csv(hist) if hist.exists() else None
+    transient = h is not None and "time" in h.dtype.names
+
+    if transient:
+        fig, ax = plt.subplots(2, 3, figsize=(18, 8.5))
+        t = h["time"]
+        ax[0, 0].plot(t, h["Cd"], lw=0.9); ax[0, 0].set_title("Drag coefficient Cd(t)")
+        ax[0, 1].plot(t, h["Cl"], lw=0.9, color="C1"); ax[0, 1].set_title("Lift coefficient Cl(t)")
+        tail = t > t[0] + 0.5 * (t[-1] - t[0])            # second half: developed flow
+        if tail.sum() > 16:
+            cd = h["Cd"][tail]
+            lo, hi = cd.min(), cd.max()
+            pad = max(0.05 * (hi - lo), 1e-3)
+            ax[0, 0].set_ylim(lo - 3 * pad - (hi - lo), hi + 3 * pad + (hi - lo))
+            y = h["Cl"][tail] - h["Cl"][tail].mean()
+            dt = np.median(np.diff(t))
+            n = len(y)
+            spec = np.abs(np.fft.rfft(y * np.hanning(n))) ** 2
+            f = np.fft.rfftfreq(n, dt)
+            ax[0, 2].semilogy(f[1:], spec[1:] / spec[1:].max())
+            fpk = f[1:][np.argmax(spec[1:])]
+            ax[0, 2].axvline(fpk, color="r", ls=":")
+            ax[0, 2].set_xlim(0, min(f[-1], 8 * fpk if fpk > 0 else f[-1]))
+            ax[0, 2].set_title(f"Lift spectrum (2nd half): peak f = {fpk:.3f} +- {0.5 / (n * dt):.3f}\n"
+                               f"(FFT resolution; case.json has the more precise St "
+                               f"from zero crossings)", fontsize=10)
+            ax[0, 2].set_xlabel("frequency (U / L)")
+        for a in ax[0, :2]:
+            a.set_xlabel("time (L / U)")
         for k in ("cont", "Ux", "Uy"):
-            ax[0, 0].semilogy(h["iteration"], h[k], label=k)
-        ax[0, 0].set_title("Residuals"); ax[0, 0].set_xlabel("iteration"); ax[0, 0].legend()
-        ax[0, 0].grid(alpha=.3, which="both")
-        ok = np.isfinite(h["Cd"])
-        ax[0, 1].plot(h["iteration"][ok], h["Cd"][ok], label="Cd")
-        ax[0, 1].plot(h["iteration"][ok], h["Cl"][ok], label="Cl")
-        last = h["Cd"][ok][-1] if ok.any() else np.nan
-        ax[0, 1].set_ylim(*np.nanpercentile(np.r_[h["Cd"][ok][len(h[ok]) // 5:],
-                                                    h["Cl"][ok][len(h[ok]) // 5:]], [0, 100]) +
-                          np.array([-0.1, 0.1]) * max(abs(last), 0.1))
-        ax[0, 1].set_title("Force coefficients"); ax[0, 1].set_xlabel("iteration")
-        ax[0, 1].legend(); ax[0, 1].grid(alpha=.3)
-    if walls:
-        w = _read_csv(walls[0])
-        for side, mk, lab in ((1, "-", "upper"), (-1, "--", "lower")):
-            s = w["side"] == side
-            o = np.argsort(w["x"][s])
-            ax[1, 0].plot(w["x"][s][o], w["Cp"][s][o], mk, label=f"Cp {lab}")
-            ax[1, 1].plot(w["x"][s][o], w["Cf"][s][o], mk, label=f"Cf {lab}")
-        ax[1, 0].invert_yaxis()
-        ax[1, 0].set_title("Wall pressure coefficient (Cp axis inverted)")
-        ax[1, 1].axhline(0, color="k", lw=0.8)
-        ax[1, 1].set_title(f"Skin friction (Cf < 0: reversed flow)   y+ max {w['yplus'].max():.2f}")
-        for a in ax[1]:
-            a.set_xlabel("x"); a.legend(); a.grid(alpha=.3)
+            ax[1, 0].semilogy(t, h[k], lw=0.7, label=k)
+        ax[1, 0].set_title("Residual at the end of each time step")
+        ax[1, 0].set_xlabel("time (L / U)"); ax[1, 0].legend()
+        for a in list(ax[0]) + [ax[1, 0]]:
+            a.grid(alpha=.3, which="both")
+        if walls:
+            _wall_panels(ax[1, 1], ax[1, 2], walls)
+            ax[1, 1].set_title("Wall Cp at the final time")
+    else:
+        fig, ax = plt.subplots(2, 2, figsize=(13, 8.5))
+        if h is not None:
+            for k in ("cont", "Ux", "Uy"):
+                ax[0, 0].semilogy(h["iteration"], h[k], label=k)
+            ax[0, 0].set_title("Residuals"); ax[0, 0].set_xlabel("iteration"); ax[0, 0].legend()
+            ax[0, 0].grid(alpha=.3, which="both")
+            ok = np.isfinite(h["Cd"])
+            ax[0, 1].plot(h["iteration"][ok], h["Cd"][ok], label="Cd")
+            ax[0, 1].plot(h["iteration"][ok], h["Cl"][ok], label="Cl")
+            last = h["Cd"][ok][-1] if ok.any() else np.nan
+            ax[0, 1].set_ylim(*np.nanpercentile(np.r_[h["Cd"][ok][len(h[ok]) // 5:],
+                                                        h["Cl"][ok][len(h[ok]) // 5:]], [0, 100]) +
+                              np.array([-0.1, 0.1]) * max(abs(last), 0.1))
+            ax[0, 1].set_title("Force coefficients"); ax[0, 1].set_xlabel("iteration")
+            ax[0, 1].legend(); ax[0, 1].grid(alpha=.3)
+        if walls:
+            _wall_panels(ax[1, 0], ax[1, 1], walls)
     fig.suptitle(str(folder))
     fig.tight_layout()
     if save:
@@ -388,7 +434,8 @@ def plots(folder, show=True, save=None):
 
 
 def monitor(folder, interval=2.0):
-    """Live residual / force plot while a case is running (re-reads history.csv)."""
+    """Live residual / force plot while a case is running (re-reads history.csv).
+    Works for steady (x = iteration) and transient (x = time) runs."""
     import matplotlib.pyplot as plt
     from matplotlib.animation import FuncAnimation
     hist = Path(folder) / "history.csv"
@@ -403,22 +450,73 @@ def monitor(folder, interval=2.0):
             return                   # file being written
         if h.size < 2:
             return
+        x = h["time"] if "time" in h.dtype.names else h["iteration"]
+        xl = "time" if "time" in h.dtype.names else "iteration"
         a1.cla(); a2.cla()
         for k in ("cont", "Ux", "Uy"):
-            a1.semilogy(h["iteration"], h[k], label=k)
-        a1.set_title(f"Residuals (iteration {int(h['iteration'][-1])})"); a1.legend()
+            a1.semilogy(x, h[k], label=k)
+        a1.set_title(f"Residuals ({xl} {x[-1]:.6g})"); a1.legend(); a1.set_xlabel(xl)
         a1.grid(alpha=.3, which="both")
         ok = np.isfinite(h["Cd"])
-        a2.plot(h["iteration"][ok], h["Cd"][ok], label="Cd")
-        a2.plot(h["iteration"][ok], h["Cl"][ok], label="Cl")
+        a2.plot(x[ok], h["Cd"][ok], label="Cd")
+        a2.plot(x[ok], h["Cl"][ok], label="Cl")
         if ok.any():
             a2.set_title(f"Cd = {h['Cd'][ok][-1]:.4f}   Cl = {h['Cl'][ok][-1]:.4f}")
-        a2.legend(); a2.grid(alpha=.3)
+        a2.legend(); a2.grid(alpha=.3); a2.set_xlabel(xl)
 
     anim = FuncAnimation(fig, update, interval=interval * 1000, cache_frame_data=False)
     update(0)
     plt.show()
     return anim
+
+
+def animate(folder, field="vorticity", out=None, view="5", fps=10, max_frames=80, width=800):
+    """GIF of a transient case from its snapshots (results.pvd)."""
+    import re
+    from PIL import Image
+    folder = Path(folder)
+    pvd = (folder / "results.pvd").read_text()
+    entries = [(float(t), f) for t, f in re.findall(r'timestep="([^"]+)"[^>]*file="([^"]+)"', pvd)]
+    if not entries:
+        print("no snapshots in", folder)
+        return None
+    step = max(1, -(-len(entries) // max_frames))          # ceil: at most max_frames
+    entries = entries[::step]
+    base = Viewer(folder, field=field if field in ("vorticity", "U_mag", "Cp", "p") else None,
+                  off_screen=True)
+    last = pv.read(folder / entries[-1][1])
+    cmap, clim = base._field_style(field, last.cell_data[field])
+    if field == "vorticity":
+        # scale to the wake, not to the (much stronger) wall vorticity
+        a = np.nanpercentile(np.abs(last.cell_data[field]), 90) or 1.0
+        clim = (-a, a)
+    grid = base.grid
+    base.pl.remove_actor(base.actor)            # start clean: no field / colour bar yet
+    base.actor = None
+    for name in list(base.pl.scalar_bars.keys()):
+        base.pl.remove_scalar_bar(name)
+    frames = []
+    set_view(base.pl, base.wins[view])
+    for t, f in entries:
+        snap = pv.read(folder / f)
+        grid.cell_data[field] = snap.cell_data[field]
+        pts = grid.cell_data_to_point_data()
+        if base.actor is not None:
+            base.pl.remove_actor(base.actor)
+        base.actor = base.pl.add_mesh(pts, scalars=field, cmap=cmap, clim=clim,
+                                      scalar_bar_args={"title": field, "vertical": False,
+                                                       "position_x": 0.3, "position_y": 0.03,
+                                                       "width": 0.4, "height": 0.06})
+        _boxed(base.pl.add_text(f"{base.meta.get('case', '')}   {field}   t = {t:.2f}",
+                                position="upper_left", font_size=12, name="info"))
+        im = Image.fromarray(base.pl.screenshot(return_img=True))
+        im = im.resize((width, int(im.height * width / im.width)), Image.LANCZOS)
+        frames.append(im.convert("P", palette=Image.ADAPTIVE, colors=128))
+    out = Path(out or folder / f"{field}.gif")
+    frames[0].save(out, save_all=True, append_images=frames[1:], duration=int(1000 / fps), loop=0)
+    base.pl.close()
+    print("saved", out, f"({len(frames)} frames)")
+    return out
 
 
 def main():
@@ -429,20 +527,26 @@ def main():
     ap.add_argument("--edges", action="store_true", help="start with cell edges on")
     ap.add_argument("--no-edges", action="store_true")
     ap.add_argument("--streamlines", action="store_true")
-    ap.add_argument("--view", choices=["full", "near", "le", "te"], default="near")
+    ap.add_argument("--view", choices=["full", "near", "le", "te", "wake"], default=None)
     ap.add_argument("--screenshot", default=None, help="render to PNG without a window")
     ap.add_argument("--plots", action="store_true", help="wall + history plots")
     ap.add_argument("--monitor", action="store_true", help="live history while running")
+    ap.add_argument("--animate", default=None, metavar="FIELD",
+                    help="transient case: make a GIF of FIELD (e.g. vorticity)")
+    ap.add_argument("--gif", default=None, help="output file for --animate")
     a = ap.parse_args()
 
     if a.monitor:
         monitor(a.path); return
+    if a.animate:
+        animate(a.path, field=a.animate, out=a.gif,
+                view=VIEW_KEYS[a.view or "wake"]); return
     if a.plots:
         plots(a.path, show=a.screenshot is None, save=a.screenshot); return
     edges = True if a.edges else (False if a.no_edges else None)
     v = Viewer(a.path, field=a.field, edges=edges, off_screen=a.screenshot is not None,
                show_streamlines=a.streamlines)
-    set_view(v.pl, v.wins[{"full": "1", "near": "2", "le": "3", "te": "4"}[a.view]])
+    set_view(v.pl, v.wins[VIEW_KEYS[a.view or "near"]])
     if a.screenshot:
         v.save(a.screenshot)
     else:
