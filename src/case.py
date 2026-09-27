@@ -11,7 +11,7 @@ A case is a folder:
                                                flow fields + quality, wall Cp/Cf/y+
     wall_<patch>.csv                           wall distributions (x, y, Cp, Cf, y+)
     results.pvd + snapshots/                   transient runs: time series (ParaView)
-    plots.png, U_mag.png, Cp.png, vorticity.png, mesh.png (+ vorticity.gif)
+    plots.png, U_mag.png, Cp.png, vorticity.png, mesh.png (+ nut_ratio.png, vorticity.gif)
                                                pictures, written automatically
     case.json                                  parameters, coefficients, run info
 
@@ -20,8 +20,13 @@ Usage
     python case.py run cylinder --re 40 --out ../cases/cyl_re40
     python case.py run naca --naca 0012 --re 1000 --alpha 4 --out ../cases/n0012_re1k
     python case.py run cylinder --re 100 --transient --dt 0.05 --t-end 150 --out ../cases/cyl100
-    (airfoils with Re < 1e5 automatically use the validated laminar mesh settings;
-     only steady, laminar flow is solved so far - turbulence comes in step C)
+    python case.py run naca --naca 0012 --re 6e6 --alpha 10 --out ../cases/n0012_re6m
+    Airfoils with Re < 1e5: laminar, validated laminar mesh settings.
+    Airfoils with Re >= 1e5: Spalart-Allmaras (fully turbulent), y+ < 1 mesh,
+    farfield radius 100 c with a point-vortex correction (validate_naca0012_sa.py).
+    --naca tmr uses the NASA TMR NACA 0012 definition; --turbulence laminar|sa
+    overrides the automatic choice; results then also hold nut, nut_ratio,
+    nuTilde, wall_distance.
 """
 
 import argparse
@@ -56,10 +61,12 @@ def build(kind, args):
                                              verbose=True)
         return fvm, mesh, patches, U, f"NACA {args.naca} (laminar mesh)"
     if kind == "naca":
-        mesh = hm.build_mesh(naca=args.naca, n_side=args.n_side, reynolds=args.re,
-                             yplus=args.yplus, alpha_deg=args.alpha,
-                             farfield_radius=args.farfield, verbose=True)
-        label = f"NACA {args.naca}"
+        # turbulent regime: the settings validated in validate_naca0012_sa.py
+        from validate_naca0012_sa import airfoil_mesh
+        naca = None if args.naca.lower() in ("0012tmr", "tmr") else args.naca
+        mesh = airfoil_mesh(level=args.refine, alpha=args.alpha, verbose=True, naca=naca,
+                            re=args.re, farfield=args.farfield, yplus=args.yplus)
+        label = "TMR NACA 0012" if naca is None else f"NACA {args.naca}"
     elif kind == "cylinder":
         r = args.refine
         mesh = hm.build_mesh(wall=circle((0.5, 0.0), 0.5, int(round(200 * r))), h1=0.004 / r,
@@ -144,7 +151,11 @@ def export_pngs(folder, transient=False):
         return
     folder = Path(folder)
     viewer.plots(folder, show=False, save=folder / "plots.png")
-    for field in ("U_mag", "Cp", "vorticity"):
+    fields = ["U_mag", "Cp", "vorticity"]
+    meta = folder / "case.json"
+    if meta.exists() and json.loads(meta.read_text()).get("turbulence", "laminar") != "laminar":
+        fields.append("nut_ratio")                      # eddy viscosity / nu
+    for field in fields:
         v = viewer.Viewer(folder, field=field, off_screen=True,
                           show_streamlines=(field == "U_mag" and not transient))
         v.save(folder / f"{field}.png")
@@ -158,25 +169,33 @@ def export_pngs(folder, transient=False):
 
 
 def run_case(folder, fvm, mesh, patches, U_inf, nu, meta, tol=1e-7, max_iter=20000,
-             monitor_every=10, pngs=True):
+             monitor_every=10, pngs=True, turbulence=None, vortex=False):
     folder = Path(folder)
     q = write_mesh(folder, fvm, mesh, patches, meta)
     print(f"[case] mesh written -> {folder / 'mesh.vtm'} (open it now to inspect)")
 
     bcs = {"wall": {"type": "wall"}, "inlet": {"type": "inlet", "U": U_inf},
            "outlet": {"type": "outlet"}}
-    s = SimpleSolver(fvm, bcs, nu, U0=U_inf)
+    s = SimpleSolver(fvm, bcs, nu, U0=U_inf, turbulence=turbulence)
     hist = open(folder / "history.csv", "w", buffering=1)          # line-buffered: live
-    hist.write("iteration,cont,Ux,Uy,Cd,Cl,time_s\n")
+    hist.write("iteration,cont,Ux,Uy," + ("nuT," if turbulence else "") + "Cd,Cl,time_s\n")
     t0 = time.time()
+    vf = None
+    if vortex:                    # point-vortex farfield correction (lifting airfoils)
+        from validate_naca0012_sa import VortexFarfield
+        alpha = math.degrees(math.atan2(U_inf[1], U_inf[0]))
+        vf = VortexFarfield(s, alpha)
 
     def monitor(it, r):
+        if vf is not None:
+            vf.update(it)
         if it % monitor_every == 0 or it == 1:
             _, c = wall_data(s, "wall", U_inf)
             cd, cl = f"{c['Cd']:.8g}", f"{c['Cl']:.8g}"
         else:
             cd = cl = ""
-        hist.write(f"{it},{r['cont']:.4e},{r['Ux']:.4e},{r['Uy']:.4e},{cd},{cl},"
+        nt = f"{r['nuT']:.4e}," if turbulence else ""
+        hist.write(f"{it},{r['cont']:.4e},{r['Ux']:.4e},{r['Uy']:.4e},{nt}{cd},{cl},"
                    f"{time.time() - t0:.2f}\n")
 
     it = s.solve(tol=tol, max_iter=max_iter, verbose=True, every=200, callback=monitor)
@@ -186,6 +205,8 @@ def run_case(folder, fvm, mesh, patches, U_inf, nu, meta, tol=1e-7, max_iter=200
     meta.update(iterations=it, converged=bool(s.converged), runtime_s=round(time.time() - t0, 1),
                 coefficients={k: float(v) for k, v in coeffs.items()},
                 yplus_max=float(w["yplus"].max()), yplus_mean=float(w["yplus"].mean()))
+    if turbulence:
+        meta.update(nut_ratio_max=float((s.turb.nu_t() / nu).max()))
     (folder / "case.json").write_text(json.dumps(meta, indent=2))
     print(f"[case] results -> {folder / 'results.vtm'}  Cd={coeffs['Cd']:.4f} Cl={coeffs['Cl']:.4f}  "
           f"y+ max {w['yplus'].max():.2f}")
@@ -271,10 +292,9 @@ def main(argv=None):
     ap.add_argument("kind", choices=["naca", "cylinder"])
     ap.add_argument("--out", required=True, help="case folder")
     ap.add_argument("--naca", default="0012")
-    ap.add_argument("--n-side", type=int, default=120)
     ap.add_argument("--re", type=float, default=None,
                     help="Reynolds number, chord / diameter (default: naca 1e6, cylinder 40)")
-    ap.add_argument("--yplus", type=float, default=1.0)
+    ap.add_argument("--yplus", type=float, default=0.7, help="turbulent airfoil: target y+")
     ap.add_argument("--alpha", type=float, default=0.0, help="angle of attack (deg)")
     ap.add_argument("--farfield", type=float, default=None, help="farfield radius")
     ap.add_argument("--refine", type=float, default=1.0,
@@ -289,17 +309,28 @@ def main(argv=None):
     ap.add_argument("--no-kick", action="store_true",
                     help="transient cylinder: do not spin it briefly to trigger shedding")
     ap.add_argument("--no-png", action="store_true", help="skip the automatic pictures")
+    ap.add_argument("--turbulence", choices=["auto", "laminar", "sa"], default="auto",
+                    help="auto: Spalart-Allmaras for airfoils at Re >= 1e5, else laminar")
+    ap.add_argument("--no-vortex", action="store_true",
+                    help="turbulent airfoil: no point-vortex farfield correction")
     a = ap.parse_args(argv)
     if a.re is None:
         a.re = 1e6 if a.kind == "naca" else 40.0
     if a.farfield is None:
-        a.farfield = (40.0 if a.re < LAMINAR_RE else 20.0) if a.kind == "naca" else 60.0
+        a.farfield = (40.0 if a.re < LAMINAR_RE else 100.0) if a.kind == "naca" else 60.0
+    if a.turbulence == "auto":
+        a.turbulence = "sa" if (a.kind == "naca" and a.re >= LAMINAR_RE) else "laminar"
+    turb = None if a.turbulence == "laminar" else a.turbulence
 
     fvm, mesh, patches, U_inf, label = build(a.kind, a)
     meta = {"case": label, "kind": a.kind, "Re": a.re, "alpha_deg": a.alpha,
             "U_inf": list(U_inf), "nu": 1.0 / a.re, "ref_length": 1.0,
             "bcs": {"wall": "no-slip wall", "inlet": "fixed velocity U_inf",
-                    "outlet": "zero-gradient U, p = 0"}}
+                    "outlet": "zero-gradient U, p = 0"},
+            "turbulence": "Spalart-Allmaras (SA-noft2), nuTilde_inf = 3 nu" if turb else "laminar"}
+    vortex = turb is not None and a.kind == "naca" and not a.no_vortex
+    if vortex:
+        meta["bcs"]["inlet"] = "U_inf + point-vortex correction (Gamma = Cl U c / 2)"
     if a.action == "mesh":
         write_mesh(a.out, fvm, mesh, patches, meta)
         print(f"[case] mesh written -> {Path(a.out) / 'mesh.vtm'}")
@@ -309,7 +340,7 @@ def main(argv=None):
                       kick=(a.kind == "cylinder" and not a.no_kick), pngs=not a.no_png)
     else:
         run_case(a.out, fvm, mesh, patches, U_inf, 1.0 / a.re, meta, tol=a.tol,
-                 max_iter=a.max_iter, pngs=not a.no_png)
+                 max_iter=a.max_iter, pngs=not a.no_png, turbulence=turb, vortex=vortex)
 
 
 if __name__ == "__main__":

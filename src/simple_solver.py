@@ -16,10 +16,14 @@ Discretisation
 
 Boundary conditions, per patch:
   {'type': 'wall',   'U': (0, 0)}        fixed velocity, zero-gradient p
+  {'type': 'symmetry'}                   slip wall: no normal flow, no shear
   {'type': 'inlet',  'U': (1, 0)}        same as wall numerically; U may be
                                          a function f(x, y) -> (n,2)
   {'type': 'outlet'}                     zero-gradient U, fixed p = 0
 If there is no outlet, pressure is pinned in one cell (cavity).
+
+Turbulence: turbulence="sa" adds the Spalart-Allmaras model (turbulence.py);
+the momentum equation then uses nu + nu_t (incl. the transpose stress term).
 
 Time-accurate (unsteady) mode: call advance(dt) instead of solve().
   * BDF2 (second order, implicit); the very first step is backward Euler
@@ -44,8 +48,26 @@ from scipy.sparse.linalg import splu
 
 class SimpleSolver:
     def __init__(self, mesh, bcs, nu, alpha_u=0.8, alpha_p=None, second_order=True,
-                 U0=(0.0, 0.0), simplec=True):
+                 U0=(0.0, 0.0), simplec=True, turbulence=None, nut_inf_ratio=3.0,
+                 alpha_turb=0.8, limiter="auto", limiter_eps=0.1, limiter_cells="tri"):
+        """limiter: gradient limiter of the linear-upwind convection
+        (deferred correction): None or "venkat" (Venkatakrishnan). "auto" =
+        "venkat" for turbulent runs (high Re: no physical viscosity outside
+        the boundary layer damps overshoots), None for laminar runs.
+        limiter_cells: "tri" limits only triangles (the unstructured region,
+        where the wiggles appear; limiting the structured boundary-layer
+        quads adds needless dissipation: NACA 0012 alpha 10, Cd +6 %), "all".
+        limiter_eps: Venkatakrishnan threshold as a fraction of the velocity
+        scale, eps = limiter_eps * U_ref (U_ref = max |U| on fixed-velocity
+        boundaries). Overshoots well below eps are not limited, so smooth
+        extrema (suction peak) keep second order; the standard (K h)^3
+        threshold shrinks with the cell size and clipped the suction peak on
+        fine grids (NACA 0012 alpha 10: Cd rose with refinement)."""
         self.m, self.nu = mesh, nu
+        self.limiter = ("venkat" if turbulence else None) if limiter == "auto" else limiter
+        self.limiter_eps = limiter_eps
+        # cells where the limiter acts (None = all)
+        self.limiter_mask = (mesh.nverts == 3) if limiter_cells == "tri" else None
         # SIMPLEC needs no pressure under-relaxation; SIMPLE uses 1 - alpha_u
         self.simplec = simplec
         self.au = alpha_u
@@ -58,12 +80,22 @@ class SimpleSolver:
         nb = len(m.bcell)
         self.b_fixedU = np.zeros(nb, bool)
         self.b_outlet = np.zeros(nb, bool)
+        self.pb_out = np.zeros(nb)            # outlet static pressure per face
+        self.b_wall = np.zeros(nb, bool)
+        self.b_inlet = np.zeros(nb, bool)
+        self.b_sym = np.zeros(nb, bool)
         self.Ub = np.zeros((nb, 2))
         self._time_bcs = []                    # (face indices, f(x, y, t))
         for name, bc in bcs.items():
             idx = m.patch_faces[name]
+            if bc['type'] == 'symmetry':
+                # slip wall: no normal velocity, no shear, zero-gradient p
+                self.b_fixedU[idx] = True       # Dirichlet with Ub = tangential part of U_P
+                self.b_sym[idx] = True
+                continue
             if bc['type'] in ('wall', 'inlet'):
                 self.b_fixedU[idx] = True
+                (self.b_wall if bc['type'] == 'wall' else self.b_inlet)[idx] = True
                 U = bc.get('U', (0.0, 0.0))
                 if callable(U) and len(inspect.signature(U).parameters) == 3:
                     self._time_bcs.append((idx, U))
@@ -72,6 +104,7 @@ class SimpleSolver:
                     self.Ub[idx] = U(m.bxf[idx, 0], m.bxf[idx, 1]) if callable(U) else U
             elif bc['type'] == 'outlet':
                 self.b_outlet[idx] = True
+                self.pb_out[idx] = bc.get('p', 0.0)
             else:
                 raise ValueError(bc['type'])
         missing = set(m.patch_names) - set(bcs)
@@ -96,6 +129,15 @@ class SimpleSolver:
         self.U_n = self.U_nm1 = None           # velocity at time levels n, n-1
         self.F_n = self.F_nm1 = None           # face fluxes at n, n-1
         self.UfS_n = self.UfS_nm1 = None       # interpolated face velocity . S at n, n-1
+        # turbulence model
+        self.turb = None
+        if turbulence == "sa":
+            from turbulence import SpalartAllmaras
+            if not self.b_wall.any():
+                raise ValueError("the SA model needs at least one wall patch")
+            self.turb = SpalartAllmaras(self, nut_inf_ratio=nut_inf_ratio, alpha=alpha_turb)
+        elif turbulence not in (None, "laminar"):
+            raise ValueError(f"unknown turbulence model {turbulence}")
 
     # ------------------------------------------------------------------
     def _boundary_values(self):
@@ -104,10 +146,15 @@ class SimpleSolver:
         c = m.bcell
         Uext = self.U[c] + np.c_[np.einsum('ij,ij->i', self.gU[0][c], m.db_t),
                                  np.einsum('ij,ij->i', self.gU[1][c], m.db_t)]
+        if self.b_sym.any():                   # symmetry: tangential part of the cell value
+            sy = self.b_sym
+            nrm = m.bSf[sy] / np.linalg.norm(m.bSf[sy], axis=1)[:, None]
+            Uc = self.U[c[sy]]
+            self.Ub[sy] = Uc - np.einsum('ij,ij->i', Uc, nrm)[:, None] * nrm
         Ub = np.where(self.b_fixedU[:, None], self.Ub, Uext)
         # pressure: extrapolated (lagged gradient) except fixed at outlets
         pb = self.p[m.bcell] + np.einsum('ij,ij->i', self.gradp[m.bcell], m.db)
-        pb = np.where(self.b_outlet, 0.0, pb)
+        pb = np.where(self.b_outlet, self.pb_out, pb)
         return Ub, pb
 
     def iterate(self):
@@ -122,12 +169,16 @@ class SimpleSolver:
 
         # ---- momentum matrix ------------------------------------------------
         F, Fb = self.F, self.Fb
-        D = nu * m.coef
+        if self.turb is not None:              # molecular + eddy viscosity on faces
+            nu_f, nu_b = self.turb.face_viscosity()
+        else:
+            nu_f, nu_b = nu, np.full(len(bc), nu)
+        D = nu_f * m.coef
         a_on = -D - np.maximum(-F, 0.0)        # coefficient of neighbour in owner row
         a_no = -D - np.maximum(F, 0.0)         # coefficient of owner in neighbour row
         diag = np.bincount(own, D + np.maximum(F, 0.0), n) + \
             np.bincount(nei, D + np.maximum(-F, 0.0), n)
-        Db = nu * m.bcoef
+        Db = nu_b * m.bcoef
         diag += np.bincount(bc, np.where(self.b_fixedU, Db, 0.0) +
                             np.where(self.b_outlet, np.maximum(Fb, 0.0), 0.0), n)
 
@@ -138,21 +189,31 @@ class SimpleSolver:
         for k in range(2):
             gf = m.interp(gU[k])
             # explicit non-orthogonal diffusion correction
-            c = nu * np.einsum('ij,ij->i', gf, m.Sf - m.Delta)
+            c = nu_f * np.einsum('ij,ij->i', gf, m.Sf - m.Delta)
             s = m.sum_to_cells(c)
             # boundary: fixed value (diffusion + inflow/outflow convection)
             bsrc = np.where(self.b_fixedU, Db * Ub[:, k] - Fb * Ub[:, k] +
-                            nu * np.einsum('ij,ij->i', gU[k][bc], m.bSf - m.bDelta), 0.0)
+                            nu_b * np.einsum('ij,ij->i', gU[k][bc], m.bSf - m.bDelta), 0.0)
             # outlet backflow (Fb<0) treated explicitly
             # outlet: phi_b = phi_P + grad(phi_P).db_t ; phi_P part implicit
             bsrc += np.where(self.b_outlet,
                              -np.maximum(Fb, 0.0) * np.einsum('ij,ij->i', gU[k][bc], m.db_t)
                              - np.minimum(Fb, 0.0) * Ub[:, k], 0.0)
             s += np.bincount(bc, bsrc, n)
+            if self.turb is not None:
+                # transpose part of the viscous stress, div(nu_eff (grad U)^T):
+                # zero for constant viscosity, not for a varying eddy viscosity
+                gTf = np.c_[m.interp(gU[0][:, k]), m.interp(gU[1][:, k])]
+                s += m.sum_to_cells(nu_f * np.einsum('ij,ij->i', gTf, m.Sf))
+                gTb = np.c_[gU[0][bc, k], gU[1][bc, k]]
+                s += np.bincount(bc, np.where(self.b_outlet, 0.0, nu_b) *
+                                 np.einsum('ij,ij->i', gTb, m.bSf), n)
             if self.second_order:
                 # deferred correction: F * (phi_linear_upwind - phi_upwind)
                 xU = m.xc[U_cell]
-                corr = F * np.einsum('ij,ij->i', gU[k][U_cell], m.xf - xU)
+                gk = gU[k] if self.limiter is None else \
+                    gU[k] * self._venkat(self.U[:, k], gU[k], Ub[:, k])[:, None]
+                corr = F * np.einsum('ij,ij->i', gk[U_cell], m.xf - xU)
                 s -= m.sum_to_cells(corr)
             src[:, k] += s
 
@@ -199,8 +260,13 @@ class SimpleSolver:
         # V/(a_P - sum|a_nb|), i.e. it also accounts for the neighbours'
         # velocity corrections -> no pressure under-relaxation needed
         if self.simplec:
+            # a_P - sum|a_nb| = (1 - alpha_u) a_P + (net outflow + boundary terms);
+            # cells with a net convective INFLOW (not yet mass-conserving, e.g.
+            # wall cells of a uniform initial field) would make it ~0 and the
+            # velocity correction explode -> floor at the ideal (1 - alpha_u) a_P.
+            # (The converged solution does not depend on Dc; Rhie-Chow uses V/a_P.)
             nbsum = np.bincount(own, -a_on, n) + np.bincount(nei, -a_no, n)
-            Dc = m.vol / np.maximum(diag - nbsum, 1e-12 * diag)
+            Dc = m.vol / np.maximum(diag - nbsum, (1.0 - self.au) * diag)
         else:
             Dc = Dp
         Dcf = m.interp(Dc)
@@ -210,7 +276,7 @@ class SimpleSolver:
             Ustar_b = Ustar[bc[o]] + np.c_[np.einsum('ij,ij->i', gU[0][bc[o]], m.db_t[o]),
                                            np.einsum('ij,ij->i', gU[1][bc[o]], m.db_t[o])]
             Fbstar[o] = np.einsum('ij,ij->i', Ustar_b, m.bSf[o]) - Dp[bc[o]] * (
-                (0.0 - self.p[bc[o]]) * m.bcoef[o] -
+                (self.pb_out[o] - self.p[bc[o]]) * m.bcoef[o] -
                 np.einsum('ij,ij->i', self.gradp[bc[o]], m.bDelta[o]))
 
         # ---- pressure correction ---------------------------------------------
@@ -248,8 +314,37 @@ class SimpleSolver:
             np.abs(self.F).sum() / np.sqrt(n)
         Fref = max(Fref, 1e-30)
         res = {"cont": np.abs(imbalance).sum() / Fref, "Ux": resU[0], "Uy": resU[1]}
+        if self.turb is not None:
+            self.gU = [m.grad(self.U[:, k], self._boundary_values()[0][:, k]) for k in range(2)]
+            res["nuT"] = self.turb.solve()
         self.history.append(res)
         return res
+
+    def _venkat(self, phi, g, phib):
+        """Venkatakrishnan (1995) limiter psi in [0, 1] per cell for the
+        reconstruction phi_P + g.(x_f - x_P) on every face of the cell."""
+        m = self.m
+        own, nei, bc = m.own, m.nei, m.bcell
+        n = m.ncells
+        pmax = phi.copy(); pmin = phi.copy()
+        np.maximum.at(pmax, own, phi[nei]); np.maximum.at(pmax, nei, phi[own])
+        np.minimum.at(pmin, own, phi[nei]); np.minimum.at(pmin, nei, phi[own])
+        np.maximum.at(pmax, bc, phib); np.minimum.at(pmin, bc, phib)
+        uref = max(np.abs(self.Ub[self.b_fixedU]).max() if self.b_fixedU.any() else 0.0, 1e-30)
+        eps2 = np.full(n, (self.limiter_eps * uref) ** 2)
+        psi = np.ones(n)
+        for c, x in ((own, m.xf), (nei, m.xf), (bc, m.bxf)):
+            d2 = np.einsum('ij,ij->i', g[c], x - m.xc[c])
+            d1 = np.where(d2 > 0, pmax[c] - phi[c], pmin[c] - phi[c])
+            e = eps2[c]
+            num = (d1**2 + e) * d2 + 2 * d2**2 * d1
+            den = d2 * (d1**2 + 2 * d2**2 + d1 * d2 + e)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                f = np.where(np.abs(d2) > 1e-30, num / den, 1.0)
+            if self.limiter_mask is not None:            # psi = 1 outside the mask
+                f = np.where(self.limiter_mask[c], f, 1.0)
+            np.minimum.at(psi, c, np.clip(f, 0.0, 1.0))
+        return psi
 
     def solve(self, tol=1e-6, max_iter=5000, verbose=True, every=100, callback=None):
         """callback(it, residuals) is called after every iteration (monitoring,
@@ -261,8 +356,9 @@ class SimpleSolver:
             if callback is not None:
                 callback(it, r)
             if verbose and (it % every == 0 or it == 1):
+                extra = f"  nuT {r['nuT']:.2e}" if "nuT" in r else ""
                 print(f"  it {it:5d}  cont {r['cont']:.2e}  Ux {r['Ux']:.2e}  "
-                      f"Uy {r['Uy']:.2e}  ({time.time() - t0:.1f}s)")
+                      f"Uy {r['Uy']:.2e}{extra}  ({time.time() - t0:.1f}s)")
             if max(r.values()) < tol:
                 if verbose:
                     print(f"  converged in {it} iterations ({time.time() - t0:.1f}s), "
@@ -291,6 +387,8 @@ class SimpleSolver:
                                           m.interp_skew(self.U[:, 1], self.gU[1])], m.Sf)
         if self.U_n is not None:
             self.U_nm1, self.F_nm1, self.UfS_nm1 = self.U_n, self.F_n, self.UfS_n
+        if self.turb is not None:
+            self.turb.time_levels()
         self.U_n, self.F_n, self.UfS_n = self.U.copy(), self.F.copy(), UfS
         self.time += dt
         self.set_time_bcs(self.time)
