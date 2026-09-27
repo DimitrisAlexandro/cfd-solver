@@ -10,12 +10,18 @@ A case is a folder:
     results.vtm (+ results.vtu, results_boundary.vtp)
                                                flow fields + quality, wall Cp/Cf/y+
     wall_<patch>.csv                           wall distributions (x, y, Cp, Cf, y+)
+    results.pvd + snapshots/                   transient runs: time series (ParaView)
+    plots.png, U_mag.png, Cp.png, vorticity.png, mesh.png (+ vorticity.gif)
+                                               pictures, written automatically
     case.json                                  parameters, coefficients, run info
 
 Usage
     python case.py mesh naca --naca 0012 --out ../cases/naca0012
     python case.py run cylinder --re 40 --out ../cases/cyl_re40
-    python case.py run naca --naca 0012 --re 5000 --alpha 2 --out ../cases/n0012_re5k
+    python case.py run naca --naca 0012 --re 1000 --alpha 4 --out ../cases/n0012_re1k
+    python case.py run cylinder --re 100 --transient --dt 0.05 --t-end 150 --out ../cases/cyl100
+    (airfoils with Re < 1e5 automatically use the validated laminar mesh settings;
+     only steady, laminar flow is solved so far - turbulence comes in step C)
 """
 
 import argparse
@@ -29,10 +35,12 @@ import numpy as np
 import hybrid_mesher as hm
 from fvmesh import FVMesh
 from geometry import circle
-from io_vtk import write_vtm, write_vtp_lines, write_vtu
+from io_vtk import write_pvd, write_vtm, write_vtp_lines, write_vtu
 from postproc import flow_fields, mesh_quality, wall_data
 from simple_solver import SimpleSolver
 
+
+LAMINAR_RE = 1e5     # below this, airfoil cases use the laminar mesh settings
 
 # ----------------------------------------------------------------------
 # geometry + mesh
@@ -40,6 +48,13 @@ from simple_solver import SimpleSolver
 def build(kind, args):
     ang = math.radians(getattr(args, "alpha", 0.0))
     U_inf = (math.cos(ang), math.sin(ang))
+    if kind == "naca" and args.re < LAMINAR_RE:
+        # laminar regime: the settings validated in validate_airfoil.py
+        from validate_airfoil import airfoil_case
+        fvm, mesh, patches, U = airfoil_case(code=args.naca, re=args.re, alpha=args.alpha,
+                                             refine=args.refine, farfield=args.farfield,
+                                             verbose=True)
+        return fvm, mesh, patches, U, f"NACA {args.naca} (laminar mesh)"
     if kind == "naca":
         mesh = hm.build_mesh(naca=args.naca, n_side=args.n_side, reynolds=args.re,
                              yplus=args.yplus, alpha_deg=args.alpha,
@@ -100,8 +115,50 @@ def write_mesh(folder, fvm, mesh, patches, meta):
     return q
 
 
+def write_results(folder, s, fvm, mesh, patches, U_inf, q):
+    """Final flow fields + wall distributions (results.vtm, wall_wall.csv)."""
+    f = flow_fields(s, U_inf=np.linalg.norm(U_inf))
+    f.update(q)
+    write_vtu(folder / "results.vtu", fvm.points, mesh["cells"], cell_data=f)
+    w, coeffs = wall_data(s, "wall", U_inf)
+    names = list(patches)
+    # boundary faces are stored patch by patch in _boundary's order
+    start = {n: sum(len(patches[k]) for k in names[:i]) for i, n in enumerate(names)}
+    wall_rows = start["wall"] + np.searchsorted(fvm.patch_faces["wall"], w["face"])
+    lines, bdata, _ = _boundary(fvm, patches, extra={k: (wall_rows, w[k]) for k in
+                                                     ("Cp", "Cf", "yplus")})
+    write_vtp_lines(folder / "results_boundary.vtp", fvm.points, lines, bdata)
+    write_vtm(folder / "results.vtm", {"cells": "results.vtu", "boundary": "results_boundary.vtp"})
+    cols = ("x", "y", "side", "Cp", "Cf", "yplus", "wall_distance")
+    np.savetxt(folder / "wall_wall.csv", np.c_[tuple(w[c] for c in cols)], delimiter=",",
+               header=",".join(cols), comments="", fmt="%.8g")
+    return w, coeffs
+
+
+def export_pngs(folder, transient=False):
+    """Pictures of every finished case, saved in the case folder."""
+    try:
+        import viewer
+    except Exception as e:                     # pyvista missing: files are still complete
+        print(f"[case] PNG export skipped ({e})")
+        return
+    folder = Path(folder)
+    viewer.plots(folder, show=False, save=folder / "plots.png")
+    for field in ("U_mag", "Cp", "vorticity"):
+        v = viewer.Viewer(folder, field=field, off_screen=True,
+                          show_streamlines=(field == "U_mag" and not transient))
+        v.save(folder / f"{field}.png")
+        v.pl.close()
+    v = viewer.Viewer(folder / "mesh.vtm", field="min_angle", edges=True, off_screen=True)
+    v.save(folder / "mesh.png")
+    v.pl.close()
+    if transient and (folder / "snapshots").exists():
+        viewer.animate(folder, field="vorticity", out=folder / "vorticity.gif")
+    print(f"[case] pictures -> {folder}/*.png")
+
+
 def run_case(folder, fvm, mesh, patches, U_inf, nu, meta, tol=1e-7, max_iter=20000,
-             monitor_every=10):
+             monitor_every=10, pngs=True):
     folder = Path(folder)
     q = write_mesh(folder, fvm, mesh, patches, meta)
     print(f"[case] mesh written -> {folder / 'mesh.vtm'} (open it now to inspect)")
@@ -125,29 +182,85 @@ def run_case(folder, fvm, mesh, patches, U_inf, nu, meta, tol=1e-7, max_iter=200
     it = s.solve(tol=tol, max_iter=max_iter, verbose=True, every=200, callback=monitor)
     hist.close()
 
-    # results
-    f = flow_fields(s, U_inf=np.linalg.norm(U_inf))
-    f.update(q)
-    write_vtu(folder / "results.vtu", fvm.points, mesh["cells"], cell_data=f)
-    w, coeffs = wall_data(s, "wall", U_inf)
-    lines, bdata, names = _boundary(fvm, patches)
-    # boundary faces are stored patch by patch in _boundary's order
-    start = {n: sum(len(patches[k]) for k in names[:i]) for i, n in enumerate(names)}
-    wall_rows = start["wall"] + np.searchsorted(fvm.patch_faces["wall"], w["face"])
-    lines, bdata, _ = _boundary(fvm, patches, extra={k: (wall_rows, w[k]) for k in
-                                                     ("Cp", "Cf", "yplus")})
-    write_vtp_lines(folder / "results_boundary.vtp", fvm.points, lines, bdata)
-    write_vtm(folder / "results.vtm", {"cells": "results.vtu", "boundary": "results_boundary.vtp"})
-    cols = ("x", "y", "side", "Cp", "Cf", "yplus", "wall_distance")
-    np.savetxt(folder / "wall_wall.csv", np.c_[tuple(w[c] for c in cols)], delimiter=",",
-               header=",".join(cols), comments="", fmt="%.8g")
+    w, coeffs = write_results(folder, s, fvm, mesh, patches, U_inf, q)
     meta.update(iterations=it, converged=bool(s.converged), runtime_s=round(time.time() - t0, 1),
                 coefficients={k: float(v) for k, v in coeffs.items()},
                 yplus_max=float(w["yplus"].max()), yplus_mean=float(w["yplus"].mean()))
     (folder / "case.json").write_text(json.dumps(meta, indent=2))
     print(f"[case] results -> {folder / 'results.vtm'}  Cd={coeffs['Cd']:.4f} Cl={coeffs['Cl']:.4f}  "
           f"y+ max {w['yplus'].max():.2f}")
+    if pngs:
+        export_pngs(folder)
     return s, coeffs
+
+
+def run_transient(folder, fvm, mesh, patches, U_inf, nu, meta, dt, t_end, write_every=1.0,
+                  kick=False, max_outer=20, tol=1e-5, pngs=True):
+    """Time-accurate run (BDF2 + outer iterations per step).
+    history.csv: one row per time step. snapshots/: fields every write_every
+    time units, tied together by results.pvd (ParaView: open it, press play).
+    kick: spin the body briefly early on (t = 2..6) to trigger vortex shedding
+    from a symmetric start, like a small physical disturbance."""
+    from validate_unsteady import shedding_stats
+    folder = Path(folder)
+    q = write_mesh(folder, fvm, mesh, patches, meta)
+    print(f"[case] mesh written -> {folder / 'mesh.vtm'}")
+    wall_U = (0.0, 0.0)
+    if kick:
+        P = fvm.points
+        cx, cy = P[np.unique(patches["wall"])].mean(0)
+
+        def wall_U(x, y, t):
+            if 2.0 <= t <= 6.0:
+                return np.c_[-0.5 * (y - cy), 0.5 * (x - cx)]
+            return np.zeros((len(x), 2))
+    bcs = {"wall": {"type": "wall", "U": wall_U}, "inlet": {"type": "inlet", "U": U_inf},
+           "outlet": {"type": "outlet"}}
+    s = SimpleSolver(fvm, bcs, nu, U0=U_inf, alpha_u=0.9)
+    snap_dir = folder / "snapshots"
+    snap_dir.mkdir(exist_ok=True)
+    for old in snap_dir.glob("*.vtu"):
+        old.unlink()
+    hist = open(folder / "history.csv", "w", buffering=1)
+    hist.write("step,time,outer,cont,Ux,Uy,Cd,Cl,time_s\n")
+    t0 = time.time()
+    entries, T, CD, CL = [], [], [], []
+    nsteps = int(round(t_end / dt))
+    next_write = write_every
+    for i in range(1, nsteps + 1):
+        k, r = s.advance(dt, max_outer=max_outer, tol=tol)
+        _, c = wall_data(s, "wall", U_inf)
+        T.append(s.time); CD.append(c["Cd"]); CL.append(c["Cl"])
+        hist.write(f"{i},{s.time:.6g},{k},{r['cont']:.3e},{r['Ux']:.3e},{r['Uy']:.3e},"
+                   f"{c['Cd']:.8g},{c['Cl']:.8g},{time.time() - t0:.1f}\n")
+        if s.time >= next_write - 0.5 * dt:
+            name = f"snapshots/fields_{len(entries):05d}.vtu"
+            write_vtu(folder / name, fvm.points, mesh["cells"],
+                      cell_data=flow_fields(s, U_inf=np.linalg.norm(U_inf)))
+            entries.append((s.time, name))
+            write_pvd(folder / "results.pvd", entries)
+            next_write += write_every
+        if i % 200 == 0 or i == 1:
+            print(f"  step {i:6d}  t {s.time:8.3f}  outer {k:2d}  Cd {c['Cd']:.4f}  "
+                  f"Cl {c['Cl']:+.4f}  ({time.time() - t0:.0f}s)", flush=True)
+    hist.close()
+    w, coeffs = write_results(folder, s, fvm, mesh, patches, U_inf, q)
+    st = shedding_stats(np.array(T), np.array(CD), np.array(CL))
+    meta.update(transient={"dt": dt, "t_end": t_end, "steps": nsteps, "snapshots": len(entries),
+                           "kick": kick}, runtime_s=round(time.time() - t0, 1),
+                coefficients_final={k: float(v) for k, v in coeffs.items()},
+                shedding={k: v for k, v in st.items()},
+                yplus_max=float(w["yplus"].max()))
+    (folder / "case.json").write_text(json.dumps(meta, indent=2))
+    if st["St"] is not None:
+        print(f"[case] shedding: Strouhal {st['St']:.4f}, mean Cd {st['Cd_mean']:.4f}, "
+              f"Cl amplitude {st['Cl_amp']:.4f}")
+    else:
+        print(f"[case] no periodic shedding detected ({st['periods']} lift up-crossings)")
+    print(f"[case] snapshots -> {folder / 'results.pvd'} ({len(entries)} frames)")
+    if pngs:
+        export_pngs(folder, transient=True)
+    return s, st
 
 
 # ----------------------------------------------------------------------
@@ -164,14 +277,23 @@ def main(argv=None):
     ap.add_argument("--yplus", type=float, default=1.0)
     ap.add_argument("--alpha", type=float, default=0.0, help="angle of attack (deg)")
     ap.add_argument("--farfield", type=float, default=None, help="farfield radius")
-    ap.add_argument("--refine", type=float, default=1.0, help="cylinder mesh refinement")
+    ap.add_argument("--refine", type=float, default=1.0,
+                    help="mesh refinement factor (cylinder, and laminar airfoils)")
     ap.add_argument("--tol", type=float, default=1e-7)
     ap.add_argument("--max-iter", type=int, default=20000)
+    ap.add_argument("--transient", action="store_true", help="time-accurate (unsteady) run")
+    ap.add_argument("--dt", type=float, default=0.05, help="time step (units of L/U)")
+    ap.add_argument("--t-end", type=float, default=100.0, help="end time (units of L/U)")
+    ap.add_argument("--write-every", type=float, default=1.0,
+                    help="snapshot interval in time units (transient)")
+    ap.add_argument("--no-kick", action="store_true",
+                    help="transient cylinder: do not spin it briefly to trigger shedding")
+    ap.add_argument("--no-png", action="store_true", help="skip the automatic pictures")
     a = ap.parse_args(argv)
     if a.re is None:
         a.re = 1e6 if a.kind == "naca" else 40.0
     if a.farfield is None:
-        a.farfield = 20.0 if a.kind == "naca" else 60.0
+        a.farfield = (40.0 if a.re < LAMINAR_RE else 20.0) if a.kind == "naca" else 60.0
 
     fvm, mesh, patches, U_inf, label = build(a.kind, a)
     meta = {"case": label, "kind": a.kind, "Re": a.re, "alpha_deg": a.alpha,
@@ -181,9 +303,13 @@ def main(argv=None):
     if a.action == "mesh":
         write_mesh(a.out, fvm, mesh, patches, meta)
         print(f"[case] mesh written -> {Path(a.out) / 'mesh.vtm'}")
+    elif a.transient:
+        run_transient(a.out, fvm, mesh, patches, U_inf, 1.0 / a.re, meta, dt=a.dt,
+                      t_end=a.t_end, write_every=a.write_every,
+                      kick=(a.kind == "cylinder" and not a.no_kick), pngs=not a.no_png)
     else:
         run_case(a.out, fvm, mesh, patches, U_inf, 1.0 / a.re, meta, tol=a.tol,
-                 max_iter=a.max_iter)
+                 max_iter=a.max_iter, pngs=not a.no_png)
 
 
 if __name__ == "__main__":

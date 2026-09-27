@@ -21,9 +21,19 @@ Boundary conditions, per patch:
   {'type': 'outlet'}                     zero-gradient U, fixed p = 0
 If there is no outlet, pressure is pinned in one cell (cavity).
 
+Time-accurate (unsteady) mode: call advance(dt) instead of solve().
+  * BDF2 (second order, implicit); the very first step is backward Euler
+  * PIMPLE-style: each time step runs outer SIMPLEC iterations until the
+    residuals drop below tol, so the solution is time-accurate at every step
+  * transient Rhie-Chow correction (Choi 1999): the answer does not depend
+    on the time step through the pressure-smoothing term
+  * time-dependent boundary values: 'U': f(x, y, t) -> (n,2)
+
 Linear systems are solved with SciPy's sparse direct solver (SuperLU):
 writing a competitive sparse linear solver is its own project.
 """
+
+import inspect
 
 import time
 
@@ -49,12 +59,17 @@ class SimpleSolver:
         self.b_fixedU = np.zeros(nb, bool)
         self.b_outlet = np.zeros(nb, bool)
         self.Ub = np.zeros((nb, 2))
+        self._time_bcs = []                    # (face indices, f(x, y, t))
         for name, bc in bcs.items():
             idx = m.patch_faces[name]
             if bc['type'] in ('wall', 'inlet'):
                 self.b_fixedU[idx] = True
                 U = bc.get('U', (0.0, 0.0))
-                self.Ub[idx] = U(m.bxf[idx, 0], m.bxf[idx, 1]) if callable(U) else U
+                if callable(U) and len(inspect.signature(U).parameters) == 3:
+                    self._time_bcs.append((idx, U))
+                    self.Ub[idx] = U(m.bxf[idx, 0], m.bxf[idx, 1], 0.0)
+                else:
+                    self.Ub[idx] = U(m.bxf[idx, 0], m.bxf[idx, 1]) if callable(U) else U
             elif bc['type'] == 'outlet':
                 self.b_outlet[idx] = True
             else:
@@ -74,6 +89,13 @@ class SimpleSolver:
         self.gradp = np.zeros((n, 2))
         self.gU = [np.zeros((n, 2)), np.zeros((n, 2))]
         self.history = []
+        # transient state (inactive until advance() is called)
+        self.dt = None
+        self.time = 0.0
+        self.step = 0
+        self.U_n = self.U_nm1 = None           # velocity at time levels n, n-1
+        self.F_n = self.F_nm1 = None           # face fluxes at n, n-1
+        self.UfS_n = self.UfS_nm1 = None       # interpolated face velocity . S at n, n-1
 
     # ------------------------------------------------------------------
     def _boundary_values(self):
@@ -134,7 +156,12 @@ class SimpleSolver:
                 s -= m.sum_to_cells(corr)
             src[:, k] += s
 
-        a0 = diag.copy()
+        if self.dt is not None:                # BDF2 (Euler on the first step)
+            c1, c2, c3 = (1.0, 1.0, 0.0) if self.U_nm1 is None else (1.5, 2.0, 0.5)
+            diag += c1 * m.vol / self.dt
+            Uold = c2 * self.U_n - (c3 * self.U_nm1 if c3 else 0.0)
+            src += (m.vol / self.dt)[:, None] * Uold
+
         diag = diag / self.au
         src += ((1 - self.au) * diag)[:, None] * self.U
         A = sp.csc_matrix((np.r_[diag, a_on, a_no], (np.r_[np.arange(n), own, nei],
@@ -158,6 +185,14 @@ class SimpleSolver:
                               np.einsum('ij,ij->i', gp_f, m.Delta))
         Fstar += (1 - self.au) * (self.F - self.Ubar_S_old)  # Majumdar correction
         self.Ubar_S_old = UbarS
+        if self.dt is not None:
+            # transient Rhie-Chow correction: old-time contributions use the old
+            # FACE fluxes, not interpolated cell velocities (Choi 1999)
+            if self.U_nm1 is None:
+                old = self.F_n - self.UfS_n
+            else:
+                old = (2.0 * self.F_n - 0.5 * self.F_nm1) - (2.0 * self.UfS_n - 0.5 * self.UfS_nm1)
+            Fstar += Df / self.dt * old
 
         Fbstar = np.einsum('ij,ij->i', Ub, m.bSf)
         # pressure-correction coefficient: SIMPLE uses V/a_P, SIMPLEC uses
@@ -237,6 +272,34 @@ class SimpleSolver:
         if verbose:
             print(f"  NOT converged after {max_iter} iterations: {r}")
         return max_iter
+
+    # ------------------------------------------------------------------
+    # unsteady time stepping
+    # ------------------------------------------------------------------
+    def set_time_bcs(self, t):
+        m = self.m
+        for idx, f in self._time_bcs:
+            self.Ub[idx] = f(m.bxf[idx, 0], m.bxf[idx, 1], t)
+
+    def advance(self, dt, max_outer=30, tol=1e-6):
+        """One implicit time step of size dt. Returns (outer iterations, residuals)."""
+        m = self.m
+        if self.dt is not None and abs(dt - self.dt) > 1e-12 * dt:
+            self.U_nm1 = self.F_nm1 = self.UfS_nm1 = None   # BDF2 needs a constant dt
+        self.dt = dt
+        UfS = np.einsum('ij,ij->i', np.c_[m.interp_skew(self.U[:, 0], self.gU[0]),
+                                          m.interp_skew(self.U[:, 1], self.gU[1])], m.Sf)
+        if self.U_n is not None:
+            self.U_nm1, self.F_nm1, self.UfS_nm1 = self.U_n, self.F_n, self.UfS_n
+        self.U_n, self.F_n, self.UfS_n = self.U.copy(), self.F.copy(), UfS
+        self.time += dt
+        self.set_time_bcs(self.time)
+        for k in range(1, max_outer + 1):
+            r = self.iterate()
+            if max(r.values()) < tol:
+                break
+        self.step += 1
+        return k, r
 
     # ------------------------------------------------------------------
     # post-processing

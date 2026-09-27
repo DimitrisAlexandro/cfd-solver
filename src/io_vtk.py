@@ -112,3 +112,13 @@ def write_vtm(path, blocks):
         s += f'<DataSet index="{i}" name="{name}" file="{f}"/>\n'
     s += "</vtkMultiBlockDataSet>\n</VTKFile>\n"
     Path(path).write_text(s)
+
+
+def write_pvd(path, entries):
+    """ParaView time-series collection. entries: [(time, relative file), ...].
+    Open the .pvd in ParaView and press play to animate."""
+    s = ('<?xml version="1.0"?>\n<VTKFile type="Collection" version="0.1">\n<Collection>\n')
+    for t, f in entries:
+        s += f'<DataSet timestep="{t:.6g}" group="" part="0" file="{f}"/>\n'
+    s += "</Collection>\n</VTKFile>\n"
+    Path(path).write_text(s)

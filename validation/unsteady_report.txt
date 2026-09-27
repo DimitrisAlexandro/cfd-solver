@@ -1,0 +1,14 @@
+TAYLOR-GREEN VORTEX (48x48 quads, t = 2):
+  dt  0.400   time error 4.503e-04   (error vs exact 1.406e-03)
+  dt  0.200   time error 1.131e-04   order 1.99   (error vs exact 1.426e-03)
+  dt  0.100   time error 2.826e-05   order 2.00   (error vs exact 1.444e-03)
+  dt  0.050   time error 7.062e-06   order 2.00   (error vs exact 1.449e-03)
+CYLINDER Re = 100 (vortex shedding):
+  refine x0.7  dt 0.05  (  8649 cells): St 0.1616   Cd mean 1.3123 (+-0.0089)   Cl amp 0.3141
+  refine x0.7  dt 0.1   (  8649 cells): St 0.1611   Cd mean 1.3121 (+-0.0088)   Cl amp 0.3132
+  refine x1    dt 0.05  ( 17152 cells): St 0.1630   Cd mean 1.3211 (+-0.0091)   Cl amp 0.3199
+  Richardson estimate (2 meshes, assumed order 2 - indicative only): St 0.1645   Cd mean 1.3295   Cl amp 0.3255
+  time-step effect (dt 0.1 -> 0.05): St 0.28 %, Cd 0.02 %, Cl amp 0.29 %
+  reference Strouhal     : Williamson 1996 (exp. fit) 0.164, Park et al. 1998 0.165, Liu et al. 1998 0.164
+  reference mean Cd      : Park et al. 1998 1.33, Liu et al. 1998 1.35
+  reference Cl amplitude : Park et al. 1998 0.33, Liu et al. 1998 0.339
