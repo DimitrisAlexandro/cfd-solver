@@ -1,0 +1,42 @@
+{
+  "case": "NACA 0012",
+  "kind": "naca",
+  "Re": 6000000.0,
+  "alpha_deg": 10.0,
+  "U_inf": [
+    0.984807753012208,
+    0.17364817766693033
+  ],
+  "nu": 1.6666666666666668e-07,
+  "ref_length": 1.0,
+  "bcs": {
+    "wall": "no-slip wall",
+    "inlet": "U_inf + point-vortex correction (Gamma = Cl U c / 2)",
+    "outlet": "zero-gradient U, p = 0"
+  },
+  "turbulence": "Spalart-Allmaras (SA-noft2), nuTilde_inf = 3 nu",
+  "patches": [
+    "wall",
+    "inlet",
+    "outlet"
+  ],
+  "n_cells": 29206,
+  "n_bl_cells": 19140,
+  "quality": {
+    "min_angle_min": 25.00869255178417,
+    "nonorth_max": 44.90409058665239,
+    "size_ratio_max_core": 6.075534500119592
+  },
+  "iterations": 1384,
+  "converged": true,
+  "runtime_s": 673.9,
+  "coefficients": {
+    "Cd": 0.012104927060581309,
+    "Cl": 1.0891581951074532,
+    "Cd_pressure": 0.005812654146087699,
+    "Cd_viscous": 0.0062922729144936195
+  },
+  "yplus_max": 1.1878534913680707,
+  "yplus_mean": 0.39138548873859536,
+  "nut_ratio_max": 807.2989612243375
+}

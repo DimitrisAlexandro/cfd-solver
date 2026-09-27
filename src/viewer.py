@@ -48,10 +48,14 @@ FIELD_STYLE = {
     "p": ("RdBu_r", "sym", None),
     "vorticity": ("RdBu_r", "sym", None),
     "continuity_error": ("RdBu_r", "sym", "abs"),
+    "nut_ratio": ("magma", None, None),
+    "nut": ("magma", None, None),
+    "nuTilde": ("magma", None, None),
+    "wall_distance": ("viridis", None, None),
 }
 MESH_FIELDS_FIRST = ["min_angle", "nonorthogonality", "size_ratio", "aspect_ratio"]
 VIEW_KEYS = {"full": "1", "near": "2", "le": "3", "te": "4", "wake": "5"}
-FLOW_FIELDS_FIRST = ["U_mag", "Cp", "vorticity", "p"]
+FLOW_FIELDS_FIRST = ["U_mag", "Cp", "vorticity", "p", "nut_ratio"]
 
 
 # ----------------------------------------------------------------------
@@ -408,8 +412,9 @@ def plots(folder, show=True, save=None):
     else:
         fig, ax = plt.subplots(2, 2, figsize=(13, 8.5))
         if h is not None:
-            for k in ("cont", "Ux", "Uy"):
-                ax[0, 0].semilogy(h["iteration"], h[k], label=k)
+            for k in ("cont", "Ux", "Uy", "nuT"):
+                if k in h.dtype.names:
+                    ax[0, 0].semilogy(h["iteration"], h[k], label=k)
             ax[0, 0].set_title("Residuals"); ax[0, 0].set_xlabel("iteration"); ax[0, 0].legend()
             ax[0, 0].grid(alpha=.3, which="both")
             ok = np.isfinite(h["Cd"])
@@ -453,8 +458,9 @@ def monitor(folder, interval=2.0):
         x = h["time"] if "time" in h.dtype.names else h["iteration"]
         xl = "time" if "time" in h.dtype.names else "iteration"
         a1.cla(); a2.cla()
-        for k in ("cont", "Ux", "Uy"):
-            a1.semilogy(x, h[k], label=k)
+        for k in ("cont", "Ux", "Uy", "nuT"):
+            if k in h.dtype.names:
+                a1.semilogy(x, h[k], label=k)
         a1.set_title(f"Residuals ({xl} {x[-1]:.6g})"); a1.legend(); a1.set_xlabel(xl)
         a1.grid(alpha=.3, which="both")
         ok = np.isfinite(h["Cd"])

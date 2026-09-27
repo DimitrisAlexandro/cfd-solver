@@ -55,10 +55,16 @@ def flow_fields(solver, U_inf=1.0, p_inf=0.0):
     U, p = solver.U, solver.p
     gu, gv = solver.gU
     q = 0.5 * U_inf ** 2
-    return {"U": U.copy(), "U_mag": np.linalg.norm(U, axis=1), "p": p.copy(),
-            "Cp": (p - p_inf) / q,
-            "vorticity": gv[:, 0] - gu[:, 1],
-            "continuity_error": m.sum_to_cells(solver.F, solver.Fb) / m.vol}
+    f = {"U": U.copy(), "U_mag": np.linalg.norm(U, axis=1), "p": p.copy(),
+         "Cp": (p - p_inf) / q,
+         "vorticity": gv[:, 0] - gu[:, 1],
+         "continuity_error": m.sum_to_cells(solver.F, solver.Fb) / m.vol}
+    turb = getattr(solver, "turb", None)
+    if turb is not None:                       # Spalart-Allmaras
+        nut = turb.nu_t()
+        f.update(nut=nut, nut_ratio=nut / solver.nu, nuTilde=turb.nuT.copy(),
+                 wall_distance=turb.d.copy())
+    return f
 
 
 # ----------------------------------------------------------------------

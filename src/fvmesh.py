@@ -17,6 +17,7 @@ class FVMesh:
         P = np.asarray(points, float)
         self.points = P
         self.ncells = len(cells)
+        self.nverts = np.array([len(c) for c in cells])       # 3 = triangle, 4 = quad
 
         # cell areas / centroids (polygon formula)
         self.vol = np.empty(self.ncells)
