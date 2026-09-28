@@ -45,11 +45,17 @@ import numpy as np
 import scipy.sparse as sp
 from scipy.sparse.linalg import splu
 
+from linsolve import LinearSolver, csr
+
+# "iterative" (Gauss-Seidel + algebraic multigrid, step D) or "direct" (sparse LU)
+DEFAULT_LINEAR_SOLVER = "iterative"
+
 
 class SimpleSolver:
-    def __init__(self, mesh, bcs, nu, alpha_u=0.8, alpha_p=None, second_order=True,
+    def __init__(self, mesh, bcs, nu, alpha_u=0.9, alpha_p=None, second_order=True,
                  U0=(0.0, 0.0), simplec=True, turbulence=None, nut_inf_ratio=3.0,
-                 alpha_turb=0.8, limiter="auto", limiter_eps=0.1, limiter_cells="tri"):
+                 alpha_turb=0.9, limiter="auto", limiter_eps=0.1, limiter_cells="tri",
+                 linear_solver=None):
         """limiter: gradient limiter of the linear-upwind convection
         (deferred correction): None or "venkat" (Venkatakrishnan). "auto" =
         "venkat" for turbulent runs (high Re: no physical viscosity outside
@@ -64,6 +70,7 @@ class SimpleSolver:
         threshold shrinks with the cell size and clipped the suction peak on
         fine grids (NACA 0012 alpha 10: Cd rose with refinement)."""
         self.m, self.nu = mesh, nu
+        self.lin = LinearSolver(linear_solver or DEFAULT_LINEAR_SOLVER)
         self.limiter = ("venkat" if turbulence else None) if limiter == "auto" else limiter
         self.limiter_eps = limiter_eps
         # cells where the limiter acts (None = all)
@@ -225,15 +232,15 @@ class SimpleSolver:
 
         diag = diag / self.au
         src += ((1 - self.au) * diag)[:, None] * self.U
-        A = sp.csc_matrix((np.r_[diag, a_on, a_no], (np.r_[np.arange(n), own, nei],
-                                                     np.r_[np.arange(n), nei, own])), (n, n))
-        lu = splu(A)
+        A = csr(np.r_[diag, a_on, a_no], np.r_[np.arange(n), own, nei],
+                np.r_[np.arange(n), nei, own], n)
         # momentum residual (before solving), normalised
         # (both components normalised by |U|: a component that is ~0
         #  everywhere would otherwise look unconverged forever)
         scale = max((diag * np.linalg.norm(self.U, axis=1)).sum(), 1e-30)
         resU = [np.abs(A @ self.U[:, k] - src[:, k]).sum() / scale for k in range(2)]
-        Ustar = np.c_[lu.solve(src[:, 0]), lu.solve(src[:, 1])]
+        Ustar = np.c_[tuple(self.lin.scalars(A, [src[:, 0], src[:, 1]],
+                                             [self.U[:, 0], self.U[:, 1]]))]
 
         # ---- Rhie-Chow face fluxes -------------------------------------------
         Dp = m.vol / diag                                   # V / a_P (relaxed)
@@ -292,8 +299,8 @@ class SimpleSolver:
             keep = ~(((rows == 0) | (cols == 0)) & (rows != cols))
             rows, cols, vals = rows[keep], cols[keep], vals[keep]
             rhs[0] = 0.0
-        Ap = sp.csc_matrix((vals, (rows, cols)), (n, n))
-        pc = splu(Ap).solve(rhs)
+        Ap = csr(vals, rows, cols, n)
+        pc = self.lin.pressure(Ap, rhs)
 
         # ---- corrections -------------------------------------------------------
         self.F = Fstar - cf * (pc[nei] - pc[own])
@@ -348,13 +355,18 @@ class SimpleSolver:
 
     def solve(self, tol=1e-6, max_iter=5000, verbose=True, every=100, callback=None):
         """callback(it, residuals) is called after every iteration (monitoring,
-        live history files). Sets self.converged."""
+        live history files); if it returns True the run counts as converged
+        and stops (e.g. force-based convergence). Sets self.converged."""
         t0 = time.time()
         self.converged = False
         for it in range(1, max_iter + 1):
             r = self.iterate()
-            if callback is not None:
-                callback(it, r)
+            if callback is not None and callback(it, r) is True:
+                if verbose:
+                    print(f"  converged (callback criterion) in {it} iterations "
+                          f"({time.time() - t0:.1f}s)")
+                self.converged = True
+                return it
             if verbose and (it % every == 0 or it == 1):
                 extra = f"  nuT {r['nuT']:.2e}" if "nuT" in r else ""
                 print(f"  it {it:5d}  cont {r['cont']:.2e}  Ux {r['Ux']:.2e}  "
@@ -416,6 +428,29 @@ class SimpleSolver:
         du_t = du - np.einsum('ij,ij->i', du, n_out)[:, None] * n_out
         tau = self.nu * du_t / np.abs(dn)[:, None]     # shear stress vector on wall (x|S|)
         return idx, pb, tau, S, Smag
+
+    def set_initial(self, U, p=None, nuTilde=None):
+        """Start from given cell fields (e.g. the solution at a neighbouring
+        angle of attack, interpolated): sets U, p (and SA nuTilde) and the
+        face fluxes consistent with them."""
+        m = self.m
+        self.U = np.array(U, float)
+        if p is not None:
+            self.p = np.array(p, float)
+        self.F = np.einsum('ij,ij->i', m.interp(self.U), m.Sf)
+        self.Fb = np.einsum('ij,ij->i', np.where(self.b_fixedU[:, None], self.Ub,
+                                                 self.U[m.bcell]), m.bSf)
+        self.Ubar_S_old = self.F.copy()
+        if nuTilde is not None and self.turb is not None:
+            self.turb.nuT = np.maximum(np.array(nuTilde, float), 0.0)
+
+    def moment(self, patch, ref=(0.25, 0.0)):
+        """z-moment (counter-clockwise positive) of the fluid force on the
+        patch about the point ref, per unit depth."""
+        idx, pb, tau, S, Smag = self.wall_values(patch)
+        F = pb[:, None] * S + tau * Smag[:, None]
+        r = self.m.bxf[idx] - np.asarray(ref, float)
+        return float((r[:, 0] * F[:, 1] - r[:, 1] * F[:, 0]).sum())
 
     def force(self, patch):
         """Force of the fluid on the patch (per unit depth): (pressure, viscous)."""

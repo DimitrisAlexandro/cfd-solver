@@ -26,7 +26,9 @@ Discretisation (finite volume, same mesh / face fluxes as the flow solver):
 
 import numpy as np
 import scipy.sparse as sp
-from scipy.sparse.linalg import splu
+from scipy.sparse.linalg import splu  # noqa: F401  (kept for reference)
+
+from linsolve import csr
 
 CB1, CB2, SIGMA, KAPPA = 0.1355, 0.622, 2.0 / 3.0, 0.41
 CV1, CW2, CW3 = 7.1, 0.3, 2.0
@@ -174,8 +176,8 @@ class SpalartAllmaras:
         # under-relaxation
         diag_r = diag / self.alpha
         src = src + (1 - self.alpha) * diag_r * nuT
-        A = sp.csc_matrix((np.r_[diag_r, a_on, a_no], (np.r_[np.arange(n), own, nei],
-                                                       np.r_[np.arange(n), nei, own])), (n, n))
+        A = csr(np.r_[diag_r, a_on, a_no], np.r_[np.arange(n), own, nei],
+                np.r_[np.arange(n), nei, own], n)
         res = np.abs(A @ nuT - src).sum() / max(np.abs(diag_r * nuT).sum(), 1e-30)
-        self.nuT = np.maximum(splu(A).solve(src), 0.0)
+        self.nuT = np.maximum(s.lin.scalar(A, src, nuT), 0.0)
         return res

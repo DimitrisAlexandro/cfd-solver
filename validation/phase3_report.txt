@@ -1,0 +1,15 @@
+NACA 0012 (TMR), Re 6e6, SA fully turbulent - 11 angles, 29180 cells each; references at M = 0.15, PG = Prandtl-Glauert corrected (x1.0114)
+
+  vs NASA CFL3D SA (897x257):
+    alpha    0: Cl  -0.0001 (PG -0.0001) vs  -0.0000   Cd 0.00830 vs 0.00819 (+1.3 %)
+    alpha   10: Cl   1.0776 (PG 1.0899) vs   1.0909   Cd 0.01197 vs 0.01231 (-2.8 %)
+  vs NASA grid-converged SA, alpha 10: Cl 1.0776 (-1.2 %; PG 1.0899, -0.1 %) vs 1.0912;  Cd 0.01197 vs 0.01221 (-2.0 %);  Cm +0.00635 (PG +0.00642) vs +0.00678
+  lift slope (-4..8 deg): 6.299 /rad (PG 6.371) vs Ladson 80 grit 6.218 /rad (+2.4 % after PG)
+
+NACA 2412, Re 3e6, SA fully turbulent vs XFOIL tripped at x/c 0.01 (both turbulent from the LE: compare at low alpha):
+    alpha  -4: Cl -0.2199 vs -0.2224   Cd 0.00958 vs 0.00956 (+0.2 %)   Cm -0.0491 vs -0.0491
+    alpha  -2: Cl  0.0014 vs  0.0041   Cd 0.00938 vs 0.00927 (+1.2 %)   Cm -0.0485 vs -0.0493
+    alpha   0: Cl  0.2224 vs  0.2305   Cd 0.00946 vs 0.00929 (+1.9 %)   Cm -0.0479 vs -0.0495
+    alpha   2: Cl  0.4421 vs  0.4557   Cd 0.00977 vs 0.00960 (+1.7 %)   Cm -0.0471 vs -0.0496
+    alpha   4: Cl  0.6595 vs  0.6779   Cd 0.01039 vs 0.01022 (+1.7 %)   Cm -0.0461 vs -0.0493
+  zero-lift angle -2.01 deg (thin-airfoil theory for NACA 2412: -2.08 deg)

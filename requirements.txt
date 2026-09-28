@@ -3,3 +3,5 @@ scipy
 matplotlib
 pyvista
 pytest
+pyamg
+threadpoolctl

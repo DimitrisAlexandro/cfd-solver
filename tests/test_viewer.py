@@ -46,7 +46,9 @@ def test_case_files(cyl_case):
     g = pv.read(cyl_case / "results.vtu")
     for k in ("U", "Cp", "vorticity", "min_angle", "nonorthogonality"):
         assert k in g.cell_data
-    assert np.abs(g.cell_data["continuity_error"]).max() < 1e-10
+    # per-cell mass imbalance (units U/L); the iterative pressure solver (step D)
+    # leaves ~1e-8 at convergence (the exact LU gave ~1e-13)
+    assert np.abs(g.cell_data["continuity_error"]).max() < 1e-7
     h = np.genfromtxt(cyl_case / "history.csv", delimiter=",", names=True)
     assert h["iteration"][-1] == meta["iterations"]
 

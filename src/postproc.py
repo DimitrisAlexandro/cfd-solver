@@ -87,7 +87,10 @@ def wall_data(solver, patch, U_inf=(1.0, 0.0), p_inf=0.0, ref_length=1.0):
     lift_dir = np.array([-drag_dir[1], drag_dir[0]])
     coeffs = {"Cd": F @ drag_dir / (q * ref_length), "Cl": F @ lift_dir / (q * ref_length),
               "Cd_pressure": Fp @ drag_dir / (q * ref_length),
-              "Cd_viscous": Fv @ drag_dir / (q * ref_length)}
+              "Cd_viscous": Fv @ drag_dir / (q * ref_length),
+              # pitching moment about the quarter chord, nose-up positive
+              # (nose-up = clockwise = negative z-moment for flow in +x)
+              "Cm": -solver.moment(patch, (0.25 * ref_length, 0.0)) / (q * ref_length**2)}
     return {"face": idx, "x": x[:, 0], "y": x[:, 1],
             "side": np.where(n_body[:, 1] >= 0, 1, -1),      # +1 upper, -1 lower
             "Cp": (pb - p_inf) / q, "Cf": sign * tau_mag / q,
