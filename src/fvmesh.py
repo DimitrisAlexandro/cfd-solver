@@ -110,18 +110,41 @@ class FVMesh:
         np.add.at(M, self.bcell, wb[:, None, None] * np.einsum('ij,ik->ijk', self.db, self.db))
         self.Minv = np.linalg.inv(M)
         self.lsq_wi, self.lsq_wb = wi, wb
+        self._build_operators()
+
+    def _build_operators(self):
+        """Step D: interpolation, LSQ gradient and face->cell summation as
+        precomputed sparse matrices (one compiled mat-vec each instead of
+        several gathers / bincounts). Same arithmetic up to round-off."""
+        import scipy.sparse as sp
+        n, nf, nb = self.ncells, len(self.own), len(self.bcell)
+        own, nei, bc = self.own, self.nei, self.bcell
+        fi = np.arange(nf)
+        self._W = sp.csr_matrix((np.r_[self.w, 1 - self.w], (np.r_[fi, fi], np.r_[own, nei])),
+                                (nf, n))
+        self._S = sp.csr_matrix((np.r_[np.ones(nf), -np.ones(nf)], (np.r_[own, nei], np.r_[fi, fi])),
+                                (n, nf))
+        self._Sb = sp.csr_matrix((np.ones(nb), (bc, np.arange(nb))), (n, nb))
+        # LSQ gradient: r_k = R_k phi + Rb_k phi_b ; grad = Minv r
+        R, Rb = [], []
+        for k in range(2):
+            c = self.d[:, k] * self.lsq_wi
+            cb = self.db[:, k] * self.lsq_wb
+            R.append(sp.csr_matrix((np.r_[c, -c, c, -c, -cb],
+                                    (np.r_[own, own, nei, nei, bc], np.r_[nei, own, nei, own, bc])),
+                                   (n, n)))
+            Rb.append(sp.csr_matrix((cb, (bc, np.arange(nb))), (n, nb)))
+        Mi = self.Minv
+        D = lambda v: sp.diags(v)
+        # both components stacked: rows 0..n-1 = d/dx, n..2n-1 = d/dy; columns
+        # [cells | boundary faces] so one mat-vec gives the whole gradient
+        G = [sp.hstack([D(Mi[:, k, 0]) @ R[0] + D(Mi[:, k, 1]) @ R[1],
+                        D(Mi[:, k, 0]) @ Rb[0] + D(Mi[:, k, 1]) @ Rb[1]]) for k in range(2)]
+        self._G = sp.vstack(G).tocsr()
 
     def grad(self, phi, phi_b):
-        """Cell gradients (n,2). phi: cell values, phi_b: boundary-face values."""
-        r = np.zeros((self.ncells, 2))
-        diff = (phi[self.nei] - phi[self.own]) * self.lsq_wi
-        c = self.d * diff[:, None]
-        for k in range(2):
-            r[:, k] += np.bincount(self.own, c[:, k], self.ncells)
-            r[:, k] += np.bincount(self.nei, c[:, k], self.ncells)
-            r[:, k] += np.bincount(self.bcell, self.db[:, k] * ((phi_b - phi[self.bcell]) * self.lsq_wb),
-                                   self.ncells)
-        return np.einsum('ijk,ik->ij', self.Minv, r)
+        """Least-squares cell gradients (n,2). phi: cell values, phi_b: boundary-face values."""
+        return (self._G @ np.concatenate([phi, phi_b])).reshape(2, -1).T
 
     def grad_gg(self, phi, phi_b, grad_skew=None):
         """Green-Gauss gradient: (1/V) sum_f phi_f S_f. CONSERVATIVE: summed
@@ -136,8 +159,7 @@ class FVMesh:
 
     def interp(self, phi):
         """Linear interpolation of cell values (n,) or (n,k) to internal faces."""
-        w = self.w if phi.ndim == 1 else self.w[:, None]
-        return w * phi[self.own] + (1 - w) * phi[self.nei]
+        return self._W @ phi
 
     def interp_skew(self, phi, grad):
         """Face-centre value with skewness correction; phi (n,), grad (n,2)."""
@@ -145,9 +167,9 @@ class FVMesh:
 
     def sum_to_cells(self, fint, fbnd=None):
         """Sum face quantities to cells: +owner, -neighbour (divergence form)."""
-        s = np.bincount(self.own, fint, self.ncells) - np.bincount(self.nei, fint, self.ncells)
+        s = self._S @ fint
         if fbnd is not None:
-            s += np.bincount(self.bcell, fbnd, self.ncells)
+            s += self._Sb @ fbnd
         return s
 
 

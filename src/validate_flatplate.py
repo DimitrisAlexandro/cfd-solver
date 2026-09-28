@@ -108,8 +108,7 @@ def plate_cf(s):
 
 def run(level=1.0, tol=1e-8, max_iter=20000, verbose=True):
     m = plate_mesh(level)
-    s = SimpleSolver(m, BCS, 1.0 / RE, U0=(1.0, 0.0), turbulence="sa", alpha_u=0.8,
-                     alpha_turb=0.8)
+    s = SimpleSolver(m, BCS, 1.0 / RE, U0=(1.0, 0.0), turbulence="sa")
     t0 = time.time()
     it = s.solve(tol=tol, max_iter=max_iter, verbose=verbose, every=500)
     x, cf, dx = plate_cf(s)

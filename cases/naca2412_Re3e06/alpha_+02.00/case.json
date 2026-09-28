@@ -1,0 +1,39 @@
+{
+  "case": "NACA 2412 alpha 2",
+  "kind": "naca",
+  "Re": 3000000.0,
+  "alpha_deg": 2.0,
+  "U_inf": [
+    0.9993908270190958,
+    0.03489949670250097
+  ],
+  "nu": 3.3333333333333335e-07,
+  "ref_length": 1.0,
+  "turbulence": "Spalart-Allmaras (SA-noft2)",
+  "bcs": {
+    "wall": "no-slip wall",
+    "inlet": "U_inf + point vortex",
+    "outlet": "zero-gradient U, p (Bernoulli, point vortex)"
+  },
+  "patches": [
+    "wall",
+    "inlet",
+    "outlet"
+  ],
+  "n_cells": 27496,
+  "n_bl_cells": 17490,
+  "quality": {
+    "min_angle_min": 25.015012951701124,
+    "nonorth_max": 44.41022051248112,
+    "size_ratio_max_core": 5.387106166400319
+  },
+  "iterations": 372,
+  "converged": true,
+  "coefficients": {
+    "Cl": 0.44211272319285433,
+    "Cd": 0.009770900057885692,
+    "Cm": -0.04707958561177102,
+    "Cd_p": 0.0021286469416461357,
+    "Cd_v": 0.007642253116239555
+  }
+}

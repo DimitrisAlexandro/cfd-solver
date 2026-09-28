@@ -1,0 +1,18 @@
+case       cells | s/iter direct iterative     x | wall direct iterative     x | result differences
+cavity     16384 |         0.137     0.030   4.6 |       370.5      51.8   7.2 | u_min 5.1e-05, v_max 6.2e-05, v_min 3.3e-05, y_umin 1.5e-05, x_vmax 1.3e-05, x_vmin 7.3e-07, err_u_min 9.1e-03, err_v_max 1.0e-02, err_v_min 4.4e-03
+cylinder   17152 |         0.159     0.044   3.7 |       137.5      18.8   7.3 | Cd 1.6e-05, Cd_p 5.3e-06, Cd_v 3.7e-05, L/D 1.4e-04, theta 7.3e-06, Cl 1.4e-03
+naca_sa    29249 |         0.617     0.126   4.9 |       864.9      83.4  10.4 | Cl 4.0e-06, Cd 2.2e-06
+
+Step D summary (same machine, one core each run):
+  direct    = before step D: exact sparse LU (SuperLU) for momentum, pressure, SA; relaxation 0.8
+  iterative = step D: symmetric Gauss-Seidel (momentum, SA, rtol 0.05), AMG-preconditioned CG
+              (pressure, rtol 0.01, hierarchy reused 5 iterations), BLAS pinned to 1 thread,
+              sparse-matrix interpolation / gradient / summation operators, relaxation 0.9
+  "result differences" are relative; all are at the level of the 1e-7 convergence tolerance.
+
+Remaining time per iteration, NACA 0012 SA, 29k cells (116 ms):
+  Gauss-Seidel (momentum, SA, AMG smoothing)   26 ms  23 %
+  sparse mat-vec & matrix assembly             22 ms  19 %
+  limiter                                      12 ms  11 %
+  SA source terms                               7 ms   6 %
+  other numpy face/cell operations, Python     49 ms  42 %

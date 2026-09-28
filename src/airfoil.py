@@ -1,0 +1,297 @@
+"""
+Airfoil analysis tool (Phase 3, step E3): any airfoil -> polar, one command.
+
+    python airfoil.py polar naca2412 --re 3e6 --alpha -4:16:2
+    python airfoil.py polar myfoil.dat --re 1e6 --alpha 0:12:1 --out ../cases/myfoil
+    python airfoil.py polar naca0012 --re 6e6 --alpha 0,5,10 --xfoil
+    python airfoil.py show myfoil.dat                 geometry check + picture
+
+Airfoil: naca4412 / naca23012 (NACA 4- and 5-digit), tmr0012 (NASA TMR NACA
+0012), or a coordinate file (.dat, Selig or Lednicer format). By default the
+coordinates are only translated and scaled (angle of attack measured from the
+file's x axis, as in XFOIL); --derotate puts the chord line on the x axis.
+
+Flow model: Re >= 1e5 fully turbulent Spalart-Allmaras (no transition model
+yet: step E4), Re < 1e5 laminar. Incompressible.
+
+Output folder (default ../cases/<airfoil>_Re<re>):
+    polar.csv            alpha, Cl, Cd, Cd_p, Cd_v, Cm, L/D, status, iterations ...
+    polar.png            Cl-alpha, drag polar, Cm-alpha, L/D (+ XFOIL with --xfoil)
+    distributions.png    Cp and Cf at every angle
+    report.txt           settings, table, warnings
+    geometry.png         the airfoil as meshed
+    alpha_+04.00/ ...    full fields per angle (open with viewer.py)
+    polar.json           everything above, machine-readable
+"""
+
+import argparse
+import json
+import math
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+import airfoil_geom as ag
+
+
+def parse_alpha(s):
+    """'-4:16:2' (start:stop:step, stop included) or '0,5,10'."""
+    if ":" in s:
+        a, b, st = (float(v) for v in s.split(":"))
+        n = int(round((b - a) / st)) + 1
+        return [round(a + i * st, 6) for i in range(n)]
+    return [float(v) for v in s.split(",")]
+
+
+# ----------------------------------------------------------------------
+def run_xfoil(spec, re, alphas, xtr=None, derotate=False):
+    """XFOIL on the same (normalised) coordinates. xtr=(top, bottom) forces
+    transition (0.01 ~ fully turbulent, to compare with the SA solver);
+    None = free transition (e^N, N = 9). Returns dict alpha -> (Cl, Cd, Cm)."""
+    try:
+        from xfoil import XFoil
+        from xfoil.model import Airfoil
+    except ImportError:
+        print("[xfoil] not installed - skipping the XFOIL comparison")
+        return {}
+    loop, _ = ag.load_airfoil(spec, n_side=120, derotate=derotate, n_te=2)
+    # XFOIL wants TE(upper) -> LE -> TE(lower), no base points
+    up_te = int(np.argmax(np.where(loop[:, 0] > 0.999, loop[:, 1], -1)))
+    lo_te = int(np.argmin(np.where(loop[:, 0] > 0.999, loop[:, 1], 1)))
+    pts = np.roll(loop, -up_te, axis=0)
+    k = (lo_te - up_te) % len(loop)
+    pts = pts[:k + 1]
+    xf = XFoil()
+    xf.print = False
+    xf.airfoil = Airfoil(pts[:, 0].copy(), pts[:, 1].copy())
+    xf.repanel(n_nodes=240)
+    xf.Re = re
+    xf.max_iter = 200
+    if xtr is not None:
+        xf.xtr = xtr
+    out = {}
+    for a in sorted(alphas, key=abs):
+        cl, cd, cm, cp = xf.a(a)
+        if np.isfinite(cl):
+            out[a] = (float(cl), float(cd), float(cm))
+    return out
+
+
+def apply_prandtl_glauert(res, mach):
+    """Low-speed compressibility correction of the pressure-derived
+    coefficients: C = C_incompressible / sqrt(1 - M^2) (Cl, Cm, Cd_p, Cp).
+    Friction drag is left unchanged. Valid for M below ~0.3 (no shocks)."""
+    if not 0 < mach < 0.7:
+        raise ValueError("Prandtl-Glauert correction: need 0 < M < 0.7 (and it is only "
+                         "accurate below ~0.3)")
+    b = 1.0 / math.sqrt(1 - mach**2)
+    for r in res:
+        for k in ("Cl", "Cm", "Cd_p"):
+            r[k + "_incompressible"] = r[k]
+            r[k] = r[k] * b
+        r["Cd"] = r["Cd_p"] + r["Cd_v"]
+        r["wall"]["Cp"] = (np.asarray(r["wall"]["Cp"]) * b).round(7).tolist()
+        r["mach_correction"] = f"Prandtl-Glauert M={mach:g}"
+    return res
+
+
+# ----------------------------------------------------------------------
+def plot_polar(res, path, title, xf=None):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    a = np.array([r["alpha"] for r in res])
+    cl = np.array([r["Cl"] for r in res])
+    cd = np.array([r["Cd"] for r in res])
+    cm = np.array([r["Cm"] for r in res])
+    ok = np.array([r["status"] == "converged" for r in res])
+    fig, ax = plt.subplots(2, 2, figsize=(13, 9))
+    for q, (x, y, xl, yl) in enumerate(((a, cl, "alpha (deg)", "Cl"), (cd, cl, "Cd", "Cl"),
+                                        (a, cm, "alpha (deg)", "Cm (c/4)"),
+                                        (a, cl / cd, "alpha (deg)", "L/D"))):
+        g = ax.flat[q]
+        g.plot(x, y, "-", color="C3", lw=1.2)
+        g.plot(x[ok], y[ok], "o", color="C3", ms=5, label="this solver (SA, fully turbulent)"
+               if res[0].get("turbulent", True) else "this solver (laminar)")
+        if (~ok).any():
+            g.plot(x[~ok], y[~ok], "o", mfc="none", color="C3", ms=7,
+                   label="not steady (mean of last iterations)")
+        g.set_xlabel(xl); g.set_ylabel(yl); g.grid(alpha=.3)
+    if xf:
+        for lab, d, st in xf:
+            if not d:
+                continue
+            xa = np.array(sorted(d)); v = np.array([d[k] for k in xa])
+            for g, (x, y) in zip(ax.flat, ((xa, v[:, 0]), (v[:, 1], v[:, 0]), (xa, v[:, 2]),
+                                           (xa, v[:, 0] / v[:, 1]))):
+                g.plot(x, y, st, lw=1, label=lab)
+    for g in ax.flat:
+        g.legend(fontsize=8)
+    fig.suptitle(title)
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+
+
+def plot_distributions(res, path, title):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(1, 2, figsize=(15, 5.5))
+    cmap = plt.get_cmap("viridis")
+    for i, r in enumerate(res):
+        w = {k: np.asarray(v) for k, v in r["wall"].items()}
+        c = cmap(i / max(len(res) - 1, 1))
+        for side, st in ((1, "-"), (-1, "--")):
+            m = (w["side"] == side) & (w["x"] < 0.9999)
+            ax[0].plot(w["x"][m], w["Cp"][m], st, color=c, lw=1,
+                       label=f"alpha {r['alpha']:g}" if side == 1 else None)
+            ax[1].plot(w["x"][m], w["Cf"][m], st, color=c, lw=1)
+    ax[0].invert_yaxis(); ax[0].set_title("Cp (solid: upper, dashed: lower)")
+    ax[1].set_title("Cf (negative = reversed flow)"); ax[1].axhline(0, color="k", lw=.6)
+    lim = np.percentile(np.concatenate([np.asarray(r["wall"]["Cf"]) for r in res]), [1, 99])
+    ax[1].set_ylim(min(lim[0], -0.002), lim[1] * 1.2)
+    for g in ax:
+        g.set_xlabel("x/c"); g.grid(alpha=.3)
+    ax[0].legend(fontsize=7, ncol=2)
+    fig.suptitle(title)
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+
+
+def plot_geometry(loop, info, path):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(1, 2, figsize=(15, 4), gridspec_kw={"width_ratios": [3, 1]})
+    ax[0].plot(loop[:, 0], loop[:, 1], ".-", ms=2, lw=.8)
+    ax[0].set_aspect("equal"); ax[0].grid(alpha=.3)
+    ax[0].set_title(f"{info['name']}: {len(loop)} points, t/c = {info['max_thickness']:.4f} "
+                    f"at x/c = {info['x_max_thickness']:.2f}, TE base {info['te_thickness']:.4f}")
+    m = loop[:, 0] > 0.97
+    ax[1].plot(loop[m, 0], loop[m, 1], ".-", ms=3); ax[1].set_aspect("equal")
+    ax[1].set_title("trailing edge"); ax[1].grid(alpha=.3)
+    fig.tight_layout(); fig.savefig(path, dpi=120); plt.close(fig)
+
+
+# ----------------------------------------------------------------------
+def cmd_show(a):
+    loop, info = ag.load_airfoil(a.airfoil, derotate=a.derotate)
+    out = Path(a.out or f"../cases/{_slug(a.airfoil)}")
+    out.mkdir(parents=True, exist_ok=True)
+    plot_geometry(loop, info, out / "geometry.png")
+    for k, v in info.items():
+        print(f"  {k:18s} {v}")
+    print(f"saved {out / 'geometry.png'}")
+
+
+def _slug(spec):
+    return Path(spec).stem.lower().replace(" ", "_")
+
+
+def cmd_polar(a):
+    import polar as pl
+    alphas = parse_alpha(a.alpha)
+    out = Path(a.out or f"../cases/{_slug(a.airfoil)}_Re{a.re:.0e}".replace("+", ""))
+    out.mkdir(parents=True, exist_ok=True)
+    loop, info = ag.load_airfoil(a.airfoil, derotate=a.derotate)
+    plot_geometry(loop, info, out / "geometry.png")
+    turb = a.re >= pl.LAMINAR_RE
+    print(f"[airfoil] {info['name']}  Re {a.re:.3g}  {'SA (fully turbulent)' if turb else 'laminar'}"
+          f"  alpha {alphas}  refine {a.refine}  jobs {a.jobs}")
+    t0 = time.time()
+    res = pl.polar(a.airfoil, a.re, alphas, level=a.refine, jobs=a.jobs,
+                   out=None if a.no_fields else out, max_iter=a.max_iter)
+    for r in res:
+        r["turbulent"] = turb
+    if a.mach > 0:
+        apply_prandtl_glauert(res, a.mach)
+    wall = time.time() - t0
+    xf = []
+    if a.xfoil:
+        xf.append(("XFOIL, tripped at x/c 0.01 (valid at low alpha: once the stagnation point "
+                   "moves aft the lower side stays laminar)",
+                   run_xfoil(a.airfoil, a.re, alphas, xtr=(0.01, 0.01), derotate=a.derotate), "k--"))
+        xf.append(("XFOIL, free transition (N = 9)",
+                   run_xfoil(a.airfoil, a.re, alphas, derotate=a.derotate), "k:"))
+    title = f"{info['name']}, Re = {a.re:.3g}" + (", SA fully turbulent" if turb else ", laminar") + \
+        (f", M = {a.mach:g} (Prandtl-Glauert)" if a.mach > 0 else "")
+    plot_polar(res, out / "polar.png", title, xf)
+    plot_distributions(res, out / "distributions.png", title)
+    cols = ["alpha", "Cl", "Cd", "Cd_p", "Cd_v", "Cm", "status", "iterations", "time_s",
+            "yplus_max", "cells"]
+    with open(out / "polar.csv", "w") as f:
+        f.write(",".join(cols + ["L_D", "Cl_amp", "Cd_amp"]) + "\n")
+        for r in res:
+            f.write(",".join(str(round(r[c], 7)) if isinstance(r[c], float) else str(r[c]) for c in cols)
+                    + f",{r['Cl'] / r['Cd']:.3f},{r.get('Cl_amp', 0):.5f},{r.get('Cd_amp', 0):.6f}\n")
+    lines = [f"{title}", f"source: {info['source']}   t/c {info['max_thickness']:.4f}   "
+             f"TE base {info['te_thickness']:.4f}   derotated: {info['derotated']}",
+             f"mesh level {a.refine}, {res[0]['cells']} cells per angle; wall time {wall:.0f} s "
+             f"({a.jobs} processes)", "",
+             f"{'alpha':>6s} {'Cl':>8s} {'Cd':>9s} {'Cd_p':>9s} {'Cd_v':>9s} {'Cm':>8s} {'L/D':>7s}  status"]
+    for r in res:
+        lines.append(f"{r['alpha']:6.2f} {r['Cl']:8.4f} {r['Cd']:9.5f} {r['Cd_p']:9.5f} "
+                     f"{r['Cd_v']:9.5f} {r['Cm']:+8.4f} {r['Cl'] / r['Cd']:7.1f}  {r['status']}"
+                     + (f" (Cl +-{r['Cl_amp']:.3f})" if "Cl_amp" in r else ""))
+    if a.mach > 0:
+        lines += ["", f"Cl, Cm, Cd_p and Cp corrected for M = {a.mach:g} with Prandtl-Glauert "
+                  f"(factor {1 / math.sqrt(1 - a.mach**2):.4f}); uncorrected values in polar.json "
+                  f"(*_incompressible)"]
+    if xf:
+        for lab, d, _ in xf:
+            lines += ["", lab + ":"] + [f"{k:6.2f} {v[0]:8.4f} {v[1]:9.5f} {'':9s} {'':9s} {v[2]:+8.4f}"
+                                         for k, v in sorted(d.items())]
+    warn = []
+    if turb:
+        warn.append("fully turbulent (no transition model yet): at Re below ~1e7 real airfoils "
+                    "have laminar regions, so Cd is typically overpredicted (Phase 3, step E4)")
+    if any(r["status"] != "converged" for r in res):
+        warn.append("some angles did not reach a steady state (stall / separated flow): the "
+                    "values are means over the last iterations; steady RANS is not reliable there")
+    if warn:
+        lines += ["", "notes:"] + [f"  - {w}" for w in warn]
+    (out / "report.txt").write_text("\n".join(lines) + "\n")
+    (out / "polar.json").write_text(json.dumps({"info": info, "re": a.re, "results": res,
+                                                "xfoil": {lab: {str(k): v for k, v in d.items()}
+                                                          for lab, d, _ in xf}}))
+    print("\n".join(lines[4:]))
+    print(f"[airfoil] -> {out}/  (polar.png, distributions.png, report.txt, polar.csv)")
+    return res
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("polar", help="angle-of-attack sweep")
+    p.add_argument("airfoil")
+    p.add_argument("--re", type=float, required=True)
+    p.add_argument("--alpha", default="-4:16:2", help="start:stop:step or a,b,c (deg)")
+    p.add_argument("--refine", type=float, default=1.0, help="mesh level (1 = validated)")
+    p.add_argument("--jobs", type=int, default=2, help="parallel processes")
+    p.add_argument("--max-iter", type=int, default=6000)
+    p.add_argument("--out")
+    p.add_argument("--xfoil", action="store_true", help="overlay XFOIL (tripped + free transition)")
+    p.add_argument("--no-fields", action="store_true", help="skip per-angle field files")
+    p.add_argument("--derotate", action="store_true", help="put the chord line on the x axis")
+    p.add_argument("--mach", type=float, default=0.0,
+                   help="free-stream Mach number for a Prandtl-Glauert correction of the "
+                        "pressure coefficients (Cl, Cm, Cd_p, Cp); valid below ~0.3. "
+                        "The solver itself is incompressible")
+    s = sub.add_parser("show", help="load, check and plot the geometry")
+    s.add_argument("airfoil")
+    s.add_argument("--out")
+    s.add_argument("--derotate", action="store_true")
+    argv = list(sys.argv[1:] if argv is None else argv)
+    for i in range(len(argv) - 1):          # allow "--alpha -4:16:2" (negative start)
+        if argv[i] == "--alpha" and argv[i + 1][:1] == "-":
+            argv[i:i + 2] = [f"--alpha={argv[i + 1]}", ""]
+    a = ap.parse_args([x for x in argv if x != ""])
+    return cmd_polar(a) if a.cmd == "polar" else cmd_show(a)
+
+
+if __name__ == "__main__":
+    main()
