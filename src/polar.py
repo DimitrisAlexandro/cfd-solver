@@ -102,7 +102,14 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
     Returns (result dict, state dict for the next angle)."""
     t0 = time.time()
     fvm, mesh, patches, bcs, U, turb, info = make_case(spec, re, alpha, level, farfield)
-    s = SimpleSolver(fvm, bcs, 1.0 / re, U0=U, turbulence=turb)
+    multi = info.get("multi", False)
+    # multi-element: the convection limiter acts on ALL cells during the
+    # start (the thinned/redistributed quads in the coves and slots grew
+    # wiggles from a uniform start), then only on the triangles as for a
+    # single airfoil (30P30N alpha 8: Cl 3.2146 -> 3.2156, Cd -0.5 %)
+    s = SimpleSolver(fvm, bcs, 1.0 / re, U0=U, turbulence=turb,
+                     **({"limiter_cells": "all"} if multi else {}))
+    switch = {"done": not multi}
     if init is not None:
         from scipy.spatial import cKDTree
         _, j = cKDTree(init["xc"]).query(fvm.xc)
@@ -113,7 +120,6 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
         s.set_initial(init["U"][j] @ R.T, init["p"][j],
                       init["nuT"][j] if init.get("nuT") is not None else None)
     walls = info["walls"]
-    multi = info.get("multi", False)
     vf = None
     if turb:
         import validate_naca0012_sa as v
@@ -127,6 +133,9 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
     def monitor(it, r):
         if vf is not None:
             vf.update(it)
+        if not switch["done"] and it >= 300 and max(r.values()) < 1e-4:
+            s.limiter_mask = s.m.nverts == 3
+            switch["done"] = True
         if it % 10 == 0:
             c = coefficients(s, walls, U)[0]
             hist.append((it, c["Cl"], c["Cd"], c["Cm"]))

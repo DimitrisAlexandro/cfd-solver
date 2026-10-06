@@ -61,6 +61,14 @@ BUILTIN = {
         "moment_ref": [0.25, 0.0],
         "elements": [{"name": n, "file": str(REF / "30p30n" / f"{n}.dat"), "frame": "global"}
                      for n in ("slat", "main", "flap")]},
+    # JAXA / AIAA BANC-III-IV and APC-IV model (Murayama et al. 2014, 2018):
+    # thick trailing edges (slat 0.17 %, main 0.04 %, flap 0.58 %);
+    # JAXA LWT2 wind-tunnel Cp data in validation/reference/30p30n_jaxa
+    "30p30n_jaxa": {
+        "name": "30P30N, JAXA model (thick TEs)", "ref_chord": 1.0,
+        "moment_ref": [0.25, 0.0],
+        "elements": [{"name": n, "file": str(REF / "30p30n_jaxa" / f"{n}.dat"),
+                      "frame": "global"} for n in ("slat", "main", "flap")]},
 }
 
 CORNER_DEG = 30.0          # a vertex turning more than this is a corner
@@ -212,11 +220,11 @@ def element_chord(P):
 
 def blunt(open_loop, te_thick, n_te=3, blend=0.03):
     """Open outline (TE -> TE) -> closed CCW mesher loop with a blunt base:
-    a sharp TE (end gap < te_thick) is thickened to a te_thick base at its
-    original position; an existing base (gap >= te_thick) is kept."""
+    a sharp TE (end gap < te_thick / 4) is thickened to a te_thick base at
+    its original position; an existing base is kept."""
     P = np.asarray(open_loop, float)
     gap = np.linalg.norm(P[0] - P[-1])
-    if gap < te_thick:
+    if gap < 0.25 * te_thick:
         # thicken the last part of both sides (offset along the outward
         # normal, (1 - d/L)^2 blend over L = blend x element chord) so the
         # trailing edge opens to a te_thick base at its original position.
@@ -235,7 +243,13 @@ def blunt(open_loop, te_thick, n_te=3, blend=0.03):
         d = np.minimum(s, s[-1] - s)                      # arc distance to the TE
         w = np.where(d < L, (1 - d / L) ** 2, 0.0)
         P += (add * w)[:, None] * nrm
-    t = np.linspace(0, 1, n_te + 1)[1:-1]
+    # base points: at least n_te segments, and no coarser than the surface
+    # spacing next to the trailing edge (a thick base, e.g. the 30P30N flap's
+    # 0.6 % c, with 3 segments met 10x finer surface cells -> slivers there)
+    h_end = 0.5 * (np.linalg.norm(P[1] - P[0]) + np.linalg.norm(P[-1] - P[-2]))
+    gap = np.linalg.norm(P[0] - P[-1])
+    m = max(n_te, int(math.ceil(gap / max(h_end, 1e-12))))
+    t = np.linspace(0, 1, m + 1)[1:-1]
     base = P[-1] + t[:, None] * (P[0] - P[-1])
     loop = np.vstack([P, base])
     if signed_area(loop) < 0:
