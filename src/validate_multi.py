@@ -44,6 +44,10 @@ MACH = 0.17
 PG = 1.0 / math.sqrt(1 - MACH**2)
 ALPHAS = (5.5, 9.5, 14.0)
 GRID_ALPHA = 5.5
+# SU2 V&V (compressible SA-noft2, Roe + van Albada, JAXA APC-IV grids L1-L5):
+# grid-converged values at alpha 5.5 from the quadratic fits on
+# su2code.github.io/vandv/30p30n (lift.png / drag.png): Cl 2.89602, Cd 0.04281
+SU2_A55 = {"Cl": 2.89602, "Cd": 0.04281}
 LEVELS = (0.7, 1.4)                     # + level 1 from the sweep
 
 
@@ -96,22 +100,32 @@ def _crossings(P, s, x):
 
 
 def place_taps(outline, xs):
-    """Taps given only by x/c, listed in order around the element: choose
-    for each tap the surface crossing that continues the sequence (smallest
-    arc travel), trying both directions. Returns arc positions."""
+    """Taps given only by x/c. The JAXA/BANC files list them from the
+    trailing edge along the pressure side (slat: the cove side) to the
+    leading edge and back along the suction side; for our counter-clockwise
+    outlines (s = 0 at the upper TE end) that is DEcreasing arc length.
+    (From x alone the mirrored path is just as consistent, so the direction
+    must be fixed.) Each tap takes the next crossing in that direction; only
+    the first step may pass the trailing edge (a tap on the TE base).
+    Returns (arc positions, outline arc lengths)."""
     s = _arc(outline)
     L = s[-1]
     cand = [_crossings(outline, s, x) or [s[np.argmin(np.abs(outline[:, 0] - x))]] for x in xs]
     best = None
-    for sign in (1, -1):
-        for c0 in cand[0]:
-            path, cur, cost = [c0], c0, 0.0
-            for cs in cand[1:]:
-                steps = [((sign * (c - cur)) % L, c) for c in cs]
-                d, c = min(steps)
-                path.append(c); cur = c; cost += d
-            if best is None or cost < best[0]:
-                best = (cost, path)
+    for c0 in cand[0]:
+        path, cur, cost, ok = [c0], c0, 0.0, True
+        for k, cs in enumerate(cand[1:]):
+            steps = [((cur - c) % L if k == 0 else cur - c, c) for c in cs]
+            steps = [(d, c) for d, c in steps if d >= -1e-9]
+            if not steps:
+                ok = False
+                break
+            d, c = min(steps)
+            path.append(c); cost += d; cur = c
+        if ok and (best is None or cost < best[0]):
+            best = (cost, path)
+    if best is None:
+        raise ValueError("could not place the pressure taps on the surface")
     return np.array(best[1]), s
 
 
@@ -155,6 +169,11 @@ def report(res):
     el, _ = me.load_multi(SPEC, level=1.0)
     sw = sorted(res["sweep"], key=lambda r: r["alpha"])
     inv = {r["alpha"]: r for r in res["inviscid"]}
+    el_inv = None
+    for r in sw:                                   # (partial results file)
+        if r["alpha"] not in inv:
+            el_inv = el_inv or me.load_multi(SPEC, level=2.0)[0]
+            inv[r["alpha"]] = {"Cl": panel.solve([e["outline"] for e in el_inv], r["alpha"])["Cl"]}
     names = sw[0]["element_names"]
     lines = [f"30P30N JAXA model (thick TEs), SA-noft2 fully turbulent, Re {RE:.3g} (stowed chord), "
              f"incompressible; Cp compared x {PG:.4f} (Prandtl-Glauert, M {MACH:g})",
@@ -187,6 +206,10 @@ def report(res):
             lines.append(f"  {r['cells']:7d} cells: Cl {r['Cl']:.4f}  Cd {r['Cd']:.5f}  "
                          f"Cm {r['Cm']:+.4f}  {r['status']}")
         f = np.array([r["Cl"] for r in g]); d = np.array([r["Cd"] for r in g])
+        lines.append("  vs SU2 grid-converged (compressible, M 0.17): " + "; ".join(
+            f"{r['cells']} cells Cl x PG {r['Cl'] * PG:.4f} ({100 * (r['Cl'] * PG / SU2_A55['Cl'] - 1):+.2f} %), "
+            f"Cd (Cd_p x PG) {r['Cd_p'] * PG + r['Cd_v']:.5f} "
+            f"({100 * ((r['Cd_p'] * PG + r['Cd_v']) / SU2_A55['Cd'] - 1):+.1f} %)" for r in g))
         lines.append(f"  Cl change coarse->medium {100 * (f[1] / f[0] - 1):+.2f} %" +
                      (f", medium->fine {100 * (f[2] / f[1] - 1):+.2f} %" if len(g) > 2 else "") +
                      f";  Cd {100 * (d[1] / d[0] - 1):+.2f} %" +
@@ -218,7 +241,12 @@ def report(res):
                 m = np.ones(len(exp), bool) if sel is None else exp["element"] == sel
                 g_.plot(exp["x"][m], exp["Cp"][m], mk, mfc="none", ms=5,
                         label=f"JAXA LWT2 {test}")
-            g_.set_xlim(*xl); g_.invert_yaxis(); g_.grid(alpha=.3); g_.set_xlabel("x/c")
+            # y range from SA + experiment: the panel method's Cp is singular at
+            # the sharp corners (slat cusp, trailing edges) and would set the scale
+            k_sel = [k for k, e in enumerate(pr["elements"]) if not sel or e["name"] == sel]
+            cps = np.concatenate([w["Cp"][w["element"] == k] * PG for k in k_sel])
+            g_.set_ylim(max(1.2, cps.max() + 0.3), cps.min() - 0.6)
+            g_.set_xlim(*xl); g_.grid(alpha=.3); g_.set_xlabel("x/c")
             g_.set_ylabel("Cp")
         row[0].set_title(f"alpha {r['alpha']:g} deg: SA Cl {r['Cl'] * PG:.3f} (x PG), "
                          f"inviscid {pr['Cl'] * PG:.3f}")

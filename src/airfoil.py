@@ -5,12 +5,13 @@ Airfoil analysis tool (Phase 3, step E3): any airfoil -> polar, one command.
     python airfoil.py polar myfoil.dat --re 1e6 --alpha 0:12:1 --out ../cases/myfoil
     python airfoil.py polar naca0012 --re 6e6 --alpha 0,5,10 --xfoil
     python airfoil.py show myfoil.dat                 geometry check + picture
-    python airfoil.py polar 30p30n --re 9e6 --alpha 0:20:4 --mach 0.2
+    python airfoil.py polar 30p30n_jaxa --re 1.71e6 --alpha 5.5,9.5,14 --mach 0.17
     python airfoil.py polar naca23012+naca23012:0.3,0.98,-0.04,25 --re 3e6
     python airfoil.py show 30p30n --alpha 8          multi-element: geometry +
                                                       inviscid (panel) Cp
 
-Multi-element airfoils (E5): the built-in 30p30n, a JSON file listing the
+Multi-element airfoils (E5): the built-in 30p30n (original coordinates) or
+30p30n_jaxa (JAXA wind-tunnel model, validated against its Cp), a JSON file listing the
 elements, or elements joined by '+' (airfoil[:chord,x_le,y_le,deflection]);
 see multi_element.py. Fully turbulent SA; per-element Cl/Cd/Cm in the
 report and CSV; the inviscid panel-method lift is overlaid.
@@ -196,13 +197,11 @@ def plot_distributions_multi(res, path, title):
     for i, r in enumerate(res):
         w = {k: np.asarray(v) for k, v in r["wall"].items()}
         c = cmap(i / max(len(res) - 1, 1))
-        for k in range(len(names)):
-            for side, st in ((1, "-"), (-1, "--")):
-                m = (w["element"] == k) & (w["side"] == side)
-                ax[0].plot(w["x"][m], w["Cp"][m], st, color=c, lw=0.9,
-                           label=f"alpha {r['alpha']:g}" if (k == 0 and side == 1) else None)
+        # points, not lines: coves, cusps and the cove step make any
+        # upper/lower split by x zig-zag
+        ax[0].plot(w["x"], w["Cp"], ".", ms=2.0, color=c, label=f"alpha {r['alpha']:g}")
     ax[0].invert_yaxis(); ax[0].grid(alpha=.3); ax[0].set_xlabel("x/c")
-    ax[0].set_title("Cp on every element (solid: normal facing up, dashed: down)")
+    ax[0].set_title("Cp on every element (wall faces)")
     ax[0].legend(fontsize=7, ncol=2)
     a = [r["alpha"] for r in res]
     for k, n in enumerate(names):
