@@ -125,7 +125,8 @@ def view_windows(grid, bnd, patches):
             0.53 * max(ymax - ymin, (xmax - xmin) / aspect))
     wall = None
     if bnd is not None and patches:
-        wid = [i for i, n in enumerate(patches) if n in ("wall", "airfoil", "cylinder")]
+        wid = [i for i, n in enumerate(patches) if n in ("wall", "airfoil", "cylinder")
+               or n.startswith("wall_")]
         if wid:
             wall = bnd.extract_cells(np.where(bnd.cell_data["patch_id"] == wid[0])[0])
     if wall is None or wall.n_points == 0:
@@ -246,7 +247,7 @@ class Viewer:
         for i, n in enumerate(self.patches):
             sub = self.bnd.extract_cells(np.where(self.bnd.cell_data["patch_id"] == i)[0])
             if sub.n_cells:
-                self.pl.add_mesh(sub, color=PATCH_COLORS.get(n, "orange"), line_width=3,
+                self.pl.add_mesh(sub, color=PATCH_COLORS.get("wall" if n.startswith("wall_") else n, "orange"), line_width=3,
                                  label=n)
         if self.patches:
             self.pl.add_legend(bcolor=BACKGROUND, size=(0.1, 0.1), loc="lower left")

@@ -1,0 +1,10 @@
+30P30N three-element high-lift airfoil (McDonnell Douglas), deployed configuration:
+slat 30 deg, flap 30 deg. Coordinates in stowed-chord units (c = 1); coefficients
+for this airfoil are referred to the stowed chord.
+
+Coordinate source: https://github.com/linuxguy123/30P-30N-Validation-Case
+(files 30P-30N-{Slat,Main,Flap}-raw.dat, repository licensed GPL-3.0).
+Each file starts at the element's trailing edge (Selig order).
+
+Standard test conditions (Chin et al. 1993; Klausmeyer & Lin 1997, NASA TM 112858):
+M 0.2, Re 9e6 (stowed chord), alpha 8, 16, 21 deg.

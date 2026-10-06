@@ -162,7 +162,265 @@ def build_mesh(naca="2412", n_side=120, reynolds=1e6, yplus=1.0, growth=1.15,
     }
 
 
+# ----------------------------------------------------------------------
+# multi-element airfoils (Phase 3, E5)
+# ----------------------------------------------------------------------
+def _dense_walls(loops, h=0.002):
+    """Points along all wall loops at spacing <= h, with their element index."""
+    out, idx = [], []
+    for k, L in enumerate(loops):
+        a, b = L, np.roll(L, -1, axis=0)
+        for p, q in zip(a, b):
+            n = max(1, int(math.ceil(np.linalg.norm(q - p) / h)))
+            t = np.arange(n)[:, None] / n
+            out.append(p + t * (q - p))
+            idx.append(np.full(n, k))
+    return np.vstack(out), np.concatenate(idx)
+
+
+def make_multi_size_fn(loops, tes, h_near, grad, h_far, wake_length, wake_h, wake_grad,
+                       alpha_deg):
+    """Size field: h_near + grad * (distance to the nearest wall), and a
+    refined wake strip from every element's trailing edge along the free
+    stream (the slat and main-element wakes run over the next element)."""
+    from scipy.spatial import cKDTree
+    pts, _ = _dense_walls(loops)
+    tree = cKDTree(pts)
+    ca, sa = math.cos(math.radians(alpha_deg)), math.sin(math.radians(alpha_deg))
+    tes = [np.asarray(t, float) for t in tes]
+
+    def size(x, y):
+        d = tree.query((x, y))[0]
+        h = h_near + grad * d
+        for te in tes:
+            xs, ys = x - te[0], y - te[1]
+            s = xs * ca + ys * sa
+            n = abs(-xs * sa + ys * ca)
+            if 0.0 < s < wake_length and n < 0.03 + 0.15 * s:
+                h = min(h, wake_h + wake_grad * s)
+        return min(h, h_far)
+    return size
+
+
+def build_multi_mesh(elements, reynolds=9e6, h1=None, yplus=0.7, growth=1.15, n_layers=60,
+                     farfield_radius=100.0, n_farfield=48, h_near=0.03, grad=0.15,
+                     wake_length=3.0, wake_h=0.015, wake_grad=0.05, alpha_deg=0.0,
+                     min_angle=25.0, seed_offset=0.87, gap_fill=0.4, bl_ar_cap=1.0,
+                     bl_max=0.015, label="multi-element airfoil", verbose=True):
+    """Hybrid mesh around several bodies (multi_element.load_multi output).
+
+    Each element gets its own quad boundary layer. Where elements are close
+    (the slots), an element's layer may fill at most `gap_fill` of the
+    distance to the nearest other element (boundary_layer.extrude
+    max_thickness: lower local growth, same layer count), so the two layers
+    facing each other across a slot leave room for triangles. One CDT fills
+    the space between all layer edges and the farfield. The same limit keeps
+    the layers out of coves and concave corners (facing_distance), and
+    bl_max caps the quad layer at about the physical boundary-layer
+    thickness (0.37 Re^-0.2 = 0.015 c at Re 9e6): beyond it, square outer
+    quads only follow the wall shape into ragged fronts the triangles
+    resolve better.
+    Patches: wall_<name> per element, farfield."""
+    t0 = time.time()
+    log = print if verbose else (lambda *a, **k: None)
+    from scipy.spatial import cKDTree
+    from multi_element import loops_intersect
+    walls = [np.asarray(e["loop"], float) for e in elements]
+    names = [e["name"] for e in elements]
+    if h1 is None:
+        h1 = first_cell_height(reynolds, yplus)
+    dense, owner = _dense_walls(walls, h=5e-4)
+    tree = cKDTree(dense)
+    cone = math.cos(math.radians(60.0))
+
+    def facing_distance(P, k, r_max=0.5):
+        """Distance from each wall point of element k to the nearest wall
+        point (any element, its own included) that lies IN FRONT of it:
+        within 60 deg of its outward normal. That is the room its boundary
+        layer has before it meets another layer: across a slot, a cove, or
+        a concave corner. Points behind (through the body, e.g. the other
+        side of a thin trailing edge) or beside it (along the surface) do
+        not count."""
+        L = walls[k]
+        e = np.roll(L, -1, axis=0) - L
+        en = np.c_[e[:, 1], -e[:, 0]] / np.linalg.norm(e, axis=1)[:, None]
+        vn = en + np.roll(en, 1, axis=0)
+        vn /= np.linalg.norm(vn, axis=1)[:, None]
+        nrm = vn[cKDTree(L).query(P)[1]]
+        d = np.full(len(P), np.inf)
+        for i, (p, n) in enumerate(zip(P, nrm)):
+            j = np.array(tree.query_ball_point(p, r_max), int)
+            if len(j) == 0:
+                continue
+            v = dense[j] - p
+            r = np.linalg.norm(v, axis=1)
+            ok = (r > 1e-9) & (v @ n > cone * r)
+            if ok.any():
+                d[i] = r[ok].min()
+        return d
+
+    frac = gap_fill
+    for attempt in range(6):
+        layers_all, canon_all = [], []
+        for k, w in enumerate(walls):
+            lim = lambda P, k=k: np.minimum(bl_max, frac * facing_distance(P, k))
+            layers, canon = extrude(w, h1, growth=growth, n_layers=n_layers, ar_cap=bl_ar_cap,
+                                    verbose=verbose, max_thickness=lim, repair=True)
+            layers_all.append(layers)
+            canon_all.append(canon)
+        # the layer edges must not cross each other or another element
+        clash = None
+        for a in range(len(walls)):
+            for b in range(len(walls)):
+                if a != b and (loops_intersect(layers_all[a][-1], layers_all[b][-1]) or
+                               loops_intersect(layers_all[a][-1], walls[b])):
+                    clash = (names[a], names[b])
+        if clash is None:
+            break
+        frac *= 0.7
+        log(f"[BL]   layer edges of '{clash[0]}' and '{clash[1]}' cross - gap fill {frac:.2f}")
+    else:
+        raise RuntimeError("could not fit the boundary layers between the elements")
+
+    points, cells, offsets, front_ids = [], [], [], []
+    for k, (layers, canon) in enumerate(zip(layers_all, canon_all)):
+        K, M = layers.shape[0] - 1, layers.shape[1]
+        off = len(points)
+        points.extend(p for layer in layers for p in layer)
+        cells.extend([[v + off for v in c] for c in bl_cells(K, M, canon)])
+        offsets.append((off, K, M))
+        log(f"[BL]   {names[k]}: {len(walls[k])} wall points, {K} layers, "
+            f"first height {h1:.3e}, max thickness "
+            f"{np.linalg.norm(layers[-1] - layers[0], axis=1).max():.4f}")
+    n_bl = len(cells)
+
+    ff = circle((0.5, 0.0), farfield_radius, n_farfield)
+    R = farfield_radius
+    cdt = CDT(0.5 - R, -R, 0.5 + R, R)
+    ff_ids = [cdt.insert(x, y) for x, y in ff]
+    for i in range(n_farfield):
+        cdt.insert_segment(ff_ids[i], ff_ids[(i + 1) % n_farfield], 'farfield')
+    for layers in layers_all:
+        outer = layers[-1]
+        ids = [cdt.insert(x, y) for x, y in outer]
+        for i in range(len(ids)):
+            cdt.insert_segment(ids[i], ids[(i + 1) % len(ids)], 'interface')
+        front_ids.append(ids)
+    cdt.mark_regions()
+
+    if seed_offset > 0:                       # transition row, as in build_mesh
+        for layers in layers_all:
+            outer = layers[-1]
+            e = np.roll(outer, -1, axis=0) - outer
+            le = np.linalg.norm(e, axis=1)
+            en = np.c_[e[:, 1], -e[:, 0]] / np.maximum(le, 1e-300)[:, None]
+            nrm = en + np.roll(en, 1, axis=0)
+            nrm /= np.maximum(np.linalg.norm(nrm, axis=1), 1e-300)[:, None]
+            ds = 0.5 * (le + np.roll(le, 1))
+            turn = np.einsum('ij,ij->i', en, np.roll(en, 1, axis=0))
+            for (x, y), n, h, ct in zip(outer, nrm, ds, turn):
+                if ct < np.cos(np.radians(25)):
+                    continue
+                px, py = x + seed_offset * h * n[0], y + seed_offset * h * n[1]
+                status, t = cdt.locate(px, py)
+                if status == 'in' and cdt.region[t] == 1:
+                    cdt._insert_at(px, py, t, check_encroach=True)
+
+    tes = [e["te"] for e in elements]
+    size = make_multi_size_fn(walls, tes, h_near, grad, 2 * math.pi * R / n_farfield,
+                              wake_length, wake_h, wake_grad, alpha_deg)
+    added = cdt.refine(size, min_angle_deg=min_angle, splittable=('farfield',))
+    cdt.check()
+    tris = cdt.triangles(region=1)
+    log(f"[CDT]  {added} points inserted by refinement, {len(tris)} triangles")
+
+    to_global = {}
+    for (off, K, M), ids in zip(offsets, front_ids):
+        for i, cid in enumerate(ids):
+            to_global[cid] = off + K * M + i
+    for tri in tris:
+        for v in tri:
+            if v not in to_global:
+                to_global[v] = len(points)
+                points.append((cdt.x[v], cdt.y[v]))
+    cells += [[to_global[v] for v in tri] for tri in tris]
+
+    used = sorted({v for c in cells for v in c})
+    renum = {old: new for new, old in enumerate(used)}
+    points = np.array(points)[used]
+    cells = [[renum[v] for v in c] for c in cells]
+    edge_count = {}
+    for c in cells:
+        for a, b in zip(c, c[1:] + c[:1]):
+            edge_count.setdefault((min(a, b), max(a, b)), []).append((a, b))
+    patches, wall_set = {}, set()
+    for name, (off, K, M), canon in zip(names, offsets, canon_all):
+        we = [[renum[off + canon[i]], renum[off + canon[(i + 1) % M]]] for i in range(M)
+              if canon[i] != canon[(i + 1) % M]]
+        wall_set |= {(min(a, b), max(a, b)) for a, b in we}
+        patches[f"wall_{name}"] = np.array([edge_count[(min(a, b), max(a, b))][0] for a, b in we])
+    patches["farfield"] = np.array([e[0] for k, e in edge_count.items()
+                                    if len(e) == 1 and k not in wall_set])
+    log(f"[MESH] {label}: {len(points)} points, {len(cells)} cells "
+        f"({n_bl} boundary-layer + {len(tris)} triangles) in {time.time() - t0:.1f} s")
+    return {"points": points, "cells": cells, "n_bl": n_bl, "patches": patches,
+            "layers": layers_all, "elements": names, "h1": h1,
+            "walls": walls, "multi": True}
+
+
+def multi_mesh(elements, reynolds, level=1.0, alpha_deg=0.0, farfield=100.0, yplus=0.7,
+               verbose=False, label=None):
+    """The multi-element mesh settings used by the polar tool (level 1 =
+    the 30P30N validation mesh, ~70k cells); level scales all spacings."""
+    r = level
+    return build_multi_mesh(elements, reynolds=reynolds, h1=first_cell_height(reynolds, yplus) / r,
+                            growth=1.15 ** (1 / r), n_layers=int(round(80 * r)),
+                            farfield_radius=farfield, n_farfield=int(round(48 * r)),
+                            h_near=0.012 / r, grad=0.1 / r, wake_length=3.0,
+                            wake_h=0.006 / r, wake_grad=0.04 / r, alpha_deg=alpha_deg,
+                            label=label or "multi-element airfoil", verbose=verbose)
+
+
+def plot_multi_mesh(mesh, path, views=None, title=None):
+    import matplotlib.pyplot as plt
+    from matplotlib.collections import PolyCollection
+    P = mesh["points"]
+    nb = mesh["n_bl"]
+    q = [P[c] for c in mesh["cells"][:nb]]
+    t = [P[c] for c in mesh["cells"][nb:]]
+    walls = mesh["walls"]
+    allw = np.vstack(walls)
+    x0, x1 = allw[:, 0].min(), allw[:, 0].max()
+    y0, y1 = allw[:, 1].min(), allw[:, 1].max()
+    if views is None:
+        views = [("Near field", (x0 - 0.3, x1 + 0.6), (y0 - 0.35, y1 + 0.35))]
+        for w, name in zip(walls, mesh["elements"]):
+            te = w[0]                              # loops start at the trailing edge
+            views.append((f"{name} trailing edge", (te[0] - 0.03, te[0] + 0.03),
+                          (te[1] - 0.025, te[1] + 0.025)))
+    n = len(views)
+    cols = 2 if n > 1 else 1
+    rows = int(math.ceil(n / cols))
+    fig, axes = plt.subplots(rows, cols, figsize=(7 * cols, 5.5 * rows), squeeze=False)
+    for ax in axes.flat[n:]:
+        ax.axis("off")
+    for ax, (ttl, xl, yl) in zip(axes.flat, views):
+        ax.add_collection(PolyCollection(t, facecolor="white", edgecolor="#4a6fa5", lw=0.2))
+        ax.add_collection(PolyCollection(q, facecolor="#dce9f5", edgecolor="#c0504d", lw=0.2))
+        for w in walls:
+            ax.fill(w[:, 0], w[:, 1], color="#333333")
+        ax.set_xlim(*xl); ax.set_ylim(*yl); ax.set_aspect("equal")
+        ax.set_title(ttl)
+    fig.suptitle(title or f"Hybrid mesh: {nb} boundary-layer cells (red) + "
+                 f"{len(mesh['cells']) - nb} triangles (blue)")
+    fig.tight_layout()
+    fig.savefig(path, dpi=140)
+    plt.close(fig)
+
+
 def save_npz(mesh, path):
+    """Patches are stored as patch_<name> (single airfoil: patch_airfoil,
+    patch_farfield; multi-element: patch_wall_<element>, patch_farfield)."""
     cells = mesh["cells"]
     offsets = np.cumsum([0] + [len(c) for c in cells])
     np.savez_compressed(
@@ -170,9 +428,8 @@ def save_npz(mesh, path):
         points=mesh["points"],
         cell_nodes=np.concatenate(cells),
         cell_offsets=offsets,
-        patch_airfoil=mesh["patches"]["airfoil"],
-        patch_farfield=mesh["patches"]["farfield"],
         n_bl=mesh["n_bl"],
+        **{f"patch_{k}": np.asarray(v) for k, v in mesh["patches"].items()},
     )
 
 
@@ -182,7 +439,7 @@ def load_npz(path):
     nodes = d["cell_nodes"]
     cells = [nodes[off[i]:off[i + 1]].tolist() for i in range(len(off) - 1)]
     return {"points": d["points"], "cells": cells, "n_bl": int(d["n_bl"]),
-            "patches": {"airfoil": d["patch_airfoil"], "farfield": d["patch_farfield"]}}
+            "patches": {k[6:]: d[k] for k in d.files if k.startswith("patch_")}}
 
 
 def plot_mesh(mesh, path):

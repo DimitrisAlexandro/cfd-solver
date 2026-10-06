@@ -101,8 +101,13 @@ class VortexFarfield:
     p = (|U_inf|^2 - |U_inf + u_vortex|^2)/2 on the outflow faces (without the
     outlet part the lift still depended on the farfield radius: +0.4 % from
     100 c to 400 c). Call update(it) from the solver callback."""
-    def __init__(self, solver, alpha, patch="inlet", outlet="outlet", wall="wall", every=50):
-        self.s, self.alpha, self.every, self.wall = solver, alpha, every, wall
+    def __init__(self, solver, alpha, patch="inlet", outlet="outlet", wall="wall", every=50,
+                 center=(0.25, 0.0)):
+        """wall: one wall patch or a list (multi-element airfoil: the vortex
+        carries the total lift; center = the moment reference point)."""
+        self.s, self.alpha, self.every = solver, alpha, every
+        self.walls = [wall] if isinstance(wall, str) else list(wall)
+        self.center = center
         self.idx = solver.m.patch_faces[patch]
         self.out = solver.m.patch_faces.get(outlet, np.zeros(0, int))
         self.U = (math.cos(math.radians(alpha)), math.sin(math.radians(alpha)))
@@ -110,16 +115,17 @@ class VortexFarfield:
 
     def update(self, it, res=None):
         if it % self.every == 0:
-            self.gamma = 0.5 * wall_data(self.s, self.wall, self.U)[1]["Cl"]
-            self.s.Ub[self.idx] = vortex_velocity(self.s.m.bxf[self.idx], self.alpha, self.gamma)
-            uo = vortex_velocity(self.s.m.bxf[self.out], self.alpha, self.gamma)
+            self.gamma = 0.5 * sum(wall_data(self.s, w, self.U)[1]["Cl"] for w in self.walls)
+            self.s.Ub[self.idx] = vortex_velocity(self.s.m.bxf[self.idx], self.alpha, self.gamma,
+                                                  self.center)
+            uo = vortex_velocity(self.s.m.bxf[self.out], self.alpha, self.gamma, self.center)
             self.s.pb_out[self.out] = 0.5 * (1.0 - (uo**2).sum(1))
 
 
-def vortex_velocity(xy, alpha, gamma):
-    """U_inf + point vortex (circulation gamma, clockwise for lift > 0) at (0.25, 0)."""
+def vortex_velocity(xy, alpha, gamma, center=(0.25, 0.0)):
+    """U_inf + point vortex (circulation gamma, clockwise for lift > 0) at center."""
     a = math.radians(alpha)
-    dx, dy = xy[:, 0] - 0.25, xy[:, 1]
+    dx, dy = xy[:, 0] - center[0], xy[:, 1] - center[1]
     r2 = dx**2 + dy**2
     k = gamma / (2 * math.pi * r2)
     return np.c_[math.cos(a) + k * dy, math.sin(a) - k * dx]
