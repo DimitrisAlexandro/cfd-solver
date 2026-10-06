@@ -29,6 +29,7 @@ import scipy.sparse as sp
 from scipy.sparse.linalg import splu  # noqa: F401  (kept for reference)
 
 from linsolve import csr
+import kernels
 
 CB1, CB2, SIGMA, KAPPA = 0.1355, 0.622, 2.0 / 3.0, 0.41
 CV1, CW2, CW3 = 7.1, 0.3, 2.0
@@ -141,9 +142,16 @@ class SpalartAllmaras:
         # ---- source terms: net S = P - D, linearised in nuT -------------------
         gu, gv = s.gU
         Omega = np.abs(gv[:, 0] - gu[:, 1])                      # |vorticity| (2D)
-        S0 = self.source(nuT, Omega)
-        eps = 1e-6 * np.maximum(nuT, self.nu)
-        J = (self.source(nuT + eps, Omega) - S0) / eps            # dS/dnuT (cell-local)
+        if kernels.USE_NUMBA:
+            gam = getattr(self, "gamma", None)
+            S0, J = kernels.sa_source(np.ascontiguousarray(nuT), np.ascontiguousarray(Omega),
+                                      self.d, float(self.nu),
+                                      np.ones(1) if gam is None else np.ascontiguousarray(gam, float),
+                                      gam is not None, CB1, CW1, CW2, CW3, CV1, CV2, CV3, KAPPA)
+        else:
+            S0 = self.source(nuT, Omega)
+            eps = 1e-6 * np.maximum(nuT, self.nu)
+            J = (self.source(nuT + eps, Omega) - S0) / eps        # dS/dnuT (cell-local)
         Jn = np.maximum(-J, 0.0)                                  # only the stabilising part
         diag_d = Jn * m.vol
         src_d = (S0 + Jn * nuT) * m.vol
@@ -188,8 +196,12 @@ class SpalartAllmaras:
         # under-relaxation
         diag_r = diag / self.alpha
         src = src + (1 - self.alpha) * diag_r * nuT
-        A = csr(np.r_[diag_r, a_on, a_no], np.r_[np.arange(n), own, nei],
-                np.r_[np.arange(n), nei, own], n)
+        pat = getattr(s, "_pattern", None)
+        if pat is not None:                     # fixed CSR pattern (kernels)
+            A = pat.matrix(diag_r, a_on, a_no)
+        else:
+            A = csr(np.r_[diag_r, a_on, a_no], np.r_[np.arange(n), own, nei],
+                    np.r_[np.arange(n), nei, own], n)
         res = np.abs(A @ nuT - src).sum() / max(np.abs(diag_r * nuT).sum(), 1e-30)
         self.nuT = np.maximum(s.lin.scalar(A, src, nuT), 0.0)
         return res
