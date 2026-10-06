@@ -127,19 +127,27 @@ def write_results(folder, s, fvm, mesh, patches, U_inf, q):
     f = flow_fields(s, U_inf=np.linalg.norm(U_inf))
     f.update(q)
     write_vtu(folder / "results.vtu", fvm.points, mesh["cells"], cell_data=f)
-    w, coeffs = wall_data(s, "wall", U_inf)
     names = list(patches)
+    walls = [n for n in names if n == "wall" or n.startswith("wall_")]
     # boundary faces are stored patch by patch in _boundary's order
     start = {n: sum(len(patches[k]) for k in names[:i]) for i, n in enumerate(names)}
-    wall_rows = start["wall"] + np.searchsorted(fvm.patch_faces["wall"], w["face"])
-    lines, bdata, _ = _boundary(fvm, patches, extra={k: (wall_rows, w[k]) for k in
-                                                     ("Cp", "Cf", "yplus")})
+    rows, vals = [], {k: [] for k in ("Cp", "Cf", "yplus")}
+    cols = ("x", "y", "side", "Cp", "Cf", "yplus", "wall_distance")
+    out = None
+    for wn in walls:                 # one wall_<patch>.csv per wall patch
+        w, coeffs = wall_data(s, wn, U_inf)
+        rows.append(start[wn] + np.searchsorted(fvm.patch_faces[wn], w["face"]))
+        for k in vals:
+            vals[k].append(w[k])
+        np.savetxt(folder / ("wall_wall.csv" if wn == "wall" else f"{wn}.csv"), np.c_[tuple(w[c] for c in cols)], delimiter=",",
+                   header=",".join(cols), comments="", fmt="%.8g")
+        out = out or (w, coeffs)
+    wall_rows = np.concatenate(rows)
+    lines, bdata, _ = _boundary(fvm, patches, extra={k: (wall_rows, np.concatenate(v))
+                                                     for k, v in vals.items()})
     write_vtp_lines(folder / "results_boundary.vtp", fvm.points, lines, bdata)
     write_vtm(folder / "results.vtm", {"cells": "results.vtu", "boundary": "results_boundary.vtp"})
-    cols = ("x", "y", "side", "Cp", "Cf", "yplus", "wall_distance")
-    np.savetxt(folder / "wall_wall.csv", np.c_[tuple(w[c] for c in cols)], delimiter=",",
-               header=",".join(cols), comments="", fmt="%.8g")
-    return w, coeffs
+    return out
 
 
 def export_pngs(folder, transient=False):
