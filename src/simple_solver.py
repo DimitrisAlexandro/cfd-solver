@@ -46,6 +46,7 @@ import scipy.sparse as sp
 from scipy.sparse.linalg import splu
 
 from linsolve import LinearSolver, csr
+import kernels
 
 # "iterative" (Gauss-Seidel + algebraic multigrid, step D) or "direct" (sparse LU)
 DEFAULT_LINEAR_SOLVER = "iterative"
@@ -71,6 +72,7 @@ class SimpleSolver:
         fine grids (NACA 0012 alpha 10: Cd rose with refinement)."""
         self.m, self.nu = mesh, nu
         self.lin = LinearSolver(linear_solver or DEFAULT_LINEAR_SOLVER)
+        self._pattern = None                  # fixed CSR pattern (kernels.CsrPattern)
         self.limiter = ("venkat" if turbulence else None) if limiter == "auto" else limiter
         self.limiter_eps = limiter_eps
         # cells where the limiter acts (None = all)
@@ -164,6 +166,99 @@ class SimpleSolver:
         pb = np.where(self.b_outlet, self.pb_out, pb)
         return Ub, pb
 
+    def _momentum(self, Ub, gU):
+        """Momentum equations (both components, before under-relaxation):
+        diag, off-diagonals a_on (owner row) / a_no (neighbour row), source
+        incl. the pressure gradient -grad(p) V, time terms. Also returns
+        whether the compiled kernels were used and the face viscosities."""
+        m, nu, n = self.m, self.nu, self.m.ncells
+        own, nei, bc = m.own, m.nei, m.bcell
+        # ---- momentum matrix ------------------------------------------------
+        F, Fb = self.F, self.Fb
+        if self.turb is not None:              # molecular + eddy viscosity on faces
+            nu_f, nu_b = self.turb.face_viscosity()
+        else:
+            nu_f, nu_b = nu, np.full(len(bc), nu)
+        fast = kernels.USE_NUMBA
+        if fast and self._pattern is None:
+            self._pattern = kernels.CsrPattern(n, own, nei)
+        Db = nu_b * m.bcoef
+        if fast:
+            nu_fa = np.broadcast_to(np.asarray(nu_f, float), F.shape)
+            if self.second_order and self.limiter is not None:
+                gk = [gU[k] * self._venkat(self.U[:, k], gU[k], Ub[:, k])[:, None]
+                      for k in range(2)]
+            else:
+                gk = gU
+            diag, a_on, a_no, src, tr = kernels.momentum_coeffs(
+                n, own, nei, F, np.ascontiguousarray(nu_fa), m.coef, m.w, m.Sf, m.Delta,
+                m.xc, m.xf, gU[0], gU[1], gk[0], gk[1], bool(self.second_order))
+            if self.turb is not None:
+                src += tr
+            diag += np.bincount(bc, np.where(self.b_fixedU, Db, 0.0) +
+                                np.where(self.b_outlet, np.maximum(Fb, 0.0), 0.0), n)
+            src -= self.gradp * m.vol[:, None]
+            for k in range(2):
+                bsrc = np.where(self.b_fixedU, Db * Ub[:, k] - Fb * Ub[:, k] +
+                                nu_b * np.einsum('ij,ij->i', gU[k][bc], m.bSf - m.bDelta), 0.0)
+                bsrc += np.where(self.b_outlet,
+                                 -np.maximum(Fb, 0.0) * np.einsum('ij,ij->i', gU[k][bc], m.db_t)
+                                 - np.minimum(Fb, 0.0) * Ub[:, k], 0.0)
+                if self.turb is not None:
+                    gTb = np.c_[gU[0][bc, k], gU[1][bc, k]]
+                    bsrc += np.where(self.b_outlet, 0.0, nu_b) * np.einsum('ij,ij->i', gTb, m.bSf)
+                src[:, k] += np.bincount(bc, bsrc, n)
+        else:
+            D = nu_f * m.coef
+            a_on = -D - np.maximum(-F, 0.0)        # coefficient of neighbour in owner row
+            a_no = -D - np.maximum(F, 0.0)         # coefficient of owner in neighbour row
+            diag = np.bincount(own, D + np.maximum(F, 0.0), n) + \
+                np.bincount(nei, D + np.maximum(-F, 0.0), n)
+            diag += np.bincount(bc, np.where(self.b_fixedU, Db, 0.0) +
+                                np.where(self.b_outlet, np.maximum(Fb, 0.0), 0.0), n)
+            src = np.zeros((n, 2))
+            src -= self.gradp * m.vol[:, None]
+            up = F >= 0
+            U_cell = np.where(up, own, nei)
+            for k in range(2):
+                gf = m.interp(gU[k])
+                # explicit non-orthogonal diffusion correction
+                c = nu_f * np.einsum('ij,ij->i', gf, m.Sf - m.Delta)
+                s = m.sum_to_cells(c)
+                # boundary: fixed value (diffusion + inflow/outflow convection)
+                bsrc = np.where(self.b_fixedU, Db * Ub[:, k] - Fb * Ub[:, k] +
+                                nu_b * np.einsum('ij,ij->i', gU[k][bc], m.bSf - m.bDelta), 0.0)
+                # outlet backflow (Fb<0) treated explicitly
+                # outlet: phi_b = phi_P + grad(phi_P).db_t ; phi_P part implicit
+                bsrc += np.where(self.b_outlet,
+                                 -np.maximum(Fb, 0.0) * np.einsum('ij,ij->i', gU[k][bc], m.db_t)
+                                 - np.minimum(Fb, 0.0) * Ub[:, k], 0.0)
+                s += np.bincount(bc, bsrc, n)
+                if self.turb is not None:
+                    # transpose part of the viscous stress, div(nu_eff (grad U)^T):
+                    # zero for constant viscosity, not for a varying eddy viscosity
+                    gTf = np.c_[m.interp(gU[0][:, k]), m.interp(gU[1][:, k])]
+                    s += m.sum_to_cells(nu_f * np.einsum('ij,ij->i', gTf, m.Sf))
+                    gTb = np.c_[gU[0][bc, k], gU[1][bc, k]]
+                    s += np.bincount(bc, np.where(self.b_outlet, 0.0, nu_b) *
+                                     np.einsum('ij,ij->i', gTb, m.bSf), n)
+                if self.second_order:
+                    # deferred correction: F * (phi_linear_upwind - phi_upwind)
+                    xU = m.xc[U_cell]
+                    gk = gU[k] if self.limiter is None else \
+                        gU[k] * self._venkat(self.U[:, k], gU[k], Ub[:, k])[:, None]
+                    corr = F * np.einsum('ij,ij->i', gk[U_cell], m.xf - xU)
+                    s -= m.sum_to_cells(corr)
+                src[:, k] += s
+
+        if self.dt is not None:                # BDF2 (Euler on the first step)
+            c1, c2, c3 = (1.0, 1.0, 0.0) if self.U_nm1 is None else (1.5, 2.0, 0.5)
+            diag += c1 * m.vol / self.dt
+            Uold = c2 * self.U_n - (c3 * self.U_nm1 if c3 else 0.0)
+            src += (m.vol / self.dt)[:, None] * Uold
+
+        return diag, a_on, a_no, src, fast, nu_f, nu_b, Db
+
     def iterate(self):
         m, nu, n = self.m, self.nu, self.m.ncells
         own, nei, bc = m.own, m.nei, m.bcell
@@ -174,66 +269,16 @@ class SimpleSolver:
         # the previous iteration's gradient
         self.gradp = m.grad_gg(self.p, pb, grad_skew=self.gradp)
 
-        # ---- momentum matrix ------------------------------------------------
+        diag, a_on, a_no, src, fast, nu_f, nu_b, Db = self._momentum(Ub, gU)
         F, Fb = self.F, self.Fb
-        if self.turb is not None:              # molecular + eddy viscosity on faces
-            nu_f, nu_b = self.turb.face_viscosity()
-        else:
-            nu_f, nu_b = nu, np.full(len(bc), nu)
-        D = nu_f * m.coef
-        a_on = -D - np.maximum(-F, 0.0)        # coefficient of neighbour in owner row
-        a_no = -D - np.maximum(F, 0.0)         # coefficient of owner in neighbour row
-        diag = np.bincount(own, D + np.maximum(F, 0.0), n) + \
-            np.bincount(nei, D + np.maximum(-F, 0.0), n)
-        Db = nu_b * m.bcoef
-        diag += np.bincount(bc, np.where(self.b_fixedU, Db, 0.0) +
-                            np.where(self.b_outlet, np.maximum(Fb, 0.0), 0.0), n)
-
-        src = np.zeros((n, 2))
-        src -= self.gradp * m.vol[:, None]
-        up = F >= 0
-        U_cell = np.where(up, own, nei)
-        for k in range(2):
-            gf = m.interp(gU[k])
-            # explicit non-orthogonal diffusion correction
-            c = nu_f * np.einsum('ij,ij->i', gf, m.Sf - m.Delta)
-            s = m.sum_to_cells(c)
-            # boundary: fixed value (diffusion + inflow/outflow convection)
-            bsrc = np.where(self.b_fixedU, Db * Ub[:, k] - Fb * Ub[:, k] +
-                            nu_b * np.einsum('ij,ij->i', gU[k][bc], m.bSf - m.bDelta), 0.0)
-            # outlet backflow (Fb<0) treated explicitly
-            # outlet: phi_b = phi_P + grad(phi_P).db_t ; phi_P part implicit
-            bsrc += np.where(self.b_outlet,
-                             -np.maximum(Fb, 0.0) * np.einsum('ij,ij->i', gU[k][bc], m.db_t)
-                             - np.minimum(Fb, 0.0) * Ub[:, k], 0.0)
-            s += np.bincount(bc, bsrc, n)
-            if self.turb is not None:
-                # transpose part of the viscous stress, div(nu_eff (grad U)^T):
-                # zero for constant viscosity, not for a varying eddy viscosity
-                gTf = np.c_[m.interp(gU[0][:, k]), m.interp(gU[1][:, k])]
-                s += m.sum_to_cells(nu_f * np.einsum('ij,ij->i', gTf, m.Sf))
-                gTb = np.c_[gU[0][bc, k], gU[1][bc, k]]
-                s += np.bincount(bc, np.where(self.b_outlet, 0.0, nu_b) *
-                                 np.einsum('ij,ij->i', gTb, m.bSf), n)
-            if self.second_order:
-                # deferred correction: F * (phi_linear_upwind - phi_upwind)
-                xU = m.xc[U_cell]
-                gk = gU[k] if self.limiter is None else \
-                    gU[k] * self._venkat(self.U[:, k], gU[k], Ub[:, k])[:, None]
-                corr = F * np.einsum('ij,ij->i', gk[U_cell], m.xf - xU)
-                s -= m.sum_to_cells(corr)
-            src[:, k] += s
-
-        if self.dt is not None:                # BDF2 (Euler on the first step)
-            c1, c2, c3 = (1.0, 1.0, 0.0) if self.U_nm1 is None else (1.5, 2.0, 0.5)
-            diag += c1 * m.vol / self.dt
-            Uold = c2 * self.U_n - (c3 * self.U_nm1 if c3 else 0.0)
-            src += (m.vol / self.dt)[:, None] * Uold
 
         diag = diag / self.au
         src += ((1 - self.au) * diag)[:, None] * self.U
-        A = csr(np.r_[diag, a_on, a_no], np.r_[np.arange(n), own, nei],
-                np.r_[np.arange(n), nei, own], n)
+        if fast:
+            A = self._pattern.matrix(diag, a_on, a_no)
+        else:
+            A = csr(np.r_[diag, a_on, a_no], np.r_[np.arange(n), own, nei],
+                    np.r_[np.arange(n), nei, own], n)
         # momentum residual (before solving), normalised
         # (both components normalised by |U|: a component that is ~0
         #  everywhere would otherwise look unconverged forever)
@@ -292,14 +337,17 @@ class SimpleSolver:
             np.bincount(bc, np.where(self.b_outlet, cb, 0.0), n)
         imbalance = m.sum_to_cells(Fstar, Fbstar)
         rhs = -imbalance
-        rows = np.r_[np.arange(n), own, nei]
-        cols = np.r_[np.arange(n), nei, own]
-        vals = np.r_[pdiag, -cf, -cf]
-        if not self.has_outlet:          # pin p' in cell 0
-            keep = ~(((rows == 0) | (cols == 0)) & (rows != cols))
-            rows, cols, vals = rows[keep], cols[keep], vals[keep]
-            rhs[0] = 0.0
-        Ap = csr(vals, rows, cols, n)
+        if fast and self.has_outlet:
+            Ap = self._pattern.matrix(pdiag, -cf, -cf)
+        else:
+            rows = np.r_[np.arange(n), own, nei]
+            cols = np.r_[np.arange(n), nei, own]
+            vals = np.r_[pdiag, -cf, -cf]
+            if not self.has_outlet:          # pin p' in cell 0
+                keep = ~(((rows == 0) | (cols == 0)) & (rows != cols))
+                rows, cols, vals = rows[keep], cols[keep], vals[keep]
+                rhs[0] = 0.0
+            Ap = csr(vals, rows, cols, n)
         pc = self.lin.pressure(Ap, rhs)
 
         # ---- corrections -------------------------------------------------------
@@ -331,6 +379,11 @@ class SimpleSolver:
         """Venkatakrishnan (1995) limiter psi in [0, 1] per cell for the
         reconstruction phi_P + g.(x_f - x_P) on every face of the cell."""
         m = self.m
+        if kernels.USE_NUMBA:
+            uref = max(np.abs(self.Ub[self.b_fixedU]).max() if self.b_fixedU.any() else 0.0,
+                       1e-30)
+            return kernels.venkat(m, phi, g, phib, (self.limiter_eps * uref) ** 2,
+                                  self.limiter_mask)
         own, nei, bc = m.own, m.nei, m.bcell
         n = m.ncells
         pmax = phi.copy(); pmin = phi.copy()
@@ -458,3 +511,4 @@ class SimpleSolver:
         Fp = (pb[:, None] * S).sum(0)
         Fv = (tau * Smag[:, None]).sum(0)
         return Fp, Fv
+

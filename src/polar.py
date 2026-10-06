@@ -95,12 +95,25 @@ def _single_mesh(loop, info, re, alpha, level, farfield, turb):
 
 def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
               force_tol=2e-5, window=200, farfield=None, out=None, transition="free",
-              ncrit=9.0):
+              ncrit=9.0, sequencing=False):
     """One angle of attack. init: dict(xc, U, p, nuT, x_tr) from a neighbouring
     angle (warm start). transition (turbulent Re only): "free" (e^N, N_crit
     = ncrit), "off" (fully turbulent) or {"upper": x, "lower": x} (fixed trip).
+    sequencing (Phase 4): a cold start (no init) at Re >= 1e5 is first solved
+    on a 0.7x mesh (fully turbulent, residuals 1e-5) and the result
+    interpolated to this mesh: SIMPLEC needs more iterations the finer the
+    mesh (30P30N 622 / 845 / 1335 at levels 0.7 / 1 / 1.4), so the fine mesh
+    only converges the last part (NACA 0012 SA: 710 -> 417 fine iterations).
     Returns (result dict, state dict for the next angle)."""
     t0 = time.time()
+    if sequencing and init is None and re >= LAMINAR_RE and level >= 0.85:
+        try:
+            _, init = run_point(spec, re, alpha, level=0.7 * level, tol=1e-5,
+                                max_iter=max_iter, farfield=farfield, transition="off",
+                                sequencing=False, force_tol=force_tol, window=window)
+            init["sequencing"] = True
+        except (ValueError, FloatingPointError, np.linalg.LinAlgError):
+            init = None                       # coarse start failed: cold start
     fvm, mesh, patches, bcs, U, turb, info = make_case(spec, re, alpha, level, farfield)
     multi = info.get("multi", False)
     # multi-element: the convection limiter acts on ALL cells during the
@@ -110,7 +123,21 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
     s = SimpleSolver(fvm, bcs, 1.0 / re, U0=U, turbulence=turb,
                      **({"limiter_cells": "all"} if multi else {}))
     switch = {"done": not multi}
-    if init is not None:
+    if init is not None and init.get("sequencing"):
+        # coarse-mesh solution, same angle: linear interpolation (nearest
+        # cell outside the convex hull of the coarse cell centres)
+        from scipy.interpolate import LinearNDInterpolator
+        from scipy.spatial import cKDTree
+        cols = [init["U"][:, 0], init["U"][:, 1], init["p"]] + \
+            ([init["nuT"]] if init.get("nuT") is not None else [])
+        vals = LinearNDInterpolator(init["xc"], np.c_[tuple(cols)])(fvm.xc)
+        bad = np.isnan(vals).any(axis=1)
+        if bad.any():
+            _, j = cKDTree(init["xc"]).query(fvm.xc[bad])
+            vals[bad] = np.c_[tuple(cols)][j]
+        s.set_initial(vals[:, :2], vals[:, 2],
+                      np.maximum(vals[:, 3], 0.0) if len(cols) > 3 else None)
+    elif init is not None:
         from scipy.spatial import cKDTree
         _, j = cKDTree(init["xc"]).query(fvm.xc)
         # rotate the old velocity field by the change of angle: the far field
@@ -124,6 +151,8 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
     if turb:
         import validate_naca0012_sa as v
         vf = v.VortexFarfield(s, alpha, wall=walls, center=(0.25 * info.get("ref_chord", 1.0), 0.0))
+        if init is not None:
+            vf.update(0)        # a warm / sequenced start already carries its lift
     if multi and transition != "off":
         transition = "off"        # e^N transition is single-element only (see report note)
     hist = []
@@ -188,7 +217,8 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
            "Cd_p": float(c["Cd_pressure"]), "Cd_v": float(c["Cd_viscous"]),
            "status": status, "iterations": int(it), "time_s": round(time.time() - t0, 1),
            "cells": int(fvm.ncells), "yplus_max": float(w["yplus"].max()),
-           "warm_start": init is not None,
+           "warm_start": init is not None and not init.get("sequencing"),
+           "sequenced": bool(init is not None and init.get("sequencing")),
            "transition": ("fully turbulent" if tr is None else
                           (f"free, N_crit {ncrit:g}" if tr.mode == "free" else "fixed")),
            "x_tr_upper": None if tr is None else round(tr.x_tr["upper"], 4),
