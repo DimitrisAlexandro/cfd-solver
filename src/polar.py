@@ -16,7 +16,8 @@ Cd_p, Cd_v, Cm (about c/4, nose-up positive), wall Cp/Cf.
     steady RANS cannot settle) is reported with the mean and the amplitude of
     the coefficients over the last iterations and flagged "unsteady"
 
-Regimes: Re >= 1e5 -> Spalart-Allmaras, y+ < 1 mesh (validate_naca0012_sa);
+Regimes: Re >= 1e5 -> Spalart-Allmaras, y+ < 1 mesh (validate_naca0012_sa),
+with free transition (e^N envelope, transition.py) by default;
 Re < 1e5 -> laminar (validate_airfoil settings).
 """
 
@@ -64,9 +65,12 @@ def make_case(spec, re, alpha, level=1.0, farfield=None):
 
 
 def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
-              force_tol=2e-5, window=200, farfield=None, out=None):
-    """One angle of attack. init: dict(xc, U, p, nuT) from a neighbouring
-    angle (warm start). Returns (result dict, state dict for the next angle)."""
+              force_tol=2e-5, window=200, farfield=None, out=None, transition="free",
+              ncrit=9.0):
+    """One angle of attack. init: dict(xc, U, p, nuT, x_tr) from a neighbouring
+    angle (warm start). transition (turbulent Re only): "free" (e^N, N_crit
+    = ncrit), "off" (fully turbulent) or {"upper": x, "lower": x} (fixed trip).
+    Returns (result dict, state dict for the next angle)."""
     t0 = time.time()
     fvm, mesh, patches, bcs, U, turb, info = make_case(spec, re, alpha, level, farfield)
     s = SimpleSolver(fvm, bcs, 1.0 / re, U0=U, turbulence=turb)
@@ -84,6 +88,8 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
         import validate_naca0012_sa as v
         vf = v.VortexFarfield(s, alpha)
     hist = []
+    osc = {"flag": False}
+    tr = None
 
     def monitor(it, r):
         if vf is not None:
@@ -97,18 +103,55 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
                 scale = np.maximum(np.abs(h[-1]), [0.1, 0.01, 0.01])  # Cl, Cd, Cm scales
                 if np.all(np.ptp(h, axis=0) / scale < force_tol):
                     return True
+            # small persistent oscillation (e.g. laminar flow reaching a blunt
+            # trailing edge sheds weakly): residuals stall, forces vary < 0.5 %
+            # -> stop and report the mean
+            total = len(s.history)
+            if total >= 1500 and len(hist) >= 60 and (tr is None or tr.converged):
+                res_max = np.array([max(q.values()) for q in s.history[-600:]])
+                stalled = res_max[-100:].min() > 0.5 * res_max[:100].min()
+                h = np.array(hist[-50:])[:, 1:]
+                small = (np.ptp(h[:, 0]) < 0.005 * max(abs(h[:, 0].mean()), 0.1) and
+                         np.ptp(h[:, 1]) < 0.01 * h[:, 1].mean())
+                if stalled and small:
+                    osc["flag"] = True
+                    return True
         return None
 
-    it = s.solve(tol=tol, max_iter=max_iter, verbose=False, callback=monitor)
+    tr = None
+    if turb and transition != "off":
+        import transition as T
+        if isinstance(transition, dict):
+            tr = T.Transition(s, mesh, re, mode="fixed", x_tr=transition)
+        else:
+            # always start from an estimate on a (briefly) fully turbulent flow,
+            # also on warm starts: carrying the previous angle's transition
+            # points over can leave the laminar region past the new, further
+            # upstream laminar separation -> the leading-edge bubble bursts and
+            # the solution locks onto a stalled branch
+            tr = T.Transition(s, mesh, re, mode="free", ncrit=ncrit, x_tr=None)
+        it = T.solve_with_transition(s, tr, tol=tol, max_iter=max_iter, callback=monitor)
+    else:
+        it = s.solve(tol=tol, max_iter=max_iter, verbose=False, callback=monitor)
     w, c = wall_data(s, "wall", U)
     status = "converged" if s.converged else "unsteady"
+    if status == "converged" and tr is not None and not tr.converged:
+        status = "transition not converged"
+    if osc["flag"]:
+        status = "converged (mean of a small oscillation)"
     res = {"alpha": alpha, "Cl": float(c["Cl"]), "Cd": float(c["Cd"]), "Cm": float(c["Cm"]),
            "Cd_p": float(c["Cd_pressure"]), "Cd_v": float(c["Cd_viscous"]),
            "status": status, "iterations": int(it), "time_s": round(time.time() - t0, 1),
            "cells": int(fvm.ncells), "yplus_max": float(w["yplus"].max()),
-           "warm_start": init is not None}
-    if not s.converged and len(hist) >= 20:                 # mean + amplitude of the tail
-        h = np.array(hist[len(hist) // 2:])
+           "warm_start": init is not None,
+           "transition": ("fully turbulent" if tr is None else
+                          (f"free, N_crit {ncrit:g}" if tr.mode == "free" else "fixed")),
+           "x_tr_upper": None if tr is None else round(tr.x_tr["upper"], 4),
+           "x_tr_lower": None if tr is None else round(tr.x_tr["lower"], 4),
+           "transition_converged": None if tr is None else bool(tr.converged),
+           "transition_converged_by": None if tr is None else tr.converged_by}
+    if (osc["flag"] or not s.converged) and len(hist) >= 20:   # mean + amplitude of the tail
+        h = np.array(hist[-50:] if osc["flag"] else hist[len(hist) // 2:])
         for k, q in zip(("Cl", "Cd", "Cm"), (1, 2, 3)):
             res[k] = float(h[:, q].mean())
             res[k + "_amp"] = float(0.5 * np.ptp(h[:, q]))
@@ -130,6 +173,7 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
         import json
         (folder / "case.json").write_text(json.dumps(meta, indent=2))
     state = {"xc": fvm.xc.copy(), "U": s.U.copy(), "p": s.p.copy(), "alpha": alpha,
+             "x_tr": None if tr is None else dict(tr.x_tr),
              "nuT": s.turb.nuT.copy() if s.turb is not None else None}
     return res, state
 
