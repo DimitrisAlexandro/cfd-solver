@@ -4,6 +4,11 @@ Speed benchmark (solver step D). Fixed cases, run with a chosen linear solver:
   cavity    lid-driven cavity Re 1000, 129 x 129 quads (vs Botella & Peyret)
   cylinder  steady cylinder Re 40, hybrid mesh (Cd, recirculation length)
   naca_sa   NACA 0012 Re 6e6 alpha 10, Spalart-Allmaras, 29k cells (Cl, Cd)
+  multi     30P30N (JAXA) Re 1.71e6 alpha 5.5, SA, 75k cells, as the polar tool
+            runs it (force-based convergence)
+
+Phase 4: --mode numba (compiled kernels, default when numba is installed) or
+--mode baseline (the step-D numpy path with its pressure tolerance 0.01).
 
     python benchmark.py --linear direct             reference (exact sparse LU)
     python benchmark.py --linear iterative          Krylov + multigrid
@@ -21,6 +26,8 @@ from pathlib import Path
 
 import numpy as np
 
+import kernels
+import linsolve
 import simple_solver
 from simple_solver import SimpleSolver
 
@@ -73,8 +80,41 @@ def case_naca_sa():
 CASES = {"cavity": case_cavity, "cylinder": case_cylinder, "naca_sa": case_naca_sa}
 
 
-def run(name, linear, timing_iters=30, full=True):
+def set_mode(mode):
+    """numba: compiled kernels + pressure tolerance 0.1 (Phase 4);
+    baseline: the step-D numpy path, pressure tolerance 0.01."""
+    kernels.USE_NUMBA = (mode == "numba") and kernels.HAVE_NUMBA
+    init = linsolve.LinearSolver.__init__
+    if not hasattr(linsolve.LinearSolver, "_orig_init"):
+        linsolve.LinearSolver._orig_init = init
+    orig = linsolve.LinearSolver._orig_init
+    rtol_p = 0.1 if mode == "numba" else 0.01
+
+    def patched(self, kind="iterative", **k):
+        k.setdefault("rtol_p", rtol_p)
+        orig(self, kind, **k)
+    linsolve.LinearSolver.__init__ = patched
+
+
+def run_multi(mode):
+    import polar as pl
+    set_mode(mode)
+    t0 = time.time()
+    r, _ = pl.run_point("30p30n_jaxa", 1.71e6, 5.5, level=1.0, transition="off")
+    out = {"cells": r["cells"], "iterations": r["iterations"], "wall_s": round(time.time() - t0, 1),
+           "s_per_iter": (time.time() - t0) / max(r["iterations"], 1), "converged": True,
+           "results": {"Cl": r["Cl"], "Cd": r["Cd"], "Cm": r["Cm"]}}
+    print(f"[{mode:8s}] multi     {out['cells']:6d} cells  {out['s_per_iter']:7.3f} s/iter  "
+          f"{out['iterations']:5d} it  {out['wall_s']:7.1f} s  {out['results']}", flush=True)
+    return out
+
+
+def run(name, linear, timing_iters=30, full=True, mode=None):
     simple_solver.DEFAULT_LINEAR_SOLVER = linear
+    if mode is not None:
+        if name == "multi":
+            return run_multi(mode)
+        set_mode(mode)
     s, kw, results = CASES[name]()
     s.iterate()                                       # warm-up (first iteration differs)
     t0 = time.time()
@@ -88,7 +128,7 @@ def run(name, linear, timing_iters=30, full=True):
         it = s.solve(max_iter=20000, verbose=False, **kw)
         out.update(iterations=int(it), converged=bool(s.converged),
                    wall_s=round(time.time() - t0, 1), results=results(s))
-    print(f"[{linear:9s}] {name:9s} {out['cells']:6d} cells  {per_it:7.3f} s/iter"
+    print(f"[{mode or linear:9s}] {name:9s} {out['cells']:6d} cells  {per_it:7.3f} s/iter"
           + (f"  {out['iterations']:5d} it  {out['wall_s']:7.1f} s  {out['results']}" if full else ""),
           flush=True)
     return out
@@ -113,16 +153,18 @@ def compare():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--linear", choices=["direct", "iterative"], default="iterative")
+    ap.add_argument("--mode", choices=["numba", "baseline"], default=None,
+                    help="Phase 4: compiled kernels vs the step-D numpy path")
     ap.add_argument("--cases", nargs="+", default=list(CASES))
     ap.add_argument("--timing-only", action="store_true")
     ap.add_argument("--compare", action="store_true")
     a = ap.parse_args()
     if a.compare:
         return compare()
-    path = VAL / f"benchmark_{a.linear}.json"
+    path = VAL / (f"benchmark_{a.linear}.json" if a.mode is None else f"benchmark_{a.mode}.json")
     db = json.loads(path.read_text()) if path.exists() else {}
     for c in a.cases:
-        db[c] = run(c, a.linear, full=not a.timing_only)
+        db[c] = run(c, a.linear, full=not a.timing_only, mode=a.mode)
         path.write_text(json.dumps(db, indent=1))
 
 

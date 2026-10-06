@@ -5,3 +5,4 @@ pyvista
 pytest
 pyamg
 threadpoolctl
+numba

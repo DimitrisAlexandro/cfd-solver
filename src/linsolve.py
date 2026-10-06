@@ -23,6 +23,8 @@ GS 8 ms, SA 155 -> 7 ms, pressure 127 -> ~10-50 ms.
 """
 
 import numpy as np
+
+import kernels
 import scipy.sparse as sp
 
 # BLAS threading only hurts at CFD vector sizes: with 2 threads and a busy
@@ -43,7 +45,7 @@ except ImportError:                     # iterative mode needs pyamg
 
 
 class LinearSolver:
-    def __init__(self, kind="iterative", rtol_scalar=0.05, rtol_p=0.01, max_sweeps=100,
+    def __init__(self, kind="iterative", rtol_scalar=0.05, rtol_p=0.1, max_sweeps=100,
                  amg_rebuild=5):
         if kind == "iterative" and pyamg is None:
             print("[linsolve] pyamg not installed (pip install pyamg) -> direct solver")
@@ -60,6 +62,12 @@ class LinearSolver:
         A: CSR matrix. Returns the (approximate) solution."""
         if self.kind == "direct":
             return splu(A.tocsc()).solve(b)
+        if _fast(A):
+            X = np.array(x0, dtype=float, copy=True).reshape(-1, 1)
+            self.stats["sweeps"] += kernels.sgs(A.indptr, A.indices, A.data, X,
+                                                np.ascontiguousarray(b, float).reshape(-1, 1),
+                                                self.rtol_scalar, self.max_sweeps)
+            return X[:, 0]
         x = np.array(x0, dtype=float, copy=True)
         r0 = np.linalg.norm(b - A @ x)
         if r0 == 0.0:
@@ -77,6 +85,12 @@ class LinearSolver:
         if self.kind == "direct":
             lu = splu(A.tocsc())
             return [lu.solve(b) for b in bs]
+        if _fast(A):              # compiled: both components in one sweep
+            X = np.ascontiguousarray(np.c_[tuple(x0s)], dtype=float)
+            self.stats["sweeps"] += kernels.sgs(A.indptr, A.indices, A.data, X,
+                                                np.ascontiguousarray(np.c_[tuple(bs)], float),
+                                                self.rtol_scalar, self.max_sweeps)
+            return [X[:, c].copy() for c in range(X.shape[1])]
         return [self.scalar(A, b, x0) for b, x0 in zip(bs, x0s)]
 
     # ------------------------------------------------------------------
@@ -105,6 +119,11 @@ class LinearSolver:
             x, info = _cg(A, b, self._ml.aspreconditioner(cycle="V"), self.rtol_p, 200, cb)
         self.stats["p_iters"] += it[0]
         return x
+
+
+def _fast(A):
+    """compiled Gauss-Seidel: numba available and a CSR matrix with sorted indices"""
+    return kernels.USE_NUMBA and sp.issparse(A) and A.format == "csr" and A.has_sorted_indices
 
 
 def _cg(A, b, M, rtol, maxiter, cb):
