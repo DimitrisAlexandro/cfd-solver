@@ -36,9 +36,10 @@ CW1 = CB1 / KAPPA**2 + (1.0 + CB2) / SIGMA
 CV2, CV3 = 0.7, 0.9
 
 
-def wall_distance(mesh, wall_faces, k=8):
+def wall_distance(mesh, wall_faces, k=8, return_index=False):
     """Distance from every cell centre to the nearest wall face (exact
-    point-to-segment distance over the k nearest face midpoints)."""
+    point-to-segment distance over the k nearest face midpoints).
+    return_index: also the position (in wall_faces) of the nearest face."""
     from scipy.spatial import cKDTree
     S = mesh.bSf[wall_faces]
     mid = mesh.bxf[wall_faces]
@@ -52,6 +53,9 @@ def wall_distance(mesh, wall_faces, k=8):
     AB = B - A
     t = np.clip(np.einsum('ijk,ijk->ij', P - A, AB) / np.einsum('ijk,ijk->ij', AB, AB), 0, 1)
     d = np.linalg.norm(P - (A + t[..., None] * AB), axis=2)
+    if return_index:
+        j = d.argmin(axis=1)
+        return d[np.arange(len(d)), j], idx[np.arange(len(d)), j]
     return d.min(axis=1)
 
 
@@ -66,6 +70,9 @@ class SpalartAllmaras:
         self.nuT = np.full(m.ncells, self.nut_inf)
         self.grad = np.zeros((m.ncells, 2))
         self.nuT_n = self.nuT_nm1 = None
+        # intermittency: 1 = turbulent (default), 0 = laminar region (eddy
+        # viscosity and production off) - set by transition.Transition
+        self.gamma = None
 
     # ------------------------------------------------------------------
     def fv1(self, nuT=None):
@@ -73,7 +80,10 @@ class SpalartAllmaras:
         return chi**3 / (chi**3 + CV1**3)
 
     def nu_t(self):
-        return self.nuT * self.fv1()
+        """Eddy viscosity (times the intermittency: 0 in laminar regions)."""
+        nut = self.nuT * self.fv1()
+        g = getattr(self, "gamma", None)
+        return nut if g is None else nut * g
 
     def boundary_nuT(self):
         s, m = self.s, self.s.m
@@ -109,7 +119,9 @@ class SpalartAllmaras:
         r = np.minimum(np.nan_to_num(r, nan=10.0, posinf=10.0), 10.0)
         gg = r + CW2 * (r**6 - r)
         fw = gg * ((1 + CW3**6) / (gg**6 + CW3**6)) ** (1.0 / 6.0)
-        return CB1 * St * nuT - CW1 * fw * nuT**2 / d2
+        g = getattr(self, "gamma", None)
+        prod = CB1 * St * nuT if g is None else CB1 * St * nuT * g
+        return prod - CW1 * fw * nuT**2 / d2
 
     def _lap_nonorth(self, gf, g):
         """Non-orthogonal part of the Laplacian (sum over faces of grad_f.(Sf - Delta))."""

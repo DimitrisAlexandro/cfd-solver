@@ -11,8 +11,9 @@ Airfoil: naca4412 / naca23012 (NACA 4- and 5-digit), tmr0012 (NASA TMR NACA
 coordinates are only translated and scaled (angle of attack measured from the
 file's x axis, as in XFOIL); --derotate puts the chord line on the x axis.
 
-Flow model: Re >= 1e5 fully turbulent Spalart-Allmaras (no transition model
-yet: step E4), Re < 1e5 laminar. Incompressible.
+Flow model: Re >= 1e5 Spalart-Allmaras with free transition (e^N envelope
+method, N_crit 9; --transition off = fully turbulent, --xtr = fixed trips),
+Re < 1e5 laminar. Incompressible (--mach: Prandtl-Glauert correction).
 
 Output folder (default ../cases/<airfoil>_Re<re>):
     polar.csv            alpha, Cl, Cd, Cd_p, Cd_v, Cm, L/D, status, iterations ...
@@ -46,10 +47,21 @@ def parse_alpha(s):
 
 
 # ----------------------------------------------------------------------
-def run_xfoil(spec, re, alphas, xtr=None, derotate=False):
+def _xfoil_xtr(xf):
+    """XFOIL's transition locations (module variable XOCTR, double precision)."""
+    import ctypes
+    try:
+        v = (ctypes.c_double * 2).in_dll(xf._lib, "__i_xfoil_MOD_xoctr")
+        return float(v[0]), float(v[1])
+    except (ValueError, AttributeError):
+        return float("nan"), float("nan")
+
+
+def run_xfoil(spec, re, alphas, xtr=None, derotate=False, ncrit=9.0):
     """XFOIL on the same (normalised) coordinates. xtr=(top, bottom) forces
     transition (0.01 ~ fully turbulent, to compare with the SA solver);
-    None = free transition (e^N, N = 9). Returns dict alpha -> (Cl, Cd, Cm)."""
+    None = free transition (e^N, N = ncrit). Returns dict
+    alpha -> (Cl, Cd, Cm, x_tr upper, x_tr lower)."""
     try:
         from xfoil import XFoil
         from xfoil.model import Airfoil
@@ -71,11 +83,13 @@ def run_xfoil(spec, re, alphas, xtr=None, derotate=False):
     xf.max_iter = 200
     if xtr is not None:
         xf.xtr = xtr
+    xf.n_crit = ncrit
     out = {}
     for a in sorted(alphas, key=abs):
         cl, cd, cm, cp = xf.a(a)
         if np.isfinite(cl):
-            out[a] = (float(cl), float(cd), float(cm))
+            xt = _xfoil_xtr(xf)
+            out[a] = (float(cl), float(cd), float(cm), xt[0], xt[1])
     return out
 
 
@@ -106,29 +120,45 @@ def plot_polar(res, path, title, xf=None):
     cl = np.array([r["Cl"] for r in res])
     cd = np.array([r["Cd"] for r in res])
     cm = np.array([r["Cm"] for r in res])
-    ok = np.array([r["status"] == "converged" for r in res])
-    fig, ax = plt.subplots(2, 2, figsize=(13, 9))
+    ok = np.array([r["status"].startswith("converged") for r in res])
+    has_tr = any(r.get("x_tr_upper") is not None for r in res)
+    fig, ax = plt.subplots(2, 3 if has_tr else 2, figsize=(19 if has_tr else 13, 9))
+    P4 = [ax[0, 0], ax[0, 1], ax[1, 0], ax[1, 1]]
+    lab0 = ("this solver (SA, " + res[0].get("transition", "fully turbulent") + ")"
+            if res[0].get("turbulent", True) else "this solver (laminar)")
     for q, (x, y, xl, yl) in enumerate(((a, cl, "alpha (deg)", "Cl"), (cd, cl, "Cd", "Cl"),
                                         (a, cm, "alpha (deg)", "Cm (c/4)"),
                                         (a, cl / cd, "alpha (deg)", "L/D"))):
-        g = ax.flat[q]
+        g = P4[q]
         g.plot(x, y, "-", color="C3", lw=1.2)
-        g.plot(x[ok], y[ok], "o", color="C3", ms=5, label="this solver (SA, fully turbulent)"
-               if res[0].get("turbulent", True) else "this solver (laminar)")
+        g.plot(x[ok], y[ok], "o", color="C3", ms=5, label=lab0)
         if (~ok).any():
             g.plot(x[~ok], y[~ok], "o", mfc="none", color="C3", ms=7,
                    label="not steady (mean of last iterations)")
         g.set_xlabel(xl); g.set_ylabel(yl); g.grid(alpha=.3)
+    if has_tr:                                   # 2x3: Cl, polar, x_tr / Cm, L/D, (empty)
+        g = ax[0, 2]
+        xu = np.array([np.nan if r["x_tr_upper"] is None else r["x_tr_upper"] for r in res])
+        xl = np.array([np.nan if r["x_tr_lower"] is None else r["x_tr_lower"] for r in res])
+        g.plot(a, xu, "o-", color="C3", ms=5, label="this solver, upper")
+        g.plot(a, xl, "s--", color="C3", ms=5, mfc="none", label="this solver, lower")
+        g.set_xlabel("alpha (deg)"); g.set_ylabel("transition x/c"); g.set_ylim(-0.02, 1.05)
+        g.set_title("Transition location"); g.grid(alpha=.3)
+        ax[1, 2].axis("off")
     if xf:
         for lab, d, st in xf:
             if not d:
                 continue
             xa = np.array(sorted(d)); v = np.array([d[k] for k in xa])
-            for g, (x, y) in zip(ax.flat, ((xa, v[:, 0]), (v[:, 1], v[:, 0]), (xa, v[:, 2]),
-                                           (xa, v[:, 0] / v[:, 1]))):
+            for g, (x, y) in zip(P4, ((xa, v[:, 0]), (v[:, 1], v[:, 0]), (xa, v[:, 2]),
+                                      (xa, v[:, 0] / v[:, 1]))):
                 g.plot(x, y, st, lw=1, label=lab)
+            if has_tr and "free" in lab and v.shape[1] >= 5:
+                ax[0, 2].plot(xa, v[:, 3], "k:", marker=".", label="XFOIL upper")
+                ax[0, 2].plot(xa, v[:, 4], "k-.", marker=".", label="XFOIL lower")
     for g in ax.flat:
-        g.legend(fontsize=8)
+        if g.get_legend_handles_labels()[0]:
+            g.legend(fontsize=8)
     fig.suptitle(title)
     fig.tight_layout()
     fig.savefig(path, dpi=130)
@@ -200,11 +230,20 @@ def cmd_polar(a):
     loop, info = ag.load_airfoil(a.airfoil, derotate=a.derotate)
     plot_geometry(loop, info, out / "geometry.png")
     turb = a.re >= pl.LAMINAR_RE
-    print(f"[airfoil] {info['name']}  Re {a.re:.3g}  {'SA (fully turbulent)' if turb else 'laminar'}"
+    print(f"[airfoil] {info['name']}  Re {a.re:.3g}  {'SA' if turb else 'laminar'}"
           f"  alpha {alphas}  refine {a.refine}  jobs {a.jobs}")
     t0 = time.time()
+    if a.xtr:
+        xu, xl = (float(v) for v in a.xtr.split(","))
+        trans = {"upper": xu, "lower": xl}
+        tr_label = f"transition fixed at x/c {xu:g} (upper), {xl:g} (lower)"
+    elif a.transition == "off":
+        trans, tr_label = "off", "fully turbulent"
+    else:
+        trans, tr_label = "free", f"free transition (e^N, N_crit {a.ncrit:g})"
     res = pl.polar(a.airfoil, a.re, alphas, level=a.refine, jobs=a.jobs,
-                   out=None if a.no_fields else out, max_iter=a.max_iter)
+                   out=None if a.no_fields else out, max_iter=a.max_iter,
+                   transition=trans, ncrit=a.ncrit)
     for r in res:
         r["turbulent"] = turb
     if a.mach > 0:
@@ -215,14 +254,14 @@ def cmd_polar(a):
         xf.append(("XFOIL, tripped at x/c 0.01 (valid at low alpha: once the stagnation point "
                    "moves aft the lower side stays laminar)",
                    run_xfoil(a.airfoil, a.re, alphas, xtr=(0.01, 0.01), derotate=a.derotate), "k--"))
-        xf.append(("XFOIL, free transition (N = 9)",
-                   run_xfoil(a.airfoil, a.re, alphas, derotate=a.derotate), "k:"))
-    title = f"{info['name']}, Re = {a.re:.3g}" + (", SA fully turbulent" if turb else ", laminar") + \
+        xf.append((f"XFOIL, free transition (N = {a.ncrit:g})",
+                   run_xfoil(a.airfoil, a.re, alphas, derotate=a.derotate, ncrit=a.ncrit), "k:"))
+    title = f"{info['name']}, Re = {a.re:.3g}" + (f", SA, {tr_label}" if turb else ", laminar") + \
         (f", M = {a.mach:g} (Prandtl-Glauert)" if a.mach > 0 else "")
     plot_polar(res, out / "polar.png", title, xf)
     plot_distributions(res, out / "distributions.png", title)
-    cols = ["alpha", "Cl", "Cd", "Cd_p", "Cd_v", "Cm", "status", "iterations", "time_s",
-            "yplus_max", "cells"]
+    cols = ["alpha", "Cl", "Cd", "Cd_p", "Cd_v", "Cm", "x_tr_upper", "x_tr_lower", "status",
+            "iterations", "time_s", "yplus_max", "cells"]
     with open(out / "polar.csv", "w") as f:
         f.write(",".join(cols + ["L_D", "Cl_amp", "Cd_amp"]) + "\n")
         for r in res:
@@ -232,10 +271,15 @@ def cmd_polar(a):
              f"TE base {info['te_thickness']:.4f}   derotated: {info['derotated']}",
              f"mesh level {a.refine}, {res[0]['cells']} cells per angle; wall time {wall:.0f} s "
              f"({a.jobs} processes)", "",
-             f"{'alpha':>6s} {'Cl':>8s} {'Cd':>9s} {'Cd_p':>9s} {'Cd_v':>9s} {'Cm':>8s} {'L/D':>7s}  status"]
+             f"{'alpha':>6s} {'Cl':>8s} {'Cd':>9s} {'Cd_p':>9s} {'Cd_v':>9s} {'Cm':>8s} {'L/D':>7s} "
+             f"{'xtr_up':>7s} {'xtr_lo':>7s}  status"]
+    ft = lambda v: f"{v:7.3f}" if v is not None else f"{'-':>7s}"
     for r in res:
         lines.append(f"{r['alpha']:6.2f} {r['Cl']:8.4f} {r['Cd']:9.5f} {r['Cd_p']:9.5f} "
-                     f"{r['Cd_v']:9.5f} {r['Cm']:+8.4f} {r['Cl'] / r['Cd']:7.1f}  {r['status']}"
+                     f"{r['Cd_v']:9.5f} {r['Cm']:+8.4f} {r['Cl'] / r['Cd']:7.1f} "
+                     f"{ft(r.get('x_tr_upper'))} {ft(r.get('x_tr_lower'))}  {r['status']}"
+                     + (" (x_tr averaged)" if (r.get("transition_converged_by") or "").startswith("averaged")
+                        else "")
                      + (f" (Cl +-{r['Cl_amp']:.3f})" if "Cl_amp" in r else ""))
     if a.mach > 0:
         lines += ["", f"Cl, Cm, Cd_p and Cp corrected for M = {a.mach:g} with Prandtl-Glauert "
@@ -243,12 +287,22 @@ def cmd_polar(a):
                   f"(*_incompressible)"]
     if xf:
         for lab, d, _ in xf:
-            lines += ["", lab + ":"] + [f"{k:6.2f} {v[0]:8.4f} {v[1]:9.5f} {'':9s} {'':9s} {v[2]:+8.4f}"
+            lines += ["", lab + ":"] + [f"{k:6.2f} {v[0]:8.4f} {v[1]:9.5f} {'':9s} {'':9s} {v[2]:+8.4f} "
+                                         f"{v[0] / v[1]:7.1f} {v[3]:7.3f} {v[4]:7.3f}"
                                          for k, v in sorted(d.items())]
     warn = []
-    if turb:
-        warn.append("fully turbulent (no transition model yet): at Re below ~1e7 real airfoils "
-                    "have laminar regions, so Cd is typically overpredicted (Phase 3, step E4)")
+    if turb and trans == "off":
+        warn.append("fully turbulent: at Re below ~1e7 real airfoils have laminar regions, so "
+                    "Cd is typically overpredicted (use the default free transition)")
+    if turb and trans == "free":
+        warn.append(f"free transition: e^N envelope method with N_crit {a.ncrit:g} (clean, "
+                    "low-turbulence flow; N_crit ~ -8.43 - 2.4 ln(Tu) for turbulence level Tu)")
+    if any((r.get("transition_converged_by") or "").startswith("averaged") for r in res):
+        warn.append("x_tr averaged: the transition point cycled around a leading-edge laminar "
+                    "separation bubble; it was fixed at the mean of its last positions")
+    if any(r["status"] == "transition not converged" for r in res):
+        warn.append("at some angles the transition point was still moving when the iteration "
+                    "limit was reached")
     if any(r["status"] != "converged" for r in res):
         warn.append("some angles did not reach a steady state (stall / separated flow): the "
                     "values are means over the last iterations; steady RANS is not reliable there")
@@ -277,6 +331,11 @@ def main(argv=None):
     p.add_argument("--xfoil", action="store_true", help="overlay XFOIL (tripped + free transition)")
     p.add_argument("--no-fields", action="store_true", help="skip per-angle field files")
     p.add_argument("--derotate", action="store_true", help="put the chord line on the x axis")
+    p.add_argument("--transition", choices=["free", "off"], default="free",
+                   help="free: e^N transition prediction (default); off: fully turbulent")
+    p.add_argument("--ncrit", type=float, default=9.0,
+                   help="critical amplification factor (9 = quiet wind tunnel)")
+    p.add_argument("--xtr", help="fixed transition 'x_upper,x_lower' (e.g. trip strips)")
     p.add_argument("--mach", type=float, default=0.0,
                    help="free-stream Mach number for a Prandtl-Glauert correction of the "
                         "pressure coefficients (Cl, Cm, Cd_p, Cp); valid below ~0.3. "

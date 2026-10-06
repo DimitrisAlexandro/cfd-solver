@@ -74,7 +74,7 @@ def tmr0012(n_side=160, te_blend=0.85, n_te=3, te_thick=TE_THICK):
 
 
 def airfoil_mesh(level=1.0, alpha=0.0, verbose=False, wall=None, naca=None, re=RE,
-                 farfield=FARFIELD, yplus=0.7):
+                 farfield=FARFIELD, yplus=0.7, growth=1.15):
     """Turbulent (y+ < 1) hybrid airfoil mesh, the settings validated here.
     Default body: the TMR NACA 0012; pass naca="2412" or wall=(M,2) for others."""
     r = level
@@ -86,8 +86,9 @@ def airfoil_mesh(level=1.0, alpha=0.0, verbose=False, wall=None, naca=None, re=R
     else:
         label = "custom airfoil"
     return hm.build_mesh(wall=wall, reynolds=re,
-                         h1=first_cell_height(re, yplus) / r, growth=1.15 ** (1 / r),
-                         n_layers=int(round(60 * r)), bl_ar_cap=1.0,
+                         h1=first_cell_height(re, yplus) / r, growth=growth ** (1 / r),
+                         n_layers=int(round(60 * r * math.log(1.15) / math.log(growth))),
+                         bl_ar_cap=1.0,
                          farfield_radius=farfield, n_farfield=int(round(48 * r)),
                          h_near=0.03 / r, grad=0.15 / r, wake_length=3.0,
                          wake_h=0.015 / r, wake_grad=0.05 / r, alpha_deg=alpha,

@@ -37,7 +37,8 @@ NASA_A10 = {"Cl": 1.0912, "Cd": 0.01221, "Cm": 0.00678}     # grid-converged SA,
 def run():
     for k, (spec, re, out) in CASES.items():
         subprocess.run([sys.executable, "airfoil.py", "polar", spec, "--re", str(re),
-                        "--alpha=-4:16:2", "--xfoil", "--out", str(out)], check=True)
+                        "--alpha=-4:16:2", "--xfoil", "--transition", "off",   # NASA: fully turbulent
+                        "--out", str(out)], check=True)
         shutil.copy(out / "polar.json", VAL / f"phase3_{k}_polar.json")
 
 
