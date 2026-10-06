@@ -75,10 +75,20 @@ class FVMesh:
         self.d = d
         dS = np.einsum('ij,ij->i', d, self.Sf)
         S2 = np.einsum('ij,ij->i', self.Sf, self.Sf)
+        # guard: a face whose centroid line is (nearly) parallel to it - only
+        # at corner fans of multi-element meshes, where a first-layer fan
+        # triangle meets a 1e-6-thin quad - would get a huge or NEGATIVE
+        # coefficient (pressure matrix no longer positive definite). Faces up
+        # to 80 deg non-orthogonality are untouched (the single-airfoil
+        # meshes stay below 66 deg).
+        self.n_clamped = int((dS < np.cos(np.radians(80.0)) *
+                              np.sqrt((d**2).sum(1) * S2)).sum())
+        dS = np.maximum(dS, np.cos(np.radians(80.0)) * np.sqrt((d**2).sum(1) * S2))
         self.coef = S2 / dS                           # |S|^2 / (d.S) (over-relaxed)
         self.Delta = d * self.coef[:, None]           # orthogonal part of S
         # linear interpolation weight of the OWNER
-        self.w = np.einsum('ij,ij->i', self.xc[self.nei] - self.xf, self.Sf) / dS
+        self.w = np.clip(np.einsum('ij,ij->i', self.xc[self.nei] - self.xf, self.Sf) / dS,
+                         0.0, 1.0)
         # skewness vector: linear interpolation gives the value where the
         # centroid line crosses the face, not at the face centre. On
         # triangles that offset is O(h) -> first-order error unless corrected.

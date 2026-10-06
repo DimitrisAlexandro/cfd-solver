@@ -41,7 +41,8 @@ def check(path, verbose=True):
     P = d["points"]
     off, nodes = d["cell_offsets"], d["cell_nodes"]
     cells = [nodes[off[i]:off[i + 1]] for i in range(len(off) - 1)]
-    patches = {"airfoil": d["patch_airfoil"], "farfield": d["patch_farfield"]}
+    # single airfoil: patch_airfoil; multi-element: patch_wall_<element>
+    patches = {k[6:]: d[k] for k in d.files if k.startswith("patch_")}
     n_bl = int(d["n_bl"]) if "n_bl" in d else 0     # cells [0, n_bl) = boundary layer
     errors = []
 
@@ -104,7 +105,7 @@ def check(path, verbose=True):
             if n @ (0.5 * (P[a] + P[b]) - cents[ci]) <= 0:
                 errors.append(f"inward-pointing boundary face on {name}")
                 break
-    expected = loop_area(patches["farfield"]) + loop_area(patches["airfoil"])
+    expected = sum(loop_area(E) for E in patches.values())
     if abs(areas.sum() - expected) > 1e-9 * abs(expected):
         errors.append(f"area mismatch: cells {areas.sum():.12g} vs boundary {expected:.12g}")
 

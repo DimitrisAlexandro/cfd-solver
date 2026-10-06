@@ -29,6 +29,7 @@ import numpy as np
 
 import airfoil_geom as ag
 import hybrid_mesher as hm
+import multi_element as me
 from fvmesh import FVMesh
 from postproc import wall_data
 from simple_solver import SimpleSolver
@@ -36,11 +37,48 @@ from simple_solver import SimpleSolver
 LAMINAR_RE = 1e5
 
 
+def coefficients(solver, walls, U):
+    """Total force coefficients over several wall patches (multi-element
+    airfoil) + the per-patch ones. Returns (total dict, {patch: dict})."""
+    per = {w: wall_data(solver, w, U)[1] for w in walls}
+    tot = {k: float(sum(c[k] for c in per.values())) for k in next(iter(per.values()))}
+    return tot, per
+
+
 def make_case(spec, re, alpha, level=1.0, farfield=None):
-    """Airfoil spec -> (FVMesh, mesh dict, bcs, U_inf, turbulence, info)."""
+    """Airfoil spec -> (FVMesh, mesh dict, patches, bcs, U_inf, turbulence, info).
+    info["walls"]: the wall patch names (["wall"], or wall_<element> for a
+    multi-element airfoil, see multi_element.py)."""
     turb = re >= LAMINAR_RE
     r = level
-    loop, info = ag.load_airfoil(spec, n_side=int(round((160 if turb else 120) * r)))
+    U = (math.cos(math.radians(alpha)), math.sin(math.radians(alpha)))
+    if me.is_multi(spec):
+        if not turb:
+            raise ValueError("multi-element airfoils: Re >= 1e5 (Spalart-Allmaras) only")
+        elements, info = me.load_multi(spec, level=level)
+        mesh = hm.multi_mesh(elements, re, level, alpha, farfield=farfield or 100.0,
+                             label=info["name"])
+        walls = [k for k in mesh["patches"] if k.startswith("wall_")]
+        patches = {w: mesh["patches"][w] for w in walls}
+    else:
+        loop, info = ag.load_airfoil(spec, n_side=int(round((160 if turb else 120) * r)))
+        mesh = _single_mesh(loop, info, re, alpha, level, farfield, turb)
+        walls = ["wall"]
+        patches = {"wall": mesh["patches"]["airfoil"]}
+    P = mesh["points"]
+    ff = mesh["patches"]["farfield"]
+    t = P[ff[:, 1]] - P[ff[:, 0]]
+    inflow = t[:, 1] * U[0] - t[:, 0] * U[1] < 0
+    patches.update(inlet=ff[inflow], outlet=ff[~inflow])
+    fvm = FVMesh(P, mesh["cells"], patches)
+    bcs = {w: {"type": "wall"} for w in walls}
+    bcs.update(inlet={"type": "inlet", "U": U}, outlet={"type": "outlet"})
+    info["walls"] = walls
+    return fvm, mesh, patches, bcs, U, ("sa" if turb else None), info
+
+
+def _single_mesh(loop, info, re, alpha, level, farfield, turb):
+    r = level
     if turb:
         import validate_naca0012_sa as v
         mesh = v.airfoil_mesh(level, alpha, wall=loop, re=re, farfield=farfield or 100.0)
@@ -52,16 +90,7 @@ def make_case(spec, re, alpha, level=1.0, farfield=None):
                              h_near=0.02 / r, grad=0.12 / r, wake_length=5.0, wake_h=0.01 / r,
                              wake_grad=0.03 / r, alpha_deg=alpha, label=info["name"],
                              verbose=False)
-    U = (math.cos(math.radians(alpha)), math.sin(math.radians(alpha)))
-    P = mesh["points"]
-    ff = mesh["patches"]["farfield"]
-    t = P[ff[:, 1]] - P[ff[:, 0]]
-    inflow = t[:, 1] * U[0] - t[:, 0] * U[1] < 0
-    patches = {"wall": mesh["patches"]["airfoil"], "inlet": ff[inflow], "outlet": ff[~inflow]}
-    fvm = FVMesh(P, mesh["cells"], patches)
-    bcs = {"wall": {"type": "wall"}, "inlet": {"type": "inlet", "U": U},
-           "outlet": {"type": "outlet"}}
-    return fvm, mesh, patches, bcs, U, ("sa" if turb else None), info
+    return mesh
 
 
 def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
@@ -83,10 +112,14 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
         R = np.array([[math.cos(da), -math.sin(da)], [math.sin(da), math.cos(da)]])
         s.set_initial(init["U"][j] @ R.T, init["p"][j],
                       init["nuT"][j] if init.get("nuT") is not None else None)
+    walls = info["walls"]
+    multi = info.get("multi", False)
     vf = None
     if turb:
         import validate_naca0012_sa as v
-        vf = v.VortexFarfield(s, alpha)
+        vf = v.VortexFarfield(s, alpha, wall=walls, center=(0.25 * info.get("ref_chord", 1.0), 0.0))
+    if multi and transition != "off":
+        transition = "off"        # e^N transition is single-element only (see report note)
     hist = []
     osc = {"flag": False}
     tr = None
@@ -95,7 +128,7 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
         if vf is not None:
             vf.update(it)
         if it % 10 == 0:
-            c = wall_data(s, "wall", U)[1]
+            c = coefficients(s, walls, U)[0]
             hist.append((it, c["Cl"], c["Cd"], c["Cm"]))
             n = window // 10
             if len(hist) > n and max(r.values()) < 1e-5:
@@ -133,7 +166,10 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
         it = T.solve_with_transition(s, tr, tol=tol, max_iter=max_iter, callback=monitor)
     else:
         it = s.solve(tol=tol, max_iter=max_iter, verbose=False, callback=monitor)
-    w, c = wall_data(s, "wall", U)
+    c, per = coefficients(s, walls, U)
+    ws = [wall_data(s, wn, U)[0] for wn in walls]
+    w = {k: np.concatenate([x[k] for x in ws]) for k in ("x", "y", "side", "Cp", "Cf", "yplus")}
+    w["element"] = np.concatenate([np.full(len(x["x"]), k) for k, x in enumerate(ws)])
     status = "converged" if s.converged else "unsteady"
     if status == "converged" and tr is not None and not tr.converged:
         status = "transition not converged"
@@ -155,8 +191,15 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
         for k, q in zip(("Cl", "Cd", "Cm"), (1, 2, 3)):
             res[k] = float(h[:, q].mean())
             res[k + "_amp"] = float(0.5 * np.ptp(h[:, q]))
-    o = np.lexsort((w["x"], w["side"]))
-    res["wall"] = {k: np.asarray(w[k])[o].round(7).tolist() for k in ("x", "y", "side", "Cp", "Cf")}
+    if multi:
+        res["elements"] = {wn[5:]: {k: float(per[wn][k2]) for k, k2 in
+                                    (("Cl", "Cl"), ("Cd", "Cd"), ("Cm", "Cm"),
+                                     ("Cd_p", "Cd_pressure"), ("Cd_v", "Cd_viscous"))}
+                           for wn in walls}
+        res["element_names"] = [wn[5:] for wn in walls]
+    o = np.lexsort((w["x"], w["side"], w["element"]))
+    res["wall"] = {k: np.asarray(w[k])[o].round(7).tolist()
+                   for k in ("x", "y", "side", "Cp", "Cf", "element")}
     if out is not None:                                    # full fields for the viewer
         import case as cs
         from pathlib import Path

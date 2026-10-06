@@ -5,6 +5,15 @@ Airfoil analysis tool (Phase 3, step E3): any airfoil -> polar, one command.
     python airfoil.py polar myfoil.dat --re 1e6 --alpha 0:12:1 --out ../cases/myfoil
     python airfoil.py polar naca0012 --re 6e6 --alpha 0,5,10 --xfoil
     python airfoil.py show myfoil.dat                 geometry check + picture
+    python airfoil.py polar 30p30n --re 9e6 --alpha 0:20:4 --mach 0.2
+    python airfoil.py polar naca23012+naca23012:0.3,0.98,-0.04,25 --re 3e6
+    python airfoil.py show 30p30n --alpha 8          multi-element: geometry +
+                                                      inviscid (panel) Cp
+
+Multi-element airfoils (E5): the built-in 30p30n, a JSON file listing the
+elements, or elements joined by '+' (airfoil[:chord,x_le,y_le,deflection]);
+see multi_element.py. Fully turbulent SA; per-element Cl/Cd/Cm in the
+report and CSV; the inviscid panel-method lift is overlaid.
 
 Airfoil: naca4412 / naca23012 (NACA 4- and 5-digit), tmr0012 (NASA TMR NACA
 0012), or a coordinate file (.dat, Selig or Lednicer format). By default the
@@ -35,6 +44,7 @@ from pathlib import Path
 import numpy as np
 
 import airfoil_geom as ag
+import multi_element as me
 
 
 def parse_alpha(s):
@@ -106,6 +116,12 @@ def apply_prandtl_glauert(res, mach):
             r[k + "_incompressible"] = r[k]
             r[k] = r[k] * b
         r["Cd"] = r["Cd_p"] + r["Cd_v"]
+        for e in (r.get("elements") or {}).values():
+            for k in ("Cl", "Cm", "Cd_p"):
+                e[k] = e[k] * b
+            e["Cd"] = e["Cd_p"] + e["Cd_v"]
+        if "Cl_inviscid" in r:
+            r["Cl_inviscid"] = r["Cl_inviscid"] * b
         r["wall"]["Cp"] = (np.asarray(r["wall"]["Cp"]) * b).round(7).tolist()
         r["mach_correction"] = f"Prandtl-Glauert M={mach:g}"
     return res
@@ -145,6 +161,9 @@ def plot_polar(res, path, title, xf=None):
         g.set_xlabel("alpha (deg)"); g.set_ylabel("transition x/c"); g.set_ylim(-0.02, 1.05)
         g.set_title("Transition location"); g.grid(alpha=.3)
         ax[1, 2].axis("off")
+    if any("Cl_inviscid" in r for r in res):
+        P4[0].plot(a, [r.get("Cl_inviscid", np.nan) for r in res], "k:", marker=".",
+                   label="inviscid (panel method)")
     if xf:
         for lab, d, st in xf:
             if not d:
@@ -165,10 +184,69 @@ def plot_polar(res, path, title, xf=None):
     plt.close(fig)
 
 
+def plot_distributions_multi(res, path, title):
+    """Multi-element: Cp along every element surface (x/c of the assembly)
+    and the element lift breakdown versus alpha."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    names = res[0]["element_names"]
+    fig, ax = plt.subplots(1, 2, figsize=(16, 6), gridspec_kw={"width_ratios": [2.2, 1]})
+    cmap = plt.get_cmap("viridis")
+    for i, r in enumerate(res):
+        w = {k: np.asarray(v) for k, v in r["wall"].items()}
+        c = cmap(i / max(len(res) - 1, 1))
+        for k in range(len(names)):
+            for side, st in ((1, "-"), (-1, "--")):
+                m = (w["element"] == k) & (w["side"] == side)
+                ax[0].plot(w["x"][m], w["Cp"][m], st, color=c, lw=0.9,
+                           label=f"alpha {r['alpha']:g}" if (k == 0 and side == 1) else None)
+    ax[0].invert_yaxis(); ax[0].grid(alpha=.3); ax[0].set_xlabel("x/c")
+    ax[0].set_title("Cp on every element (solid: normal facing up, dashed: down)")
+    ax[0].legend(fontsize=7, ncol=2)
+    a = [r["alpha"] for r in res]
+    for k, n in enumerate(names):
+        ax[1].plot(a, [r["elements"][n]["Cl"] for r in res], "o-", ms=4, label=n)
+    ax[1].plot(a, [r["Cl"] for r in res], "k-", lw=1.5, label="total")
+    ax[1].set_xlabel("alpha (deg)"); ax[1].set_ylabel("Cl"); ax[1].grid(alpha=.3)
+    ax[1].set_title("lift per element"); ax[1].legend(fontsize=8)
+    fig.suptitle(title)
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+
+
+def plot_multi_geometry(elements, info, path, panel_res=None):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    n = 2 if panel_res else 1
+    fig, ax = plt.subplots(n, 1, figsize=(14, 4.5 * n), squeeze=False)
+    g = ax[0, 0]
+    for e in elements:
+        L = np.vstack([e["loop"], e["loop"][:1]])
+        g.plot(L[:, 0], L[:, 1], ".-", ms=2, lw=.8, label=f"{e['name']} ({len(e['loop'])} pts, "
+               f"chord {e['chord']:.3f})")
+    g.set_aspect("equal"); g.grid(alpha=.3); g.legend(fontsize=8)
+    gaps = ", ".join(f"{k} {v:.4f}" for k, v in info["min_gaps"].items())
+    g.set_title(f"{info['name']}: smallest gaps {gaps}")
+    if panel_res:
+        g = ax[1, 0]
+        for e in panel_res["elements"]:
+            g.plot(e["x"], e["Cp"], "-", lw=1, label=f"{e['name']}: Cl {e['Cl']:.3f}")
+        g.invert_yaxis(); g.grid(alpha=.3); g.set_xlabel("x/c"); g.set_ylabel("Cp")
+        g.legend(fontsize=8)
+        g.set_title(f"inviscid panel method, alpha {panel_res['alpha']:g}: Cl {panel_res['Cl']:.3f}, "
+                    f"Cm {panel_res['Cm']:+.3f}")
+    fig.tight_layout(); fig.savefig(path, dpi=120); plt.close(fig)
+
+
 def plot_distributions(res, path, title):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    if res and "element_names" in res[0]:
+        return plot_distributions_multi(res, path, title)
     fig, ax = plt.subplots(1, 2, figsize=(15, 5.5))
     cmap = plt.get_cmap("viridis")
     for i, r in enumerate(res):
@@ -209,6 +287,20 @@ def plot_geometry(loop, info, path):
 
 # ----------------------------------------------------------------------
 def cmd_show(a):
+    if me.is_multi(a.airfoil):
+        import panel
+        elements, info = me.load_multi(a.airfoil)
+        pr = panel.solve([e["outline"] for e in elements], a.alpha_show,
+                         ref_chord=info["ref_chord"], names=[e["name"] for e in elements])
+        out = Path(a.out or f"../cases/{_slug(a.airfoil)}")
+        out.mkdir(parents=True, exist_ok=True)
+        plot_multi_geometry(elements, info, out / "geometry.png", pr)
+        for k, v in info.items():
+            print(f"  {k:18s} {v}")
+        print(f"  inviscid alpha {a.alpha_show:g}: Cl {pr['Cl']:.4f}  Cm {pr['Cm']:+.4f}  " +
+              "  ".join(f"{e['name']} {e['Cl']:.4f}" for e in pr["elements"]))
+        print(f"saved {out / 'geometry.png'}")
+        return
     loop, info = ag.load_airfoil(a.airfoil, derotate=a.derotate)
     out = Path(a.out or f"../cases/{_slug(a.airfoil)}")
     out.mkdir(parents=True, exist_ok=True)
@@ -219,7 +311,9 @@ def cmd_show(a):
 
 
 def _slug(spec):
-    return Path(spec).stem.lower().replace(" ", "_")
+    s = Path(spec).stem.lower().replace(" ", "_") if not "+" in str(spec) else \
+        "_".join(Path(p.split(":")[0]).stem.lower() for p in str(spec).split("+"))
+    return s
 
 
 def cmd_polar(a):
@@ -227,8 +321,20 @@ def cmd_polar(a):
     alphas = parse_alpha(a.alpha)
     out = Path(a.out or f"../cases/{_slug(a.airfoil)}_Re{a.re:.0e}".replace("+", ""))
     out.mkdir(parents=True, exist_ok=True)
-    loop, info = ag.load_airfoil(a.airfoil, derotate=a.derotate)
-    plot_geometry(loop, info, out / "geometry.png")
+    multi = me.is_multi(a.airfoil)
+    if multi:
+        import panel
+        elements, info = me.load_multi(a.airfoil)
+        plot_multi_geometry(elements, info, out / "geometry.png")
+        if a.re < pl.LAMINAR_RE:
+            raise SystemExit("multi-element airfoils need Re >= 1e5 (Spalart-Allmaras)")
+        if a.xtr or a.transition == "free":
+            print("[airfoil] multi-element: fully turbulent (e^N transition is single-element "
+                  "only for now)")
+        a.transition, a.xtr = "off", None
+    else:
+        loop, info = ag.load_airfoil(a.airfoil, derotate=a.derotate)
+        plot_geometry(loop, info, out / "geometry.png")
     turb = a.re >= pl.LAMINAR_RE
     print(f"[airfoil] {info['name']}  Re {a.re:.3g}  {'SA' if turb else 'laminar'}"
           f"  alpha {alphas}  refine {a.refine}  jobs {a.jobs}")
@@ -246,6 +352,10 @@ def cmd_polar(a):
                    transition=trans, ncrit=a.ncrit)
     for r in res:
         r["turbulent"] = turb
+    if multi:                         # inviscid reference (same outlines, sharp TEs)
+        for r in res:
+            r["Cl_inviscid"] = panel.solve([e["outline"] for e in elements], r["alpha"],
+                                           ref_chord=info["ref_chord"])["Cl"]
     if a.mach > 0:
         apply_prandtl_glauert(res, a.mach)
     wall = time.time() - t0
@@ -262,13 +372,23 @@ def cmd_polar(a):
     plot_distributions(res, out / "distributions.png", title)
     cols = ["alpha", "Cl", "Cd", "Cd_p", "Cd_v", "Cm", "x_tr_upper", "x_tr_lower", "status",
             "iterations", "time_s", "yplus_max", "cells"]
+    names = res[0].get("element_names", []) if multi else []
+    ecols = [f"{k}_{n}" for n in names for k in ("Cl", "Cd", "Cm")] + \
+        (["Cl_inviscid"] if multi else [])
     with open(out / "polar.csv", "w") as f:
-        f.write(",".join(cols + ["L_D", "Cl_amp", "Cd_amp"]) + "\n")
+        f.write(",".join(cols + ["L_D", "Cl_amp", "Cd_amp"] + ecols) + "\n")
         for r in res:
+            ev = [f"{r['elements'][n][k]:.6f}" for n in names for k in ("Cl", "Cd", "Cm")] + \
+                ([f"{r['Cl_inviscid']:.5f}"] if multi else [])
             f.write(",".join(str(round(r[c], 7)) if isinstance(r[c], float) else str(r[c]) for c in cols)
-                    + f",{r['Cl'] / r['Cd']:.3f},{r.get('Cl_amp', 0):.5f},{r.get('Cd_amp', 0):.6f}\n")
-    lines = [f"{title}", f"source: {info['source']}   t/c {info['max_thickness']:.4f}   "
-             f"TE base {info['te_thickness']:.4f}   derotated: {info['derotated']}",
+                    + f",{r['Cl'] / r['Cd']:.3f},{r.get('Cl_amp', 0):.5f},{r.get('Cd_amp', 0):.6f}"
+                    + "".join("," + v for v in ev) + "\n")
+    src = (f"elements: " + ", ".join(f"{e['name']} (chord {e['chord']:.4f}, {e['source']})"
+                                     for e in info["elements"]) + "   smallest gaps: " +
+           ", ".join(f"{k} {v:.4f}" for k, v in info["min_gaps"].items())) if multi else \
+        (f"source: {info['source']}   t/c {info['max_thickness']:.4f}   "
+         f"TE base {info['te_thickness']:.4f}   derotated: {info['derotated']}")
+    lines = [f"{title}", src,
              f"mesh level {a.refine}, {res[0]['cells']} cells per angle; wall time {wall:.0f} s "
              f"({a.jobs} processes)", "",
              f"{'alpha':>6s} {'Cl':>8s} {'Cd':>9s} {'Cd_p':>9s} {'Cd_v':>9s} {'Cm':>8s} {'L/D':>7s} "
@@ -281,6 +401,13 @@ def cmd_polar(a):
                      + (" (x_tr averaged)" if (r.get("transition_converged_by") or "").startswith("averaged")
                         else "")
                      + (f" (Cl +-{r['Cl_amp']:.3f})" if "Cl_amp" in r else ""))
+    if multi:
+        lines += ["", "per element (Cl / Cd / Cm about the reference quarter chord):",
+                  f"{'alpha':>6s} " + " ".join(f"{n:>26s}" for n in names) + f" {'Cl inviscid':>12s}"]
+        for r in res:
+            lines.append(f"{r['alpha']:6.2f} " + " ".join(
+                f"{r['elements'][n]['Cl']:8.4f} {r['elements'][n]['Cd']:8.5f} "
+                f"{r['elements'][n]['Cm']:+8.4f}" for n in names) + f" {r['Cl_inviscid']:12.4f}")
     if a.mach > 0:
         lines += ["", f"Cl, Cm, Cd_p and Cp corrected for M = {a.mach:g} with Prandtl-Glauert "
                   f"(factor {1 / math.sqrt(1 - a.mach**2):.4f}); uncorrected values in polar.json "
@@ -291,7 +418,11 @@ def cmd_polar(a):
                                          f"{v[0] / v[1]:7.1f} {v[3]:7.3f} {v[4]:7.3f}"
                                          for k, v in sorted(d.items())]
     warn = []
-    if turb and trans == "off":
+    if multi:
+        warn.append("multi-element airfoil: fully turbulent SA (no transition model yet); "
+                    "corners rounded (r <= 0.2 % element chord, coves 0.6 %) and sharp "
+                    "trailing edges thickened to a 0.1 %-chord base for meshing")
+    elif turb and trans == "off":
         warn.append("fully turbulent: at Re below ~1e7 real airfoils have laminar regions, so "
                     "Cd is typically overpredicted (use the default free transition)")
     if turb and trans == "free":
@@ -344,6 +475,8 @@ def main(argv=None):
     s.add_argument("airfoil")
     s.add_argument("--out")
     s.add_argument("--derotate", action="store_true")
+    s.add_argument("--alpha", dest="alpha_show", type=float, default=0.0,
+                   help="multi-element: angle for the inviscid panel-method Cp")
     argv = list(sys.argv[1:] if argv is None else argv)
     for i in range(len(argv) - 1):          # allow "--alpha -4:16:2" (negative start)
         if argv[i] == "--alpha" and argv[i + 1][:1] == "-":
