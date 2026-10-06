@@ -240,7 +240,20 @@ def _chain(args):
     for seq in (alphas[i0:], alphas[:i0][::-1]):
         state = start_state
         for a in seq:
-            r, st = run_point(spec, re, a, level, init=state, **kw)
+            try:
+                r, st = run_point(spec, re, a, level, init=state, **kw)
+            except (ValueError, FloatingPointError, np.linalg.LinAlgError) as err:
+                # a diverged point (NaN/inf in the solver) must not take the whole
+                # sweep down; any other error (bad input) still stops it
+                if not any(k in str(err).lower() for k in ("nan", "inf", "singular")):
+                    raise
+                nan = float("nan")
+                r = {"alpha": a, "Cl": nan, "Cd": nan, "Cm": nan, "Cd_p": nan, "Cd_v": nan,
+                     "status": f"diverged ({type(err).__name__})", "iterations": 0,
+                     "time_s": 0.0, "cells": 0, "yplus_max": nan, "warm_start": state is not None,
+                     "transition": "-", "x_tr_upper": None, "x_tr_lower": None,
+                     "wall": {k: [] for k in ("x", "y", "side", "Cp", "Cf", "element")}}
+                st = None
             if log:
                 print(f"  alpha {a:6.2f}: Cl {r['Cl']:8.4f}  Cd {r['Cd']:.5f}  Cm {r['Cm']:+.4f}  "
                       f"{r['status']:9s} {r['iterations']:5d} it  {r['time_s']:6.1f} s"

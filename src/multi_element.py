@@ -357,6 +357,13 @@ def load_multi(spec, level=1.0, te_thick_rel=0.001, n_te=3, r_corner_rel=0.002,
         # Radius 0.6 % of the element chord, inside a separated cove.
         raw = round_corners(raw, r_concave_rel * element_chord(raw), closed=False,
                             which="concave", step_deg=5.0)
+        # convex corners (the slat cusp, the cove lip) likewise, so their
+        # radius is a property of the geometry, not of the local point
+        # spacing: rounded after resampling only, the cusp radius shrank
+        # with the mesh level (2e-5 c at level 1.4) and the solver diverged
+        # in the 1e-13 c^2 cells wrapped around it
+        raw = round_corners(raw, r_corner_rel * element_chord(raw), closed=False,
+                            which="convex", step_deg=10.0)
         out = resample(raw, chord_ref=ref_chord, level=level)
         ce = element_chord(out)
         loop = round_corners(blunt(out, te_thick_rel * ce, n_te=n_te), r_corner_rel * ce)

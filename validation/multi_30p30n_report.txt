@@ -1,0 +1,21 @@
+30P30N JAXA model (thick TEs), SA-noft2 fully turbulent, Re 1.71e+06 (stowed chord), incompressible; Cp compared x 1.0148 (Prandtl-Glauert, M 0.17)
+experiment: JAXA LWT2 (Murayama et al. 2014, 2018), open-air CFD angles per the JAXA README
+
+ alpha   cells       Cl    Cl_PG        Cd       Cm   Cl_inv     slat     main     flap  status
+   5.5   74982   2.8549   2.8971   0.04087  -0.6190   3.4366   0.1642   2.2221   0.4686  converged, 845 it, 323 s
+   9.5   75146   3.3110   3.3599   0.04471  -0.5799   3.9519   0.3202   2.5465   0.4443  converged, 824 it, 284 s
+  14.0   75378   3.7687   3.8244   0.05243  -0.5225   4.5085   0.5071   2.8562   0.4054  converged, 1150 it, 421 s
+
+Cp at the pressure taps: mean |Cp_SA - Cp_exp| (max) per element
+  alpha  5.5 vs kevlar2017   : slat 0.133 (0.431)   main 0.113 (0.402)   flap 0.086 (0.197)
+  alpha  5.5 vs hardwall2013 : slat 0.129 (0.374)   main 0.066 (0.373)   flap 0.070 (0.198)
+  alpha  9.5 vs kevlar2017   : slat 0.174 (0.690)   main 0.137 (0.439)   flap 0.083 (0.182)
+  alpha  9.5 vs hardwall2013 : slat 0.126 (0.520)   main 0.089 (0.351)   flap 0.070 (0.145)
+  alpha 14.0 vs kevlar2017   : slat 0.263 (1.389)   main 0.168 (0.554)   flap 0.061 (0.134)
+
+grid study, alpha 5.5:
+    47979 cells: Cl 2.8558  Cd 0.04070  Cm -0.6192  converged
+    74982 cells: Cl 2.8549  Cd 0.04087  Cm -0.6190  converged
+   126278 cells: Cl 2.8575  Cd 0.04073  Cm -0.6196  converged
+  vs SU2 grid-converged (compressible, M 0.17): 47979 cells Cl x PG 2.8980 (+0.07 %), Cd (Cd_p x PG) 0.04113 (-3.9 %); 74982 cells Cl x PG 2.8971 (+0.04 %), Cd (Cd_p x PG) 0.04130 (-3.5 %); 126278 cells Cl x PG 2.8997 (+0.13 %), Cd (Cd_p x PG) 0.04116 (-3.8 %)
+  Cl change coarse->medium -0.03 %, medium->fine +0.09 %;  Cd +0.40 %, -0.33 %
