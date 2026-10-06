@@ -179,19 +179,33 @@ def _dense_walls(loops, h=0.002):
 
 
 def make_multi_size_fn(loops, tes, h_near, grad, h_far, wake_length, wake_h, wake_grad,
-                       alpha_deg):
+                       alpha_deg, fronts=None, front_grad=0.15):
     """Size field: h_near + grad * (distance to the nearest wall), and a
     refined wake strip from every element's trailing edge along the free
-    stream (the slat and main-element wakes run over the next element)."""
+    stream (the slat and main-element wakes run over the next element).
+    fronts: the boundary-layer edge loops - the triangles then also grow
+    smoothly (front_grad) from the local spacing of the layer edge, so the
+    fine edge at a cusp, a trailing edge or in a slot is not met by
+    triangles 10-50x larger (the slat-cusp shear layer diverged that way on
+    the coarse mesh)."""
     from scipy.spatial import cKDTree
     pts, _ = _dense_walls(loops)
     tree = cKDTree(pts)
+    if fronts is not None:
+        F = np.vstack(fronts)
+        ell = np.concatenate([0.5 * (np.linalg.norm(np.roll(f, -1, axis=0) - f, axis=1) +
+                                     np.linalg.norm(f - np.roll(f, 1, axis=0), axis=1))
+                              for f in fronts])
+        ftree = cKDTree(F)
     ca, sa = math.cos(math.radians(alpha_deg)), math.sin(math.radians(alpha_deg))
     tes = [np.asarray(t, float) for t in tes]
 
     def size(x, y):
         d = tree.query((x, y))[0]
         h = h_near + grad * d
+        if fronts is not None:
+            df, j = ftree.query((x, y), k=4)
+            h = min(h, float(np.min(ell[j] + front_grad * df)))
         for te in tes:
             xs, ys = x - te[0], y - te[1]
             s = xs * ca + ys * sa
@@ -328,7 +342,8 @@ def build_multi_mesh(elements, reynolds=9e6, h1=None, yplus=0.7, growth=1.15, n_
 
     tes = [e["te"] for e in elements]
     size = make_multi_size_fn(walls, tes, h_near, grad, 2 * math.pi * R / n_farfield,
-                              wake_length, wake_h, wake_grad, alpha_deg)
+                              wake_length, wake_h, wake_grad, alpha_deg,
+                              fronts=[L[-1] for L in layers_all])
     added = cdt.refine(size, min_angle_deg=min_angle, splittable=('farfield',))
     cdt.check()
     tris = cdt.triangles(region=1)

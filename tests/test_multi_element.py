@@ -108,3 +108,22 @@ def test_multi_mesh_valid(tmp_path):
     from fvmesh import FVMesh
     fvm = FVMesh(m["points"], m["cells"], m["patches"])
     assert fvm.n_clamped == 0                       # no near-90 deg faces
+
+
+def test_jaxa_geometry_and_data():
+    """JAXA 30P30N model: thick trailing edges kept, gaps, experiment files."""
+    el, info = me.load_multi("30p30n_jaxa")
+    gaps = {e["name"]: np.linalg.norm(e["outline"][0] - e["outline"][-1]) for e in el}
+    assert gaps["slat"] == pytest.approx(0.00167, abs=2e-5)       # 0.03 in / 18 in
+    assert gaps["flap"] == pytest.approx(0.00584, abs=2e-5)
+    assert info["min_gaps"]["slat-main"] == pytest.approx(0.0295, abs=0.0005)
+    assert info["min_gaps"]["main-flap"] == pytest.approx(0.0127, abs=0.0005)
+    import validate_multi as vm
+    exp = vm._read_exp(9.5, "kevlar2017")
+    assert len(exp) == 66 and set(exp["element"]) == {"slat", "main", "flap"}
+    # every tap lands on its element's surface, in a continuous sequence
+    for e in el:
+        rows = exp[exp["element"] == e["name"]]
+        st, s = vm.place_taps(e["outline"], rows["x"])
+        x = np.interp(st, s, e["outline"][:, 0])
+        assert np.abs(x - rows["x"]).max() < 1e-3

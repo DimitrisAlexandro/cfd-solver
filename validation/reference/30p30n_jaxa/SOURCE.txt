@@ -1,0 +1,15 @@
+30P30N three-element high-lift airfoil, JAXA model and wind-tunnel data
+(AIAA BANC-III/IV Category 7 and JAXA APC-IV workshop).
+
+Geometry: 30P30N_modified_slat_configF.tar (2010_30p30n_thik_te: thick trailing
+edges), https://cfdws.chofu.jaxa.jp/apc/apc4/config.html ; stowed chord 18 in.
+slat.dat / main.dat / flap.dat = its .crv curves divided by 18 (stowed chord 1),
+each from the trailing edge around to the trailing edge.
+
+Data: https://cfdws.chofu.jaxa.jp/apc/apc4/exp.html (README pdf in this folder)
+  Murayama et al., AIAA 2014-2080 (LWT2 hard wall, 2013) and AIAA 2018-3460
+  (LWT2 Kevlar wall, 2017). M 0.17, Re 1.71e6 based on the stowed chord.
+  Uncorrected AoA 6/10 (2013) and 7/11/16 (2017) correspond to the open-air
+  CFD (SA) angles 5.5 / 9.5 and 5.5 / 9.5 / 14 deg (README).
+exp_cp_a<alpha>_<test>.csv: mean Cp extracted from the cp.dat files (element, x/c, Cp).
+The original archives are kept here unchanged.
