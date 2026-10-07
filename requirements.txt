@@ -6,3 +6,4 @@ pytest
 pyamg
 threadpoolctl
 numba
+pypardiso        # optional: coupled solver (MKL PARDISO); Phase 4b

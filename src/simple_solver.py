@@ -128,6 +128,7 @@ class SimpleSolver:
         self.Fb = np.einsum('ij,ij->i', np.where(self.b_fixedU[:, None], self.Ub,
                                                  self.U[m.bcell]), m.bSf)
         self.Ubar_S_old = self.F.copy()
+        self.Ubar_Sb_old = self.Fb.copy()       # boundary (outlet) Majumdar term
         self.gradp = np.zeros((n, 2))
         self.gU = [np.zeros((n, 2)), np.zeros((n, 2))]
         self.history = []
@@ -327,9 +328,15 @@ class SimpleSolver:
             o = self.b_outlet
             Ustar_b = Ustar[bc[o]] + np.c_[np.einsum('ij,ij->i', gU[0][bc[o]], m.db_t[o]),
                                            np.einsum('ij,ij->i', gU[1][bc[o]], m.db_t[o])]
-            Fbstar[o] = np.einsum('ij,ij->i', Ustar_b, m.bSf[o]) - Dp[bc[o]] * (
+            UbSb = np.einsum('ij,ij->i', Ustar_b, m.bSf[o])
+            Fbstar[o] = UbSb - Dp[bc[o]] * (
                 (self.pb_out[o] - self.p[bc[o]]) * m.bcoef[o] -
                 np.einsum('ij,ij->i', self.gradp[bc[o]], m.bDelta[o]))
+            # Majumdar correction on the outlet faces too: without it the
+            # converged outlet flux carries alpha_u * V/a_P and the solution
+            # depends (slightly, ~1e-4) on the under-relaxation
+            Fbstar[o] += (1 - self.au) * (self.Fb[o] - self.Ubar_Sb_old[o])
+            self.Ubar_Sb_old[o] = UbSb
 
         # ---- pressure correction ---------------------------------------------
         cf = Dcf * m.coef
@@ -494,6 +501,7 @@ class SimpleSolver:
         self.Fb = np.einsum('ij,ij->i', np.where(self.b_fixedU[:, None], self.Ub,
                                                  self.U[m.bcell]), m.bSf)
         self.Ubar_S_old = self.F.copy()
+        self.Ubar_Sb_old = self.Fb.copy()       # boundary (outlet) Majumdar term
         if nuTilde is not None and self.turb is not None:
             self.turb.nuT = np.maximum(np.array(nuTilde, float), 0.0)
 
