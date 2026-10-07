@@ -413,7 +413,7 @@ class Transition:
 
 
 def solve_with_transition(solver, tr, tol=1e-7, max_iter=12000, chunk=400, settle=60,
-                          callback=None, max_updates=60, verbose=False):
+                          callback=None, max_updates=60, verbose=False, scale=1.0):
     """Alternate: let the flow respond (at least `settle` iterations, then until
     the residuals are < 1e-5 or `chunk` iterations), update the transition
     points; when they no longer move, converge the flow to `tol`.
@@ -422,15 +422,19 @@ def solve_with_transition(solver, tr, tol=1e-7, max_iter=12000, chunk=400, settl
         return solver.solve(tol=tol, max_iter=max_iter, verbose=False, callback=callback)
     import os
     verbose = verbose or os.environ.get("CFD_TRANSITION_VERBOSE") == "1"
+    # scale: iteration counts relative to SIMPLEC (the coupled solver
+    # converges in ~10x fewer outer iterations)
+    chunk, settle = max(int(chunk * scale), 5), max(int(settle * scale), 3)
+    n_start1, n_start2 = max(int(150 * scale), 10), max(int(300 * scale), 20)
     total = 0
     prev_F = None
     if tr.auto_start:                     # start: fully turbulent first
         # at least 150 iterations even if the residual is already small: a
         # warm-started field (previous angle, rotated) looks converged at once
         # but its suction peak has not yet adapted to the new angle
-        total += solver.solve(tol=0.0, max_iter=min(150, max_iter), verbose=False,
+        total += solver.solve(tol=0.0, max_iter=min(n_start1, max_iter), verbose=False,
                               callback=callback)
-        total += solver.solve(tol=1e-4, max_iter=min(300, max_iter - total), verbose=False,
+        total += solver.solve(tol=1e-4, max_iter=min(n_start2, max_iter - total), verbose=False,
                               callback=callback)
         tr.initial_guess()
         if verbose:

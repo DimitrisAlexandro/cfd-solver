@@ -348,7 +348,7 @@ def cmd_polar(a):
         trans, tr_label = "free", f"free transition (e^N, N_crit {a.ncrit:g})"
     res = pl.polar(a.airfoil, a.re, alphas, level=a.refine, jobs=a.jobs,
                    out=None if a.no_fields else out, max_iter=a.max_iter,
-                   transition=trans, ncrit=a.ncrit)
+                   transition=trans, ncrit=a.ncrit, solver=a.solver)
     for r in res:
         r["turbulent"] = turb
     if multi:                         # inviscid reference (same outlines, sharp TEs)
@@ -463,6 +463,9 @@ def main(argv=None):
     p.add_argument("--derotate", action="store_true", help="put the chord line on the x axis")
     p.add_argument("--transition", choices=["free", "off"], default="free",
                    help="free: e^N transition prediction (default); off: fully turbulent")
+    p.add_argument("--solver", choices=["auto", "simple", "coupled"], default="auto",
+                   help="SIMPLEC (default) or the coupled u-v-p solver (needs pypardiso; "
+                        "auto = $CFD_SOLVER or simple)")
     p.add_argument("--ncrit", type=float, default=9.0,
                    help="critical amplification factor (9 = quiet wind tunnel)")
     p.add_argument("--xtr", help="fixed transition 'x_upper,x_lower' (e.g. trip strips)")

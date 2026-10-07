@@ -34,15 +34,30 @@ class CoupledSolver(SimpleSolver):
     """Same constructor as SimpleSolver; alpha_u is the momentum under-
     relaxation of the coupled system (can be close to 1)."""
 
-    def __init__(self, *a, linear="gmres", gmres_rtol=0.05, **k):
-        k.setdefault("alpha_u", 0.95)
+    def __init__(self, *a, linear="pardiso", gmres_rtol=0.05, sa_subits=3, **k):
+        k.setdefault("alpha_u", 0.99)
         super().__init__(*a, **k)
         if not self.has_outlet:
             raise NotImplementedError("coupled solver: needs an outlet (pressure level)")
         self.coupled_linear = linear
         self.gmres_rtol = gmres_rtol
         self._ml, self._ml_age = None, 0
-        self.lin_stats = {"gmres_its": 0, "amg_setups": 0}
+        self.lin_stats = {"gmres_its": 0, "amg_setups": 0, "factorizations": 0}
+        self._lu = None
+        self._lu_age = 0
+        self.refactor_every = 1           # outer iterations a factorization is reused
+        self.sa_subits = sa_subits        # SA iterations per outer iteration
+        self.refactor_its = 8             # ... or refactor when GMRES needs more
+        # adaptive relaxation: with alpha_u ~ 1 the lagged explicit parts
+        # (deferred-correction convection, Rhie-Chow / skew terms) can leave
+        # one slowly GROWING mode near convergence (NACA 0012 warm starts:
+        # x1.03 per iteration from 1e-6). When the residual has risen to
+        # adapt_rise x its running minimum, alpha_u steps down (0.99 -> 0.95
+        # -> 0.9). The converged answer does not depend on alpha_u (Majumdar
+        # terms on interior AND outlet faces), only the path does.
+        self.adapt_rise = 4.0
+        self.alpha_min = 0.9
+        self._res_min = np.inf
         if self._pattern is None:
             self._pattern = kernels.CsrPattern(self.m.ncells, self.m.own, self.m.nei)
 
@@ -94,6 +109,9 @@ class CoupledSolver(SimpleSolver):
                                                            np.einsum('ij,ij->i', gU[1][bc], m.db_t)], bS)
                             - Dp[bc] * (self.pb_out * m.bcoef
                                         - np.einsum('ij,ij->i', self.gradp[bc], m.bDelta)), 0.0)
+        gUdb = np.c_[np.einsum('ij,ij->i', gU[0][bc], m.db_t),
+                     np.einsum('ij,ij->i', gU[1][bc], m.db_t)]
+        Fb_expl += np.where(o, (1 - self.au) * (self.Fb - self.Ubar_Sb_old), 0.0)  # Majumdar
         cb_p = np.where(o, Dp[bc] * m.bcoef, 0.0)        # coefficient of p_P in Fb
 
         rhs = np.concatenate([src[:, 0], src[:, 1],
@@ -111,6 +129,8 @@ class CoupledSolver(SimpleSolver):
                "Uy": np.abs(r_before[n:2 * n]).sum() / scale_u}
         if self.coupled_linear == "direct":
             x = spsolve(self._assemble(ops, w, Sx, Sy, bS, o).tocsc(), rhs)
+        elif self.coupled_linear == "pardiso":
+            x = self._pardiso(K, self._assemble(ops, w, Sx, Sy, bS, o), rhs, x0)
         else:
             x = self._gmres(K, rhs, x0, diag, a_on, a_no, cf, cb_p, Dp)
         self.U = np.c_[x[:n], x[n:2 * n]]
@@ -121,11 +141,24 @@ class CoupledSolver(SimpleSolver):
         self.Ubar_S_old = UbarS
         self.Fb = Fb_expl + np.where(o, np.einsum('ij,ij->i', self.U[bc], bS) + cb_p * self.p[bc],
                                      0.0)
+        self.Ubar_Sb_old = np.where(o, np.einsum('ij,ij->i', self.U[bc] + gUdb, bS),
+                                    self.Ubar_Sb_old)
         if self.turb is not None:
             self.gU = [m.grad(self.U[:, k], self._boundary_values()[0][:, k]) for k in range(2)]
             res["nuT"] = self.turb.solve()
+            for _ in range(self.sa_subits - 1):  # the flow solve costs far more:
+                self.turb.solve()                # let SA catch up with it
         self.history.append(res)
+        self._adapt(max(res.values()))
         return res
+
+    def _adapt(self, r):
+        if r < self._res_min:
+            self._res_min = r
+        elif self._res_min < 1e-4 and r > self.adapt_rise * self._res_min and \
+                self.au > self.alpha_min + 1e-9:
+            self.au = max(self.alpha_min, 0.95 if self.au > 0.95 else self.au - 0.05)
+            self._res_min = r                # watch again from here
 
     # ------------------------------------------------------------------
     def _gmres(self, K, rhs, x0, diag, a_on, a_no, cf, cb_p, Dp):
@@ -210,5 +243,112 @@ class CoupledSolver(SimpleSolver):
         add(2 * n + nei, 2 * n + nei, cf)
         add(2 * n + nei, 2 * n + own, -cf)
         add(2 * n + bc, 2 * n + bc, ops["cb_p"])
-        return sp.csr_matrix((np.concatenate(V), (np.concatenate(R), np.concatenate(C))),
-                             (3 * n, 3 * n))
+        rows, cols, vals = np.concatenate(R), np.concatenate(C), np.concatenate(V)
+        N = 3 * n
+        if getattr(self, "_bpat", None) is None or self._bpat[0] != len(rows):
+            # sparsity pattern of the block matrix: fixed for a mesh, built once.
+            # pos[i] = where COO entry i lands in the CSR data (duplicates summed)
+            key = rows.astype(np.int64) * N + cols
+            ukey, pos = np.unique(key, return_inverse=True)
+            indptr = np.searchsorted(ukey // N, np.arange(N + 1)).astype(np.int64)
+            self._bpat = (len(rows), pos, indptr, (ukey % N).astype(np.int64), len(ukey))
+        _, pos, indptr, indices, nnz = self._bpat
+        A = sp.csr_matrix((np.bincount(pos, vals, nnz), indices, indptr), (N, N))
+        A.has_sorted_indices = True
+        return A
+
+    # ------------------------------------------------------------------
+    def _pardiso(self, K, A, rhs, x0):
+        if self.refactor_every <= 1:              # direct solve every iteration
+            if self._lu is None:
+                self._lu = PardisoLU()
+            self._lu.factor(A)
+            self.lin_stats["factorizations"] += 1
+            return self._lu.solve(rhs)
+        return self._pardiso_reuse(K, A, rhs, x0)
+
+    def _pardiso_reuse(self, K, A, rhs, x0):
+        """Direct LU (MKL PARDISO) of the block matrix, reused as the GMRES
+        preconditioner for the following outer iterations: the matrix
+        changes slowly, so an old factorization still solves the new system
+        in a few Krylov iterations. Refactor after refactor_every iterations
+        or when GMRES needed more than refactor_its iterations."""
+        import pypardiso
+        from scipy.sparse.linalg import LinearOperator, gmres
+        A = A.tocsr()
+        A.sum_duplicates()
+        if self._lu is None or self._lu_age >= self.refactor_every:
+            if self._lu is None:
+                self._lu = pypardiso.PyPardisoSolver()
+            else:
+                self._lu.free_memory(everything=True)   # PARDISO keeps the old factors
+            self._lu_A = A
+            self._lu.factorize(A)
+            self._lu_age = 0
+            self.lin_stats["factorizations"] += 1
+            fresh = True
+        else:
+            fresh = False
+        self._lu_age += 1
+        lu, A0 = self._lu, self._lu_A
+        if fresh:
+            x = lu.solve(A0, rhs)
+            return x
+        N = A.shape[0]
+        M = LinearOperator((N, N), matvec=lambda r: lu.solve(A0, np.asarray(r).ravel()),
+                           dtype=float)
+        r0 = np.linalg.norm(rhs - K(x0))
+        its = [0]
+        x, info = gmres(LinearOperator((N, N), matvec=K, dtype=float), rhs, x0=x0, rtol=0.0,
+                        atol=self.gmres_rtol * r0, restart=30, maxiter=3, M=M,
+                        callback=lambda _: its.__setitem__(0, its[0] + 1),
+                        callback_type="pr_norm")
+        self.lin_stats["gmres_its"] += its[0]
+        if its[0] > self.refactor_its:
+            self._lu_age = self.refactor_every   # refactor next time
+        return x
+
+
+class PardisoLU:
+    """MKL PARDISO for a matrix whose sparsity pattern never changes: the
+    symbolic analysis (fill-reducing reordering, phase 11) runs once, every
+    new set of values only needs the numeric factorization (phase 22)."""
+
+    def __init__(self):
+        import os
+        import pypardiso
+        from threadpoolctl import threadpool_limits
+        # threads: all cores for one run; cores / jobs when the polar tool
+        # runs several angles in parallel (CFD_JOBS), or CFD_PARDISO_THREADS
+        n = int(os.environ.get("CFD_PARDISO_THREADS", "0")) or \
+            max(1, (os.cpu_count() or 1) // max(1, int(os.environ.get("CFD_JOBS", "1"))))
+        threadpool_limits(limits={"mkl": n})
+        self.threads = n
+        self.ps = pypardiso.PyPardisoSolver()
+        self.pattern = None
+        self.A = None
+
+    def factor(self, A):
+        ps = self.ps
+        ps._check_A(A)
+        key = (A.shape[0], A.nnz)
+        z = np.zeros((A.shape[0], 1))
+        if self.pattern != key:
+            if self.pattern is not None:
+                ps.free_memory(everything=True)
+            ps.set_phase(11)
+            ps._call_pardiso(A, z)
+            self.pattern = key
+        ps.set_phase(22)
+        ps._call_pardiso(A, z)
+        self.A = A
+
+    def solve(self, b):
+        self.ps.set_phase(33)
+        return self.ps._call_pardiso(self.A, np.asfortranarray(b, dtype=float))
+
+    def __del__(self):
+        try:
+            self.ps.free_memory(everything=True)
+        except Exception:
+            pass

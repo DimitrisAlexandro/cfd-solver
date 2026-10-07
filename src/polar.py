@@ -37,6 +37,25 @@ from simple_solver import SimpleSolver
 LAMINAR_RE = 1e5
 
 
+def resolve_solver(solver, re):
+    """"auto" -> the environment variable CFD_SOLVER if set ("simple" /
+    "coupled"), else "simple". Phase 4b measurement (2-core machine, NACA
+    0012 polar -4..16): coupled 470 s vs SIMPLEC 555 s, i.e. ~1.2x, with
+    Cl up to 6e-4 lower at small angles (a second, nearly-degenerate
+    state of the limited scheme) -> SIMPLEC stays the default until the
+    coupled solver measures clearly faster on the target machine
+    (python benchmark_coupled.py). The coupled settings were tuned on
+    turbulent (SA) cases."""
+    import os
+    if solver == "auto":
+        solver = os.environ.get("CFD_SOLVER", "simple")
+    if solver not in ("simple", "coupled"):
+        raise ValueError(f"solver must be simple, coupled or auto, not {solver!r}")
+    if solver == "coupled":
+        import pypardiso  # noqa: F401  (clear error if missing)
+    return solver
+
+
 def coefficients(solver, walls, U):
     """Total force coefficients over several wall patches (multi-element
     airfoil) + the per-patch ones. Returns (total dict, {patch: dict})."""
@@ -95,7 +114,7 @@ def _single_mesh(loop, info, re, alpha, level, farfield, turb):
 
 def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
               force_tol=2e-5, window=200, farfield=None, out=None, transition="free",
-              ncrit=9.0, sequencing=False):
+              ncrit=9.0, sequencing=False, solver="auto"):
     """One angle of attack. init: dict(xc, U, p, nuT, x_tr) from a neighbouring
     angle (warm start). transition (turbulent Re only): "free" (e^N, N_crit
     = ncrit), "off" (fully turbulent) or {"upper": x, "lower": x} (fixed trip).
@@ -104,8 +123,17 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
     interpolated to this mesh: SIMPLEC needs more iterations the finer the
     mesh (30P30N 622 / 845 / 1335 at levels 0.7 / 1 / 1.4), so the fine mesh
     only converges the last part (NACA 0012 SA: 710 -> 417 fine iterations).
+    solver (Phase 4b): "coupled" (u, v, p solved together, MKL PARDISO;
+    3-8x fewer iterations, each ~4x dearer), "simple" (SIMPLEC), or "auto"
+    (= $CFD_SOLVER, default simple; see resolve_solver).
     Returns (result dict, state dict for the next angle)."""
     t0 = time.time()
+    solver = resolve_solver(solver, re)
+    # iteration-count based settings were tuned for SIMPLEC (~800 iterations
+    # per point); the coupled solver needs ~10x fewer
+    k_it = 0.1 if solver == "coupled" else 1.0
+    if window == 200:
+        window = int(round(200 * k_it))
     if sequencing and init is None and re >= LAMINAR_RE and level >= 0.85:
         try:
             _, init = run_point(spec, re, alpha, level=0.7 * level, tol=1e-5,
@@ -120,8 +148,13 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
     # start (the thinned/redistributed quads in the coves and slots grew
     # wiggles from a uniform start), then only on the triangles as for a
     # single airfoil (30P30N alpha 8: Cl 3.2146 -> 3.2156, Cd -0.5 %)
-    s = SimpleSolver(fvm, bcs, 1.0 / re, U0=U, turbulence=turb,
-                     **({"limiter_cells": "all"} if multi else {}))
+    if solver == "coupled":
+        from coupled import CoupledSolver
+        s = CoupledSolver(fvm, bcs, 1.0 / re, U0=U, turbulence=turb,
+                          **({"limiter_cells": "all"} if multi else {}))
+    else:
+        s = SimpleSolver(fvm, bcs, 1.0 / re, U0=U, turbulence=turb,
+                         **({"limiter_cells": "all"} if multi else {}))
     switch = {"done": not multi}
     if init is not None and init.get("sequencing"):
         # coarse-mesh solution, same angle: linear interpolation (nearest
@@ -150,7 +183,8 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
     vf = None
     if turb:
         import validate_naca0012_sa as v
-        vf = v.VortexFarfield(s, alpha, wall=walls, center=(0.25 * info.get("ref_chord", 1.0), 0.0))
+        vf = v.VortexFarfield(s, alpha, wall=walls, center=(0.25 * info.get("ref_chord", 1.0), 0.0),
+                              every=max(1, int(round(50 * k_it))))
         if init is not None:
             vf.update(0)        # a warm / sequenced start already carries its lift
     if multi and transition != "off":
@@ -162,13 +196,14 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
     def monitor(it, r):
         if vf is not None:
             vf.update(it)
-        if not switch["done"] and it >= 300 and max(r.values()) < 1e-4:
+        if not switch["done"] and it >= 300 * k_it and max(r.values()) < 1e-4:
             s.limiter_mask = s.m.nverts == 3
             switch["done"] = True
-        if it % 10 == 0:
+        every = max(1, int(round(10 * k_it)))
+        if it % every == 0:
             c = coefficients(s, walls, U)[0]
             hist.append((it, c["Cl"], c["Cd"], c["Cm"]))
-            n = window // 10
+            n = max(window // every, 3)
             if len(hist) > n and max(r.values()) < 1e-5:
                 h = np.array(hist[-n - 1:])[:, 1:]
                 scale = np.maximum(np.abs(h[-1]), [0.1, 0.01, 0.01])  # Cl, Cd, Cm scales
@@ -178,9 +213,15 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
             # trailing edge sheds weakly): residuals stall, forces vary < 0.5 %
             # -> stop and report the mean
             total = len(s.history)
-            if total >= 1500 and len(hist) >= 60 and (tr is None or tr.converged):
-                res_max = np.array([max(q.values()) for q in s.history[-600:]])
-                stalled = res_max[-100:].min() > 0.5 * res_max[:100].min()
+            k6, k1 = int(600 * k_it), int(100 * k_it)
+            if total >= 1500 * k_it and len(hist) >= 60 and (tr is None or tr.converged):
+                res_max = np.array([max(q.values()) for q in s.history[-k6:]])
+                stalled = res_max[-k1:].min() > 0.5 * res_max[:k1].min()
+                # a steadily GROWING residual is a slow transient still on its
+                # way (coupled warm starts: x1.03/iteration for ~100
+                # iterations, then converges), not a limit cycle
+                q = len(res_max) // 4
+                stalled = stalled and res_max[-q:].mean() < 1.3 * res_max[-2 * q:-q].mean()
                 h = np.array(hist[-50:])[:, 1:]
                 small = (np.ptp(h[:, 0]) < 0.005 * max(abs(h[:, 0].mean()), 0.1) and
                          np.ptp(h[:, 1]) < 0.01 * h[:, 1].mean())
@@ -201,7 +242,8 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
             # upstream laminar separation -> the leading-edge bubble bursts and
             # the solution locks onto a stalled branch
             tr = T.Transition(s, mesh, re, mode="free", ncrit=ncrit, x_tr=None)
-        it = T.solve_with_transition(s, tr, tol=tol, max_iter=max_iter, callback=monitor)
+        it = T.solve_with_transition(s, tr, tol=tol, max_iter=max_iter, callback=monitor,
+                                     scale=k_it)
     else:
         it = s.solve(tol=tol, max_iter=max_iter, verbose=False, callback=monitor)
     c, per = coefficients(s, walls, U)
@@ -218,6 +260,7 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
            "status": status, "iterations": int(it), "time_s": round(time.time() - t0, 1),
            "cells": int(fvm.ncells), "yplus_max": float(w["yplus"].max()),
            "warm_start": init is not None and not init.get("sequencing"),
+           "solver": solver,
            "sequenced": bool(init is not None and init.get("sequencing")),
            "transition": ("fully turbulent" if tr is None else
                           (f"free, N_crit {ncrit:g}" if tr.mode == "free" else "fixed")),
@@ -301,6 +344,8 @@ def polar(spec, re, alphas, level=1.0, jobs=2, log=True, **kw):
     Returns the results sorted by alpha."""
     alphas = sorted(float(a) for a in alphas)
     jobs = max(1, min(jobs, len(alphas)))
+    import os
+    os.environ["CFD_JOBS"] = str(jobs)          # PARDISO threads per worker (coupled.py)
     blocks = [list(b) for b in np.array_split(alphas, jobs) if len(b)]
     if len(blocks) > 1:
         with get_context("fork").Pool(len(blocks)) as pool:
