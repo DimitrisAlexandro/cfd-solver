@@ -167,6 +167,18 @@ class SimpleSolver:
         pb = np.where(self.b_outlet, self.pb_out, pb)
         return Ub, pb
 
+    def _face_viscosity(self):
+        """(internal faces, boundary faces) effective viscosity of the
+        momentum equation (the compressible solver: dynamic viscosity)."""
+        if self.turb is not None:              # molecular + eddy viscosity on faces
+            return self.turb.face_viscosity()
+        return self.nu, np.full(len(self.m.bcell), self.nu)
+
+    def _transpose_stress(self):
+        """include div(nu (grad U)^T): zero for constant viscosity and
+        div U = 0, not with an eddy viscosity (or compressible flow)"""
+        return self.turb is not None
+
     def _momentum(self, Ub, gU):
         """Momentum equations (both components, before under-relaxation):
         diag, off-diagonals a_on (owner row) / a_no (neighbour row), source
@@ -176,10 +188,8 @@ class SimpleSolver:
         own, nei, bc = m.own, m.nei, m.bcell
         # ---- momentum matrix ------------------------------------------------
         F, Fb = self.F, self.Fb
-        if self.turb is not None:              # molecular + eddy viscosity on faces
-            nu_f, nu_b = self.turb.face_viscosity()
-        else:
-            nu_f, nu_b = nu, np.full(len(bc), nu)
+        nu_f, nu_b = self._face_viscosity()
+        transpose = self._transpose_stress()
         fast = kernels.USE_NUMBA
         if fast and self._pattern is None:
             self._pattern = kernels.CsrPattern(n, own, nei)
@@ -194,7 +204,7 @@ class SimpleSolver:
             diag, a_on, a_no, src, tr = kernels.momentum_coeffs(
                 n, own, nei, F, np.ascontiguousarray(nu_fa), m.coef, m.w, m.Sf, m.Delta,
                 m.xc, m.xf, gU[0], gU[1], gk[0], gk[1], bool(self.second_order))
-            if self.turb is not None:
+            if transpose:
                 src += tr
             diag += np.bincount(bc, np.where(self.b_fixedU, Db, 0.0) +
                                 np.where(self.b_outlet, np.maximum(Fb, 0.0), 0.0), n)
@@ -205,9 +215,9 @@ class SimpleSolver:
                 bsrc += np.where(self.b_outlet,
                                  -np.maximum(Fb, 0.0) * np.einsum('ij,ij->i', gU[k][bc], m.db_t)
                                  - np.minimum(Fb, 0.0) * Ub[:, k], 0.0)
-                if self.turb is not None:
+                if transpose:
                     gTb = np.c_[gU[0][bc, k], gU[1][bc, k]]
-                    bsrc += np.where(self.b_outlet, 0.0, nu_b) * np.einsum('ij,ij->i', gTb, m.bSf)
+                    bsrc += nu_b * np.einsum('ij,ij->i', gTb, m.bSf)
                 src[:, k] += np.bincount(bc, bsrc, n)
         else:
             D = nu_f * m.coef
@@ -235,13 +245,13 @@ class SimpleSolver:
                                  -np.maximum(Fb, 0.0) * np.einsum('ij,ij->i', gU[k][bc], m.db_t)
                                  - np.minimum(Fb, 0.0) * Ub[:, k], 0.0)
                 s += np.bincount(bc, bsrc, n)
-                if self.turb is not None:
+                if transpose:
                     # transpose part of the viscous stress, div(nu_eff (grad U)^T):
                     # zero for constant viscosity, not for a varying eddy viscosity
                     gTf = np.c_[m.interp(gU[0][:, k]), m.interp(gU[1][:, k])]
                     s += m.sum_to_cells(nu_f * np.einsum('ij,ij->i', gTf, m.Sf))
                     gTb = np.c_[gU[0][bc, k], gU[1][bc, k]]
-                    s += np.bincount(bc, np.where(self.b_outlet, 0.0, nu_b) *
+                    s += np.bincount(bc, nu_b *
                                      np.einsum('ij,ij->i', gTb, m.bSf), n)
                 if self.second_order:
                     # deferred correction: F * (phi_linear_upwind - phi_upwind)

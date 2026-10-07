@@ -1,0 +1,4 @@
+Ni bump (10 % circular arc), inviscid, compressible solver
+
+{"mach_in": 0.5, "cells": 2700, "iterations": 411, "converged": true, "time_s": 8.7, "M_max": 0.6878550430636857, "M_wall_max": 0.6878550430636857, "x_M_max": 1.488888888888889, "entropy_max": 0.0035800773102607764, "supersonic_cells": 0, "asym": 0.01521192888612155, "x_shock": null}
+{"mach_in": 0.675, "cells": 2700, "iterations": 877, "converged": true, "time_s": 17.0, "M_max": 1.3108452275947404, "M_wall_max": 1.3108452275947404, "x_M_max": 1.6444444444444444, "entropy_max": 0.022093229875589815, "supersonic_cells": 128, "asym": 0.32673756712450663, "x_shock": 1.7222222222222223}
