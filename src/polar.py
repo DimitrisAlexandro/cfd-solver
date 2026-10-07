@@ -114,7 +114,7 @@ def _single_mesh(loop, info, re, alpha, level, farfield, turb):
 
 def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
               force_tol=2e-5, window=200, farfield=None, out=None, transition="free",
-              ncrit=9.0, sequencing=False, solver="auto"):
+              ncrit=9.0, sequencing=False, solver="auto", mach=0.0):
     """One angle of attack. init: dict(xc, U, p, nuT, x_tr) from a neighbouring
     angle (warm start). transition (turbulent Re only): "free" (e^N, N_crit
     = ncrit), "off" (fully turbulent) or {"upper": x, "lower": x} (fixed trip).
@@ -126,9 +126,23 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
     solver (Phase 4b): "coupled" (u, v, p solved together, MKL PARDISO;
     3-8x fewer iterations, each ~4x dearer), "simple" (SIMPLEC), or "auto"
     (= $CFD_SOLVER, default simple; see resolve_solver).
+    mach (Phase 5): > 0 runs the compressible solver (compressible.py:
+    ideal gas, energy equation, compressible SA; shocks are captured).
+    Transition with mach > 0: fixed trips or fully turbulent; free (e^N,
+    incompressible stability theory on the compressible edge velocity) only
+    for M < 0.4.
     Returns (result dict, state dict for the next angle)."""
     t0 = time.time()
-    solver = resolve_solver(solver, re)
+    compressible = mach > 0
+    if compressible:
+        solver = "compressible"
+        # shocks + limiter: Cl, Cd creep at the 1e-4 level for a long time
+        # (NACA 0012 Euler M 0.8: Cl 0.3575 -> 0.3577 over 800 iterations)
+        force_tol = max(force_tol, 1e-4)
+        if transition == "free" and mach >= 0.4:
+            transition = "off"
+    else:
+        solver = resolve_solver(solver, re)
     # iteration-count based settings were tuned for SIMPLEC (~800 iterations
     # per point); the coupled solver needs ~10x fewer
     k_it = 0.1 if solver == "coupled" else 1.0
@@ -138,7 +152,8 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
         try:
             _, init = run_point(spec, re, alpha, level=0.7 * level, tol=1e-5,
                                 max_iter=max_iter, farfield=farfield, transition="off",
-                                sequencing=False, force_tol=force_tol, window=window)
+                                sequencing=False, force_tol=force_tol, window=window,
+                                solver=solver if not compressible else "auto", mach=mach)
             init["sequencing"] = True
         except (ValueError, FloatingPointError, np.linalg.LinAlgError):
             init = None                       # coarse start failed: cold start
@@ -148,7 +163,11 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
     # start (the thinned/redistributed quads in the coves and slots grew
     # wiggles from a uniform start), then only on the triangles as for a
     # single airfoil (30P30N alpha 8: Cl 3.2146 -> 3.2156, Cd -0.5 %)
-    if solver == "coupled":
+    if compressible:
+        from compressible import CompressibleSolver
+        s = CompressibleSolver(fvm, bcs, 1.0 / re, mach, U0=U, turbulence=turb,
+                               **({"limiter_cells": "all"} if multi else {}))
+    elif solver == "coupled":
         from coupled import CoupledSolver
         s = CoupledSolver(fvm, bcs, 1.0 / re, U0=U, turbulence=turb,
                           **({"limiter_cells": "all"} if multi else {}))
@@ -169,7 +188,8 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
             _, j = cKDTree(init["xc"]).query(fvm.xc[bad])
             vals[bad] = np.c_[tuple(cols)][j]
         s.set_initial(vals[:, :2], vals[:, 2],
-                      np.maximum(vals[:, 3], 0.0) if len(cols) > 3 else None)
+                      np.maximum(vals[:, 3], 0.0) if len(cols) > 3 else None,
+                      **_thermo_init(s, init, None, fvm))
     elif init is not None:
         from scipy.spatial import cKDTree
         _, j = cKDTree(init["xc"]).query(fvm.xc)
@@ -178,13 +198,17 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
         da = math.radians(alpha - init["alpha"])
         R = np.array([[math.cos(da), -math.sin(da)], [math.sin(da), math.cos(da)]])
         s.set_initial(init["U"][j] @ R.T, init["p"][j],
-                      init["nuT"][j] if init.get("nuT") is not None else None)
+                      init["nuT"][j] if init.get("nuT") is not None else None,
+                      **_thermo_init(s, init, j, fvm))
     walls = info["walls"]
     vf = None
     if turb:
         import validate_naca0012_sa as v
-        vf = v.VortexFarfield(s, alpha, wall=walls, center=(0.25 * info.get("ref_chord", 1.0), 0.0),
-                              every=max(1, int(round(50 * k_it))))
+        VF = v.VortexFarfield
+        if compressible:
+            from compressible import CompressibleVortexFarfield as VF
+        vf = VF(s, alpha, wall=walls, center=(0.25 * info.get("ref_chord", 1.0), 0.0),
+                every=max(1, int(round(50 * k_it))))
         if init is not None:
             vf.update(0)        # a warm / sequenced start already carries its lift
     if multi and transition != "off":
@@ -204,7 +228,9 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
             c = coefficients(s, walls, U)[0]
             hist.append((it, c["Cl"], c["Cd"], c["Cm"]))
             n = max(window // every, 3)
-            if len(hist) > n and max(r.values()) < 1e-5:
+            # compressible: the limiter at shocks stalls the residuals near
+            # 1e-5 (NACA 0012 M 0.8: 2e-5 while Cl/Cd are fixed to 4 digits)
+            if len(hist) > n and max(r.values()) < (1e-4 if compressible else 1e-5):
                 h = np.array(hist[-n - 1:])[:, 1:]
                 scale = np.maximum(np.abs(h[-1]), [0.1, 0.01, 0.01])  # Cl, Cd, Cm scales
                 if np.all(np.ptp(h, axis=0) / scale < force_tol):
@@ -260,7 +286,7 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
            "status": status, "iterations": int(it), "time_s": round(time.time() - t0, 1),
            "cells": int(fvm.ncells), "yplus_max": float(w["yplus"].max()),
            "warm_start": init is not None and not init.get("sequencing"),
-           "solver": solver,
+           "solver": solver, "mach": float(mach),
            "sequenced": bool(init is not None and init.get("sequencing")),
            "transition": ("fully turbulent" if tr is None else
                           (f"free, N_crit {ncrit:g}" if tr.mode == "free" else "fixed")),
@@ -287,6 +313,7 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
         from pathlib import Path
         folder = Path(out) / f"alpha_{alpha:+06.2f}"
         meta = {"case": f"{info['name']} alpha {alpha:g}", "kind": "naca", "Re": re,
+                "mach": float(mach),
                 "alpha_deg": alpha, "U_inf": list(U), "nu": 1.0 / re, "ref_length": 1.0,
                 "turbulence": "Spalart-Allmaras (SA-noft2)" if turb else "laminar",
                 "bcs": {"wall": "no-slip wall", "inlet": "U_inf" + (" + point vortex" if turb else ""),
@@ -297,10 +324,28 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
                     coefficients={k: res[k] for k in ("Cl", "Cd", "Cm", "Cd_p", "Cd_v")})
         import json
         (folder / "case.json").write_text(json.dumps(meta, indent=2))
+    if compressible:
+        res["M_max"] = float(s.mach_field().max())
+        res["supersonic_cells"] = int(s.stats["supersonic_cells"])
     state = {"xc": fvm.xc.copy(), "U": s.U.copy(), "p": s.p.copy(), "alpha": alpha,
+             "T": s.T.copy() if compressible else None, "mach": mach,
              "x_tr": None if tr is None else dict(tr.x_tr),
              "nuT": s.turb.nuT.copy() if s.turb is not None else None}
     return res, state
+
+
+def _thermo_init(s, init, j, fvm):
+    """compressible warm / sequenced start: temperature from the previous
+    state (same Mach), else from the total enthalpy and the new velocity"""
+    if not hasattr(s, "mach"):
+        return {}
+    T = init.get("T")
+    if T is None or init.get("mach") != s.mach:
+        return {}
+    if j is None:
+        from scipy.interpolate import NearestNDInterpolator
+        return {"T": NearestNDInterpolator(init["xc"], T)(fvm.xc)}
+    return {"T": T[j]}
 
 
 def _chain(args):

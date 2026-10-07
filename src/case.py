@@ -150,6 +150,11 @@ def write_results(folder, s, fvm, mesh, patches, U_inf, q):
     return out
 
 
+def meta_has_mach(folder):
+    meta = Path(folder) / "case.json"
+    return meta.exists() and json.loads(meta.read_text()).get("mach", 0) > 0
+
+
 def export_pngs(folder, transient=False):
     """Pictures of every finished case, saved in the case folder."""
     try:
@@ -160,6 +165,8 @@ def export_pngs(folder, transient=False):
     folder = Path(folder)
     viewer.plots(folder, show=False, save=folder / "plots.png")
     fields = ["U_mag", "Cp", "vorticity"]
+    if meta_has_mach(folder):
+        fields.insert(0, "Mach")
     meta = folder / "case.json"
     if meta.exists() and json.loads(meta.read_text()).get("turbulence", "laminar") != "laminar":
         fields.append("nut_ratio")                      # eddy viscosity / nu

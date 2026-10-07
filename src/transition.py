@@ -207,9 +207,18 @@ def extract(solver, cols, re):
     y = np.einsum('kcj,cj->kc', m.xc[C] - cols["xw"][None], cols["n"])
     ut = np.einsum('kcj,cj->kc', U, cols["t"])                    # signed, along the loop
     p = solver.p[C]
-    p0def = 0.5 - (p + 0.5 * (U**2).sum(2))                       # total-pressure deficit
     pw = p[0]
-    Ue = np.sqrt(np.maximum(1.0 - 2.0 * pw, 1e-12))
+    if hasattr(solver, "mach"):          # compressible: isentropic relations
+        g, P0 = solver.gamma, solver.P0
+        Pa = P0 + p
+        M2 = (U**2).sum(2) / (g * solver.R * solver.T[C])
+        P0inf = P0 * (1 + 0.5 * (g - 1) * solver.mach**2) ** (g / (g - 1))
+        p0def = P0inf - Pa * (1 + 0.5 * (g - 1) * M2) ** (g / (g - 1))   # total-pressure deficit
+        ratio = np.maximum((P0 + pw) / P0, 1e-6) ** ((g - 1) / g)
+        Ue = np.sqrt(np.maximum(1.0 + 2.0 / ((g - 1) * solver.mach**2) * (1.0 - ratio), 1e-12))
+    else:
+        p0def = 0.5 - (p + 0.5 * (U**2).sum(2))                   # total-pressure deficit
+        Ue = np.sqrt(np.maximum(1.0 - 2.0 * pw, 1e-12))
     K, nc = ut.shape
     inside = p0def > 0.005                                        # viscous layer
     # edge: first cell from the wall where the deficit is < 1 % q_inf (after >= 2 cells)
