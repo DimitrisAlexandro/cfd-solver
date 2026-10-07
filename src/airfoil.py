@@ -23,7 +23,12 @@ file's x axis, as in XFOIL); --derotate puts the chord line on the x axis.
 
 Flow model: Re >= 1e5 Spalart-Allmaras with free transition (e^N envelope
 method, N_crit 9; --transition off = fully turbulent, --xtr = fixed trips),
-Re < 1e5 laminar. Incompressible (--mach: Prandtl-Glauert correction).
+Re < 1e5 laminar. Incompressible by default; --mach M (Phase 5) runs the
+compressible solver (ideal gas, energy equation, shocks captured; free
+transition only below M 0.4, fixed trips / fully turbulent above);
+--mach M --prandtl-glauert keeps the incompressible solution and corrects it.
+
+    python airfoil.py polar rae2822.dat --re 6.5e6 --mach 0.734 --alpha 0:4:1 --transition off
 
 Output folder (default ../cases/<airfoil>_Re<re>):
     polar.csv            alpha, Cl, Cd, Cd_p, Cd_v, Cm, L/D, status, iterations ...
@@ -346,16 +351,21 @@ def cmd_polar(a):
         trans, tr_label = "off", "fully turbulent"
     else:
         trans, tr_label = "free", f"free transition (e^N, N_crit {a.ncrit:g})"
+    pg = a.mach > 0 and a.prandtl_glauert
+    comp = a.mach > 0 and not pg
+    if comp and trans == "free" and a.mach >= 0.4:
+        trans, tr_label = "off", "fully turbulent (no e^N transition at M >= 0.4)"
     res = pl.polar(a.airfoil, a.re, alphas, level=a.refine, jobs=a.jobs,
                    out=None if a.no_fields else out, max_iter=a.max_iter,
-                   transition=trans, ncrit=a.ncrit, solver=a.solver)
+                   transition=trans, ncrit=a.ncrit, solver=a.solver,
+                   mach=a.mach if comp else 0.0)
     for r in res:
         r["turbulent"] = turb
     if multi:                         # inviscid reference (same outlines, sharp TEs)
         for r in res:
             r["Cl_inviscid"] = panel.solve([e["outline"] for e in elements], r["alpha"],
                                            ref_chord=info["ref_chord"])["Cl"]
-    if a.mach > 0:
+    if pg:
         apply_prandtl_glauert(res, a.mach)
     wall = time.time() - t0
     xf = []
@@ -366,7 +376,8 @@ def cmd_polar(a):
         xf.append((f"XFOIL, free transition (N = {a.ncrit:g})",
                    run_xfoil(a.airfoil, a.re, alphas, derotate=a.derotate, ncrit=a.ncrit), "k:"))
     title = f"{info['name']}, Re = {a.re:.3g}" + (f", SA, {tr_label}" if turb else ", laminar") + \
-        (f", M = {a.mach:g} (Prandtl-Glauert)" if a.mach > 0 else "")
+        (f", M = {a.mach:g} (Prandtl-Glauert)" if pg else
+         f", M = {a.mach:g} (compressible)" if comp else "")
     plot_polar(res, out / "polar.png", title, xf)
     plot_distributions(res, out / "distributions.png", title)
     cols = ["alpha", "Cl", "Cd", "Cd_p", "Cd_v", "Cm", "x_tr_upper", "x_tr_lower", "status",
@@ -407,7 +418,10 @@ def cmd_polar(a):
             lines.append(f"{r['alpha']:6.2f} " + " ".join(
                 f"{r['elements'][n]['Cl']:8.4f} {r['elements'][n]['Cd']:8.5f} "
                 f"{r['elements'][n]['Cm']:+8.4f}" for n in names) + f" {r['Cl_inviscid']:12.4f}")
-    if a.mach > 0:
+    if comp:
+        lines += ["", f"compressible solver, M = {a.mach:g}; max local Mach per angle: " +
+                  ", ".join(f"{r['alpha']:g}: {r.get('M_max', 0):.2f}" for r in res)]
+    if pg:
         lines += ["", f"Cl, Cm, Cd_p and Cp corrected for M = {a.mach:g} with Prandtl-Glauert "
                   f"(factor {1 / math.sqrt(1 - a.mach**2):.4f}); uncorrected values in polar.json "
                   f"(*_incompressible)"]
@@ -470,9 +484,11 @@ def main(argv=None):
                    help="critical amplification factor (9 = quiet wind tunnel)")
     p.add_argument("--xtr", help="fixed transition 'x_upper,x_lower' (e.g. trip strips)")
     p.add_argument("--mach", type=float, default=0.0,
-                   help="free-stream Mach number for a Prandtl-Glauert correction of the "
-                        "pressure coefficients (Cl, Cm, Cd_p, Cp); valid below ~0.3. "
-                        "The solver itself is incompressible")
+                   help="free-stream Mach number: runs the compressible solver (shocks, "
+                        "density and temperature changes)")
+    p.add_argument("--prandtl-glauert", action="store_true",
+                   help="with --mach: incompressible solution + Prandtl-Glauert correction "
+                        "of Cl, Cm, Cd_p, Cp instead (old behaviour; valid below ~0.3)")
     s = sub.add_parser("show", help="load, check and plot the geometry")
     s.add_argument("airfoil")
     s.add_argument("--out")

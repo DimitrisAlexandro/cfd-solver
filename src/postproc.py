@@ -64,6 +64,13 @@ def flow_fields(solver, U_inf=1.0, p_inf=0.0):
         nut = turb.nu_t()
         f.update(nut=nut, nut_ratio=nut / solver.nu, nuTilde=turb.nuT.copy(),
                  wall_distance=turb.d.copy())
+    if hasattr(solver, "mach"):                # compressible (Phase 5)
+        f.update(Mach=solver.mach_field(), rho=solver.rho.copy(), T=solver.T.copy(),
+                 p_total_loss=None)
+        g, P0 = solver.gamma, solver.P0
+        M2 = f["Mach"] ** 2
+        P0inf = P0 * (1 + 0.5 * (g - 1) * solver.mach**2) ** (g / (g - 1))
+        f["p_total_loss"] = (P0inf - (P0 + p) * (1 + 0.5 * (g - 1) * M2) ** (g / (g - 1))) / q
     return f
 
 
