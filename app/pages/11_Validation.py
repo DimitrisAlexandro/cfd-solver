@@ -21,6 +21,9 @@ items = [
      ["transonic_rae2822_cp.png", "transonic_rae2822_mach.png", "transonic_naca0012_euler_cp.png"],
      "transonic_report.txt"),
     ("Wing tool vs theory / DATCOM", ["wing_validation.png", "wing_demo_naca2412.png"], "wing_report.txt"),
+    ("Design tools: demos", ["design_drag_rise_naca0012.png", "design_drag_rise_naca0012_fields.png",
+                             "design_wing_sizing_demo.png", "design_inverse_rae2822.png",
+                             "design_optimize_naca2412.png"], "design_report.md"),
     ("Basic solver: cavity, cylinder, unsteady", ["cavity_profiles.png", "cylinder_flow.png",
                                                   "unsteady_cylinder_forces.png"], "unsteady_report.txt"),
 ]
