@@ -286,3 +286,22 @@ def load_airfoil(spec, n_side=160, te_thick=TE_THICK, n_te=3, derotate=False):
     loop = repanel(norm, n_side=n_side, te_thick=te_thick, n_te=n_te)
     info.update(check(loop), name=name, source=s)
     return loop, info
+
+
+def sharp_outline(spec):
+    """normalised raw outline TE -> around -> TE, counter-clockwise (no
+    repanelling, sharp trailing edge as given): input of the panel method
+    and of the CST fit (design tools)"""
+    s = str(spec).strip()
+    low = s.lower()
+    if low in ("tmr", "tmr0012", "naca0012tmr"):
+        raw = tmr0012_raw()
+    elif low.startswith("naca") or (low.isdigit() and len(low) in (4, 5)):
+        raw = naca_raw(low.replace("naca", "").replace(" ", ""))
+    else:
+        raw = read_dat(Path(s))[0]
+    n, _ = normalise(raw)
+    x, y = n[:, 0], n[:, 1]
+    if 0.5 * np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y) < 0:
+        n = n[::-1]
+    return n
