@@ -132,27 +132,13 @@ def parse_points(log_text):
 # readers
 # ----------------------------------------------------------------------
 def read_vtu_cell_data(path):
-    """our io_vtk binary VTU -> {name: array} (cell data only)"""
-    txt = Path(path).read_text()
-    cd = txt[txt.find("<CellData>"):txt.find("</CellData>")]
-    out = {}
-    for m in re.finditer(r'<DataArray type="(\w+)" Name="([^"]+)"(?: NumberOfComponents="(\d+)")?'
-                         r' format="binary">([^<]*)</DataArray>', cd):
-        typ, name, nc, data = m.groups()
-        raw = base64.b64decode(data.strip())[8:]
-        dt = {"Float64": np.float64, "Float32": np.float32, "Int64": np.int64,
-              "Int32": np.int32, "UInt8": np.uint8}[typ]
-        a = np.frombuffer(raw, dt)
-        nc = int(nc or 1)
-        out[name] = a.reshape(-1, nc) if nc > 1 else a
-    return out
+    import io_vtk
+    return io_vtk.read_vtu_cell_data(path)
 
 
 def read_mesh_npz(path):
-    d = np.load(path, allow_pickle=True)
-    P = d["points"]
-    nodes, off = d["cell_nodes"], d["cell_offsets"]
-    return P, [nodes[off[i]:off[i + 1]] for i in range(len(off) - 1)]
+    import io_vtk
+    return io_vtk.read_case_mesh(Path(path).parent)
 
 
 def scan_polars():
@@ -257,24 +243,22 @@ def field_image(case_dir, field, xlim=(-0.4, 1.6), ylim=(-0.5, 0.5), cmap="jet")
 # geometry + inviscid preview
 # ----------------------------------------------------------------------
 def raw_outline(spec):
-    """sharp open outline TE -> around -> TE, counter-clockwise (panel method)"""
     import airfoil_geom as ag
-    s = str(spec).strip()
-    low = s.lower()
-    if low in ("tmr", "tmr0012", "naca0012tmr"):
-        raw = ag.tmr0012_raw()
-    elif low.startswith("naca") or (low.isdigit() and len(low) in (4, 5)):
-        raw = ag.naca_raw(low.replace("naca", "").replace(" ", ""))
-    else:
-        raw = ag.read_dat(Path(s) if Path(s).is_absolute() else SRC / s)[0]
-    n, info = ag.normalise(raw)
-    x, y = n[:, 0], n[:, 1]
-    if 0.5 * np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y) < 0:
-        n = n[::-1]
-    return n
+    s = str(spec)
+    if not s.lower().startswith(("naca", "tmr")) and not Path(s).is_absolute():
+        s = str(SRC / s)
+    return ag.sharp_outline(s)
 
 
 def panel_polar(spec, alphas):
     import panel
     o = raw_outline(spec)
     return [panel.solve([o], a) for a in alphas], o
+
+
+def count_angles(s):
+    s = str(s).replace(" ", "")
+    if ":" in s:
+        a, b, d = (float(x) for x in s.split(":"))
+        return int(np.floor((b - a) / d + 1e-9)) + 1
+    return len(s.split(","))

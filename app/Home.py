@@ -34,13 +34,23 @@ cards = [
     ("pages/4_Geometry_preview.py", "📐 Geometry & quick look",
      "Load any airfoil, check thickness / trailing edge, see the mesh, inviscid Cp in a "
      "second (panel method)."),
-    ("pages/5_Polar_library.py", "📚 Polar library",
+    ("pages/9_Polar_library.py", "📚 Polar library",
      "Every polar you computed — browse, overlay, compare, download."),
-    ("pages/6_Jobs_and_results.py", "⏱️ Jobs & results",
+    ("pages/10_Jobs_and_results.py", "⏱️ Jobs & results",
      "Live progress of running analyses, logs, cancel; open finished results."),
-    ("pages/7_Design_tools.py", "🧪 Design tools",
-     "Optimizer, inverse design, wing sizing wizard, drag-rise explorer."),
-    ("pages/8_Validation.py", "✅ Validation",
+    ("pages/5_Inverse_design.py", "✏️ Inverse design",
+     "Edit the pressure distribution you want → the airfoil shape that produces it (seconds), "
+     "then check it with CFD."),
+    ("pages/6_Optimizer.py", "🎯 Airfoil optimizer",
+     "Minimum drag / maximum L/D at your cruise Cl with thickness and Cm limits: the shape is "
+     "changed and re-run with the CFD solver until it is the best."),
+    ("pages/7_Wing_sizing.py", "📏 Wing sizing wizard",
+     "Mass, cruise speed, altitude, stall speed → wing area, span, taper, twist ranked by cruise "
+     "L/D, with where the stall starts."),
+    ("pages/8_Drag_rise.py", "🌀 Drag-rise explorer",
+     "Mach sweep at fixed lift (compressible solver): drag-divergence Mach, shocks forming in "
+     "the Mach field, Korn-equation comparison."),
+    ("pages/11_Validation.py", "✅ Validation",
      "How the solver compares with experiments and references (credibility)."),
 ]
 cols = st.columns(2)
