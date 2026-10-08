@@ -40,7 +40,7 @@ NACA 2412 wing, b 10 m, chords 1.6/0.8 m (AR 8.3, taper 0.5), 5° sweep, 3° dih
 - past C_L,max the strip-theory solution is not unique (flagged "not converged"): trend only.
 
 ## Found on the way
-- **Free-transition CFD polars diverge near stall** for NACA 2412 at Re 2.2e6 (α ≥ 14°, also with the code before Phase 5 — an existing weakness of the e^N coupling at high α). The wing tool now reruns such angles fully turbulent and labels them "(fully turbulent fallback)" in the cached polar.
+- ~~Free-transition CFD polars diverge near stall~~ **fixed 2026-10-09** (`transition.py`): three causes, see `validation/transition_stall_fix.md`. NACA 2412 polars at Re 2.2e6 and 4.4e6 now run with free transition from −6° to 22° without any fallback (the fallback stays in the code as a safety net). Demo wing: C_L,max 1.627 → 1.724, cruise unchanged.
 
 ## Limits
 - Attached-flow lattice: no leading-edge vortex lift (delta wings), no fuselage/tail, symmetric flight only.
