@@ -235,6 +235,20 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
                 scale = np.maximum(np.abs(h[-1]), [0.1, 0.01, 0.01])  # Cl, Cd, Cm scales
                 if np.all(np.ptp(h, axis=0) / scale < force_tol):
                     return True
+            # long runs: residuals stalled a little below the threshold while
+            # the forces creep at the 1e-5 level (free transition at high
+            # alpha, a laminar bubble at the leading edge: NACA 2412, Re 2.2e6,
+            # alpha 10 drifted 6e-5 in Cl over 2000 iterations and ran to the
+            # iteration limit) -> engineering convergence: 5 x force_tol over
+            # 500 iterations
+            n5 = max(int(500 * k_it) // every, 3)
+            if len(s.history) >= 1500 * k_it and len(hist) > n5 and \
+                    max(r.values()) < (1e-4 if compressible else 1e-5) and \
+                    (tr is None or tr.converged):
+                h = np.array(hist[-n5 - 1:])[:, 1:]
+                scale = np.maximum(np.abs(h[-1]), [0.1, 0.01, 0.01])
+                if np.all(np.ptp(h, axis=0) / scale < 5 * force_tol):
+                    return True
             # small persistent oscillation (e.g. laminar flow reaching a blunt
             # trailing edge sheds weakly): residuals stall, forces vary < 0.5 %
             # -> stop and report the mean
@@ -249,8 +263,12 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
                 q = len(res_max) // 4
                 stalled = stalled and res_max[-q:].mean() < 1.3 * res_max[-2 * q:-q].mean()
                 h = np.array(hist[-50:])[:, 1:]
+                # Cd band 2 % peak-to-peak: a laminar separation near the
+                # trailing edge (free transition, NACA 2412 Re 2.2e6 alpha -6)
+                # flips Cd by +-0.65 % for thousands of iterations; the mean
+                # and the amplitude are reported (Cd_amp)
                 small = (np.ptp(h[:, 0]) < 0.005 * max(abs(h[:, 0].mean()), 0.1) and
-                         np.ptp(h[:, 1]) < 0.01 * h[:, 1].mean())
+                         np.ptp(h[:, 1]) < 0.02 * h[:, 1].mean())
                 if stalled and small:
                     osc["flag"] = True
                     return True

@@ -21,7 +21,7 @@ The gain comes from moving transition aft (a natural-laminar-flow trend: maximum
 ## 📏 Wing sizing wizard — `design_wing_sizing.py`
 Mission (mass, cruise speed and altitude, stall speed, span limit, sweep) + airfoil → for every aspect ratio × taper × washout: area from the stall speed with that planform's own C_L,max (wing tool, iterated), cruise C_L, α and wing L/D, stall-onset position; ranked by L/D with the span limit and a root-first-stall check (onset ≤ 60 % semi-span). Wing only.
 
-Demo (`design_wing_sizing_demo.png`): 750 kg, 60 m/s at 1500 m, stall 27 m/s, span ≤ 11 m, NACA 2412 CFD polars: 24 planforms in 85 s → AR 10, taper 0.4, no twist: S 10.3 m², b 10.1 m, chords 1.45/0.58 m, cruise L/D 38 (wing), C_L,max 1.61, stall onset 49 % semi-span. Trends as in the textbooks: rectangular wings stall at the root (4 %), strong taper moves the stall outboard, washout moves it back inboard.
+Demo (`design_wing_sizing_demo.png`): 750 kg, 60 m/s at 1500 m, stall 27 m/s, span ≤ 11 m, NACA 2412 CFD polars (free transition at every angle, 2026-10-09): 60 planforms in 5 min → AR 12, taper 0.35, no twist: S 9.7 m², b 10.8 m, chords 1.33/0.47 m, cruise L/D 42 (wing), C_L,max 1.70, stall onset 35 % semi-span. (Earlier demo, with fully turbulent post-stall polars: C_L,max 1.61, best AR 10.) Trends as in the textbooks: rectangular wings stall at the root (4 %), strong taper moves the stall outboard, washout moves it back inboard.
 
 ## 🌀 Drag-rise explorer — `design_drag_rise.py`
 Mach sweep at fixed Cl with the compressible RANS solver (α by secant at every Mach, warm-started): Cd(M), drag-divergence Mach by dCd/dM = 0.1 (Douglas) and +20 counts (Boeing), Korn's equation for comparison, Mach fields with the sonic line.

@@ -98,3 +98,52 @@ def test_coupled_naca0012_alpha0():
     assert r["Cd"] < 0.0065
     rt, _ = polar.run_point("naca0012", 3e6, 0.0, level=0.6, transition="off")
     assert rt["Cd"] > 1.4 * r["Cd"] and rt["x_tr_upper"] is None
+
+
+# ----------------------------------------------------------------------
+# high-alpha robustness (free transition near stall)
+# ----------------------------------------------------------------------
+def _le_surface(n_zero=2):
+    """'upper' surface as at high alpha: stagnation point on the lower side
+    (x decreasing to the leading edge, then increasing), U_e clipped to 0 at
+    the first stations (wall Cp slightly > 1), suction peak 2.4 just behind
+    the leading edge, steep recovery"""
+    x = np.r_[np.linspace(0.03, 0.0, 15), np.linspace(0.0, 1.0, 200)[1:]]
+    s = np.r_[0.0, np.cumsum(np.abs(np.diff(x)))]
+    s_pk = s[15] + 0.004
+    Ue = np.where(s < s_pk, 2.4 * s / s_pk, 2.4 - 1.2 * np.sqrt(np.maximum(s - s_pk, 0) / (s[-1] - s_pk)))
+    Ue[:n_zero] = 0.0
+    return {"s": s, "x": x, "Ue": Ue}
+
+
+def test_march_starts_at_the_real_stagnation_point():
+    """U_e ~ 0 at the first columns must not produce an immediate 'laminar
+    separation' far ahead of the leading edge (NACA 2412 alpha 14: the
+    estimate was 0.2 c instead of 0.01 c, and the solution diverged)"""
+    from types import SimpleNamespace
+    sd = _le_surface()
+    assert T.march_start(sd["Ue"]) == 1
+    # the plain march from the clipped station 'separates' at once (the bug)
+    assert T.laminar_bl(sd["s"], sd["Ue"], 2.2e6)[3] == 2
+    tr = SimpleNamespace(re=2.2e6, ncrit=9.0)
+    clean = _le_surface(0)
+    e = T.Transition.estimate(tr, {"upper": sd, "lower": clean})["upper"]
+    e0 = T.Transition.estimate(tr, {"upper": clean, "lower": clean})["upper"]
+    assert e["how"] == e0["how"]
+    assert e["x_est"] == pytest.approx(e0["x_est"], abs=1e-3)
+    assert e["x_sep"] == pytest.approx(e0["x_sep"], abs=1e-3)
+    assert e["x_est"] > 0.05                       # not the spurious leading-edge 'separation'
+
+
+def test_laminar_march_stops_when_it_leaves_the_physical_range():
+    """steep adverse gradient: H must never come back negative; the march
+    reports separation instead of running on to the trailing edge"""
+    sd = _le_surface()
+    i0 = T.march_start(sd["Ue"])
+    th, H, ret, sep = T.laminar_bl(sd["s"][i0:] - sd["s"][i0], sd["Ue"][i0:], 2.2e6)
+    assert sep is not None
+    ok = np.isfinite(H)
+    assert np.all((H[ok] > 1.0) & (H[ok] < 3.8)) and np.all(th[ok] > 0)
+    assert not T._separated(np.array([1e-4, 2.5]), 3.8)
+    assert T._separated(np.array([1e-4, -143.0]), 3.8)
+    assert T._separated(np.array([np.nan, 2.5]), 3.8)
