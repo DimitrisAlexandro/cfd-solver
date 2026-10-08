@@ -85,7 +85,7 @@ def _summary(spec, re, cl_t, tc, res):
     # points where the target lift could not be reached (shock-induced
     # separation: the lift curve collapses) are reported but not used for M_dd
     for r in res:
-        r["cl_reached"] = bool(abs(r["Cl"] - cl_t) < 0.02)
+        r["cl_reached"] = bool(abs(r.get("Cl", cl_t) - cl_t) < 0.02)
     ok = [r for r in res if r["cl_reached"]]
     M = np.array([r["mach"] for r in ok])
     Cd = np.array([r["Cd"] for r in ok])

@@ -70,6 +70,11 @@ def test_drag_rise_criteria():
     assert s["M_dd_douglas"] == pytest.approx(0.8, abs=0.02)
     assert s["M_dd_boeing"] == pytest.approx(0.7 + np.sqrt(0.004), abs=0.01)
     assert s["M_dd_korn_conventional"] == pytest.approx(0.87 - 0.03 - 0.12)
+    # a point where the target Cl was not reached (shock stall) is excluded from M_dd
+    res2 = [dict(r, Cl=0.3) for r in res] + [{"mach": 0.9, "Cd": 0.002, "Cl": 0.1}]
+    s2 = DR._summary("naca0012", 6e6, 0.3, 0.12, res2)
+    assert not s2["points"][-1]["cl_reached"]
+    assert s2["M_dd_douglas"] == pytest.approx(s["M_dd_douglas"])
 
 
 def test_optimizer_shape_is_smooth_and_exact_at_zero():
