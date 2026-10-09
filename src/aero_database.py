@@ -12,7 +12,7 @@ Aircraft tables (vortex lattice + CFD section polars, aircraft.py):
 
 Section polars (CFD, the RANS solver) over Reynolds and Mach numbers:
     python aero_database.py section --airfoil naca2412 --re 1e6,3e6,6e6 --mach 0.1,0.5 \\
-        --alpha -6:20:2 --out ../cases/sdb_naca2412
+        --alpha=-6:20:2 [--flap 0,10,20 --flap-chord 0.25] --out ../cases/sdb_naca2412
   -> section_database.csv / .xlsx / .json and XFOIL-format polar files
      (polar_Re..._M....txt) that XFLR5 and other tools import.
 
@@ -32,6 +32,7 @@ from pathlib import Path
 import numpy as np
 
 import aircraft as A
+import airfoil_geom as ag
 import wing as W
 
 KEYS = ("CL", "CD", "CY", "Cl", "Cm", "Cn")
@@ -409,20 +410,24 @@ def plot_database(db, out):
 # section polars (CFD) over Re x Mach
 # ----------------------------------------------------------------------
 def section_database(airfoil, re_list, machs, alphas, polar_dir, level=1.0, jobs=2,
-                     transition="free", out=None, log=print):
-    """runs (or reuses) the CFD section polars; returns long-table rows"""
+                     transition="free", out=None, log=print, flaps=(0.0,), flap_chord=0.25):
+    """runs (or reuses) the CFD section polars over Re x Mach x flap
+    deflection (plain flap, airfoil_geom.deflect_flap); returns long-table rows"""
     rows = []
-    for M in machs:
-        log(f"[section database] Mach {M:g}: Re " + ", ".join(f"{r:.3g}" for r in re_list))
-        W.cfd_polars(airfoil, re_list, M, alphas, polar_dir, level=level, jobs=jobs,
-                     transition=transition, log=log)
-        for re in re_list:
-            slug = f"{Path(str(airfoil)).stem}_Re{re:.3g}_M{M:.2f}_L{level:g}_{transition}".replace("+", "")
-            f = Path(polar_dir) / f"{slug}.json"
-            if not f.exists():
-                continue
-            for r in json.loads(f.read_text()):
-                rows.append({"airfoil": Path(str(airfoil)).stem, "Re": re, "mach": M, **r})
+    for fd in flaps:
+        spec = ag.flap_spec(airfoil, flap_chord, fd)
+        for M in machs:
+            log(f"[section database] flap {fd:g} deg, Mach {M:g}: Re " + ", ".join(f"{r:.3g}" for r in re_list))
+            W.cfd_polars(spec, re_list, M, alphas, polar_dir, level=level, jobs=jobs,
+                         transition=transition, log=log)
+            for re in re_list:
+                slug = f"{ag.section_stem(spec)}_Re{re:.3g}_M{M:.2f}_L{level:g}_{transition}".replace("+", "")
+                f = Path(polar_dir) / f"{slug}.json"
+                if not f.exists():
+                    continue
+                for r in json.loads(f.read_text()):
+                    rows.append({"airfoil": ag.section_stem(airfoil), "Re": re, "mach": M, "flap": fd,
+                                 "flap_chord": flap_chord if fd else 0.0, **r})
     return rows
 
 
@@ -434,16 +439,19 @@ def write_section_outputs(rows, out, airfoil, transition="free"):
     df.to_csv(out / "section_database.csv", index=False)
     (out / "section_database.json").write_text(json.dumps(A._jsonable(rows), indent=1))
     with pd.ExcelWriter(out / "section_database.xlsx") as xw:
+        if "flap" not in df.columns:
+            df["flap"] = 0.0
         for k, nm in (("Cl", "Cl lift"), ("Cd", "Cd drag"), ("Cm", "Cm pitch")):
-            t = df.pivot_table(index="alpha", columns=["Re", "mach"], values=k)
-            t.columns = [f"Re {r:.3g} M {m:g}" for r, m in t.columns]
+            t = df.pivot_table(index="alpha", columns=["Re", "mach", "flap"], values=k)
+            t.columns = [f"Re {r:.3g} M {m:g}" + (f" flap {f:g}" if f else "") for r, m, f in t.columns]
             t.to_excel(xw, sheet_name=nm)
         df.to_excel(xw, sheet_name="long table", index=False)
-    name = Path(str(airfoil)).stem
-    for (re, M), sub in df.groupby(["Re", "mach"]):
+    name = ag.section_stem(airfoil)
+    for (re, M, fl), sub in df.groupby(["Re", "mach", "flap"]):
         sub = sub.sort_values("alpha")
+        ftxt = f", plain flap {100 * sub.flap_chord.iloc[0]:g}% c at {fl:g} deg" if fl else ""
         L = ["", "       XFOIL         Version 6.99", "",
-             f" Calculated polar for: {name.upper()}  (AeroLab RANS, Spalart-Allmaras"
+             f" Calculated polar for: {name.upper()}{ftxt}  (AeroLab RANS, Spalart-Allmaras"
              f"{', e^N transition' if transition == 'free' else ', fully turbulent'})", "",
              " 1 1 Reynolds number fixed          Mach number fixed", "",
              " xtrf =   1.000 (top)        1.000 (bottom)",
@@ -459,15 +467,16 @@ def write_section_outputs(rows, out, airfoil, transition="free"):
             xl = r.get("x_tr_lower") if r.get("x_tr_lower") is not None and np.isfinite(r.get("x_tr_lower") or np.nan) else 0.0
             L.append(f"  {r['alpha']:6.3f} {r['Cl']:8.4f} {r['Cd']:9.5f} {cdp:9.5f} {r['Cm']:8.4f} "
                      f"{xu:8.4f} {xl:8.4f}")
-        (out / f"polar_{name}_Re{re:.3g}_M{M:.2f}.txt".replace("+", "")).write_text("\n".join(L) + "\n")
+        fn = f"polar_{name}_Re{re:.3g}_M{M:.2f}" + (f"_flap{fl:g}" if fl else "")
+        (out / (fn.replace("+", "").replace(".", "p") + ".txt")).write_text("\n".join(L) + "\n")
     # plot
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     fig, axs = plt.subplots(1, 3, figsize=(15, 4.5))
-    for (re, M), sub in df.groupby(["Re", "mach"]):
+    for (re, M, fl), sub in df.groupby(["Re", "mach", "flap"]):
         sub = sub.sort_values("alpha")
-        lab = f"Re {re:.3g}, M {M:g}"
+        lab = f"Re {re:.3g}, M {M:g}" + (f", flap {fl:g}°" if fl else "")
         axs[0].plot(sub.alpha, sub.Cl, "o-", ms=3, label=lab)
         axs[1].plot(sub.Cd, sub.Cl, "o-", ms=3)
         axs[2].plot(sub.alpha, sub.Cm, "o-", ms=3)
@@ -501,6 +510,8 @@ def main(argv=None):
     s.add_argument("--refine", type=float, default=1.0)
     s.add_argument("--jobs", type=int, default=2)
     s.add_argument("--transition", default="free")
+    s.add_argument("--flap", default="0", help="plain-flap deflections (deg), e.g. 0,10,20")
+    s.add_argument("--flap-chord", type=float, default=0.25)
     s.add_argument("--polar-dir", default="../cases/wing_polars")
     s.add_argument("--out", required=True)
     args = ap.parse_args(argv)
@@ -518,7 +529,7 @@ def main(argv=None):
     else:
         rows = section_database(args.airfoil, parse_range(args.re), parse_range(args.mach),
                                 parse_range(args.alpha), args.polar_dir, args.refine, args.jobs,
-                                args.transition)
+                                args.transition, flaps=parse_range(args.flap), flap_chord=args.flap_chord)
         write_section_outputs(rows, args.out, args.airfoil, args.transition)
         print(f"[section database] {len(rows)} points -> {args.out}/")
         (Path(args.out) / "database_done.json").write_text(json.dumps({"rows": len(rows)}))

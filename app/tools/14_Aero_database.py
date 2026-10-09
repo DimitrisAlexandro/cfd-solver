@@ -134,6 +134,10 @@ with tab_sec:
         with st.container(border=True):
             ui.step("Section", first=True)
             af, aname = views.airfoil_picker("sdb")
+            c1, c2 = st.columns(2)
+            sflaps = c1.text_input("Plain-flap deflections (deg)", "0",
+                                   help="0 = clean section only; e.g. 0, 10, 20, 30 adds flapped polars")
+            scf = c2.number_input("Flap chord / c", 0.1, 0.5, 0.25, 0.05, key="sdbcf")
             ui.step("Conditions")
             c1, c2 = st.columns(2)
             res_ = c1.text_input("Reynolds numbers", "1e6, 3e6, 6e6")
@@ -149,7 +153,7 @@ with tab_sec:
                 lev = c1.select_slider("Mesh level", [0.7, 1.0, 1.4], 1.0)
                 jobs = c2.number_input("Parallel processes", 1, 32, 2)
             n_re = len([x for x in res_.split(",") if x.strip()])
-            n_m = len([x for x in ms.split(",") if x.strip()])
+            n_m = len([x for x in ms.split(",") if x.strip()]) * max(1, len([x for x in sflaps.split(",") if x.strip()]))
             c1, c2 = st.columns(2, vertical_alignment="center")
             go2 = c1.button("Compute polars", type="primary", width="stretch", disabled=af is None)
             c2.caption(f"{n_re * n_m} polars, about {15 * n_re * n_m}–{45 * n_re * n_m} min "
@@ -167,7 +171,8 @@ with tab_sec:
         out = C.CASES / f"sdb_{aname}_{int(time.time())}"
         args = ["aero_database.py", "section", "--airfoil", af, f"--re={res_.replace(' ', '')}",
                 f"--mach={ms.replace(' ', '')}", f"--alpha={sal.replace(' ', '')}", "--refine", lev,
-                "--jobs", jobs, "--transition", tr, "--polar-dir", C.POLAR_CACHE, "--out", out]
+                "--jobs", jobs, "--transition", tr, f"--flap={sflaps.replace(' ', '')}", "--flap-chord", scf,
+                "--polar-dir", C.POLAR_CACHE, "--out", out]
         st.session_state["sdb_job"] = C.start_job("aero_db", f"Section database {aname}", args, out)
 
     def show_sdb(out):
@@ -176,8 +181,11 @@ with tab_sec:
             return
         df = pd.read_csv(out / "section_database.csv")
         series = []
-        for (re, m), sub in df.groupby(["Re", "mach"]):
-            series.append((f"Re {C.fmt_re(re)}, M {m:g}", sub.sort_values("alpha").to_dict("records")))
+        if "flap" not in df.columns:
+            df["flap"] = 0.0
+        for (re, m, fl), sub in df.groupby(["Re", "mach", "flap"]):
+            series.append((f"Re {C.fmt_re(re)}, M {m:g}" + (f", flap {fl:g}°" if fl else ""),
+                           sub.sort_values("alpha").to_dict("records")))
         figs = C.polar_figures(series)
         c1, c2 = st.columns(2)
         ui.plot(figs["cl"], container=c1, key=f"s1{out}")

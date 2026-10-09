@@ -378,10 +378,12 @@ def _chain(args):
         for a in seq:
             try:
                 r, st = run_point(spec, re, a, level, init=state, **kw)
-            except (ValueError, FloatingPointError, np.linalg.LinAlgError) as err:
-                # a diverged point (NaN/inf in the solver) must not take the whole
-                # sweep down; any other error (bad input) still stops it
-                if not any(k in str(err).lower() for k in ("nan", "inf", "singular")):
+            except (ValueError, FloatingPointError, np.linalg.LinAlgError, ZeroDivisionError) as err:
+                # a diverged point (NaN/inf in the solver; a zero pivot in the
+                # compiled smoother) must not take the whole sweep down; any
+                # other error (bad input) still stops it
+                if not (isinstance(err, ZeroDivisionError) or
+                        any(k in str(err).lower() for k in ("nan", "inf", "singular"))):
                     raise
                 nan = float("nan")
                 r = {"alpha": a, "Cl": nan, "Cd": nan, "Cm": nan, "Cd_p": nan, "Cd_v": nan,

@@ -132,6 +132,33 @@ def flap_increment(ac, deflection):
     return 0.9 * dcl * Sf / ac.S * math.cos(math.radians(w.sweep))
 
 
+def flap_increment_best(ac, deflection, polar_dir=None, mach=0.0):
+    """(Delta CL_max, source): section increment from the CFD polars of the
+    flapped wing section when they are cached (airfoil@flap=..., same flap
+    chord), else Raymer's table; 3D conversion 0.9 S_flapped/S cos(sweep)
+    in both cases"""
+    w = ac.wing
+    fl = [c for c in w.controls if c.name == "flap"]
+    if deflection <= 0 or not fl:
+        return 0.0, "none"
+    est = flap_increment(ac, deflection)
+    if not polar_dir:
+        return est, "Raymer estimate"
+    import airfoil_geom as ag
+    import design_wing_sizing as WS
+    cf = fl[0].cf
+    clean = WS.cached_polars(w.airfoil, polar_dir, mach)
+    flapped = WS.cached_polars(ag.flap_spec(w.airfoil, cf, deflection), polar_dir, mach)
+    if not (clean and flapped):
+        return est, "Raymer estimate"
+    re_f, pf = flapped[0]
+    re_c, pc = min(clean, key=lambda t: abs(math.log(t[0] / re_f)))
+    e = np.linspace(fl[0].eta0, fl[0].eta1, 50)
+    Sf = 2 * np.trapezoid(w.chord(e), e * w.semi)
+    dcl = pf.clmax - pc.clmax
+    return 0.9 * dcl * Sf / ac.S * math.cos(math.radians(w.sweep)), f"CFD section polars (Re {re_f:.3g})"
+
+
 def run(ac, prop, altitude=0.0, polar_dir=None, fuel=60.0, reserve=0.0, to_flap=10.0, ld_flap=30.0,
         mu_roll=0.04, mu_brake=0.40, h_obs=15.0, log=print):
     g = A.G0
@@ -207,7 +234,7 @@ def run(ac, prop, altitude=0.0, polar_dir=None, fuel=60.0, reserve=0.0, to_flap=
         return r["CL"], r["CD"]
 
     def takeoff():
-        dCL = flap_increment(ac, to_flap) if has_flap else 0.0
+        dCL, src = flap_increment_best(ac, to_flap, polar_dir, an.mach) if has_flap else (0.0, "none")
         CLmax_to = CLmax + dCL
         Vs = math.sqrt(2 * Wt / (rho * ac.S * CLmax_to))
         V_lof = 1.1 * Vs
@@ -235,12 +262,12 @@ def run(ac, prop, altitude=0.0, polar_dir=None, fuel=60.0, reserve=0.0, to_flap=
         else:
             s_tr = Rtr * math.sin(gam)
             s_cl = (h_obs - h_tr) / math.tan(gam)
-        return {"V_stall": Vs, "V_lof": V_lof, "CLmax": CLmax_to, "flap_dCLmax_estimate": dCL,
+        return {"V_stall": Vs, "V_lof": V_lof, "CLmax": CLmax_to, "flap_dCLmax_estimate": dCL, "flap_source": src,
                 "ground_roll": s, "rotation": s_rot, "transition": s_tr, "climb": s_cl,
                 "total": s + s_rot + s_tr + s_cl, "time_ground_s": t}
 
     def landing():
-        dCL = flap_increment(ac, ld_flap) if has_flap else 0.0
+        dCL, src = flap_increment_best(ac, ld_flap, polar_dir, an.mach) if has_flap else (0.0, "none")
         CLmax_l = CLmax + dCL
         Vs = math.sqrt(2 * Wt / (rho * ac.S * CLmax_l))
         Va, Vf, Vtd = 1.3 * Vs, 1.23 * Vs, 1.15 * Vs
@@ -258,7 +285,7 @@ def run(ac, prop, altitude=0.0, polar_dir=None, fuel=60.0, reserve=0.0, to_flap=
             V += Ff / ac.mass * dt
             s += max(V, 0) * dt
         return {"V_stall": Vs, "V_approach": Va, "V_touchdown": Vtd, "CLmax": CLmax_l,
-                "flap_dCLmax_estimate": dCL, "approach": s_app, "flare": s_fl, "free_roll": s_free,
+                "flap_dCLmax_estimate": dCL, "flap_source": src, "approach": s_app, "flare": s_fl, "free_roll": s_free,
                 "ground_roll": s, "total": s_app + s_fl + s_free + s}
     TO, LDG = takeoff(), landing()
     res = {

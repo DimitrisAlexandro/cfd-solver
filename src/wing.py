@@ -40,6 +40,8 @@ from pathlib import Path
 
 import numpy as np
 
+import airfoil_geom as ag
+
 # ----------------------------------------------------------------------
 # atmosphere
 # ----------------------------------------------------------------------
@@ -496,7 +498,7 @@ def cfd_polars(airfoil, re_list, mach, alphas, cache_dir, level=1.0, jobs=2, ar=
     cache.mkdir(parents=True, exist_ok=True)
     out = []
     for re in re_list:
-        slug = f"{Path(str(airfoil)).stem}_Re{re:.3g}_M{mach:.2f}_L{level:g}_{transition}"
+        slug = f"{ag.section_stem(airfoil)}_Re{re:.3g}_M{mach:.2f}_L{level:g}_{transition}"
         f = cache / (slug.replace("+", "") + ".json")
         if f.exists():
             data = json.loads(f.read_text())
@@ -532,7 +534,7 @@ def cfd_polars(airfoil, re_list, mach, alphas, cache_dir, level=1.0, jobs=2, ar=
                     if 0 < mach < 0.3:
                         b = 1 / math.sqrt(1 - mach**2)
                         r["Cl"] *= b; r["Cm"] *= b
-                except (ValueError, FloatingPointError, np.linalg.LinAlgError) as e:
+                except (ValueError, FloatingPointError, np.linalg.LinAlgError, ZeroDivisionError) as e:
                     r["status"] = f"diverged ({type(e).__name__})"
             f.write_text(json.dumps(data, indent=1))
         out.append((re, SectionPolar.from_results(data, ar=ar, label=f.stem)))
