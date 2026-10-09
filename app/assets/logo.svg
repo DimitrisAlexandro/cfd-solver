@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="150" height="28" viewBox="0 0 150 28">
+  <path d="M2 15.2 C4.5 8.6 12 6.6 21 7.1 C30 7.6 37 11 42 14.5 C37 16 28 17.6 19 17.9 C10.5 18.2 4.6 17.6 2 15.2 Z"
+        fill="#1D4E89" fill-opacity="0.10" stroke="#1D4E89" stroke-width="1.6"/>
+  <line x1="2" y1="15.2" x2="42" y2="14.5" stroke="#56606C" stroke-width="0.7" stroke-dasharray="2 1.6"/>
+  <text x="50" y="19.5" font-family="IBM Plex Sans, Helvetica, Arial, sans-serif" font-size="17"
+        font-weight="600" fill="#17202B">AeroLab</text>
+</svg>

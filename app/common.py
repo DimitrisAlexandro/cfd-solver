@@ -30,9 +30,10 @@ MULTI_PRESETS = {"30P30N (JAXA wind-tunnel model)": "30p30n_jaxa",
                  "30P30N (original coordinates)": "30p30n"}
 
 
-def page_setup(title, icon="✈️"):
-    import streamlit as st
-    st.set_page_config(page_title=f"{title} · AeroLab", page_icon=icon, layout="wide")
+def page_setup(title=None, icon=None):
+    """style for this page (the entry point AeroLab.py sets the page config)"""
+    import ui
+    ui.apply()
 
 
 # ----------------------------------------------------------------------
@@ -128,6 +129,21 @@ def parse_points(log_text):
     return sorted(out, key=lambda r: r["alpha"])
 
 
+def fmt_re(re):
+    """3000000 -> '3e6', 2200000 -> '2.2e6' (how engineers write it)"""
+    if re is None or not np.isfinite(re) or re <= 0:
+        return "?"
+    e = int(np.floor(np.log10(re) + 1e-9))
+    return f"{re / 10 ** e:.3g}e{e}"
+
+
+def display_name(name):
+    """'naca2412' / 'NACA 2412' -> 'NACA 2412'; anything else unchanged"""
+    s = str(name)
+    m = re.fullmatch(r"(?i)naca\s*(\d{4,5})", s.strip())
+    return f"NACA {m.group(1)}" if m else s
+
+
 # ----------------------------------------------------------------------
 # readers
 # ----------------------------------------------------------------------
@@ -189,20 +205,22 @@ def polar_figures(series):
         cd = [x["Cd"] for x in r]
         cm = [x["Cm"] for x in r]
         txt = [x.get("status", "") for x in r]
-        figs["cl"].add_scatter(x=a, y=cl, mode="lines+markers", name=lab, text=txt)
-        figs["polar"].add_scatter(x=cd, y=cl, mode="lines+markers", name=lab, text=a)
+        figs["cl"].add_scatter(x=a, y=cl, mode="lines+markers", name=lab, text=txt,
+                               hovertemplate="α %{x:g}°<br>Cl %{y:.4f}<br>%{text}<extra>%{fullData.name}</extra>")
+        figs["polar"].add_scatter(x=cd, y=cl, mode="lines+markers", name=lab, text=a,
+                                  hovertemplate="Cd %{x:.5f}<br>Cl %{y:.4f}<br>α %{text:g}°<extra>%{fullData.name}</extra>")
         figs["cm"].add_scatter(x=a, y=cm, mode="lines+markers", name=lab)
         figs["ld"].add_scatter(x=a, y=[c / d if d else None for c, d in zip(cl, cd)],
                                mode="lines+markers", name=lab)
-    lab = {"cl": ("α (deg)", "Cl"), "polar": ("Cd", "Cl"), "cm": ("α (deg)", "Cm (c/4)"),
-           "ld": ("α (deg)", "L/D")}
+    lab = {"cl": ("α (deg)", "Cl", "Lift curve"), "polar": ("Cd", "Cl", "Drag polar"),
+           "cm": ("α (deg)", "Cm, c/4", "Pitching moment"), "ld": ("α (deg)", "L/D", "Lift-to-drag ratio")}
     for k, f in figs.items():
-        f.update_layout(xaxis_title=lab[k][0], yaxis_title=lab[k][1], height=340,
-                        margin=dict(l=10, r=10, t=30, b=10), legend=dict(orientation="h"))
+        f.update_layout(xaxis_title=lab[k][0], yaxis_title=lab[k][1], title=lab[k][2], height=340,
+                        showlegend=len(series) > 1)
     return figs
 
 
-def field_image(case_dir, field, xlim=(-0.4, 1.6), ylim=(-0.5, 0.5), cmap="jet"):
+def field_image(case_dir, field, xlim=(-0.4, 1.6), ylim=(-0.5, 0.5), cmap="turbo"):
     """matplotlib figure of a cell field around the airfoil"""
     import matplotlib
     matplotlib.use("Agg")
@@ -217,7 +235,7 @@ def field_image(case_dir, field, xlim=(-0.4, 1.6), ylim=(-0.5, 0.5), cmap="jet")
     cen = np.array([P[c].mean(0) for c in cells])
     sel = np.where((cen[:, 0] > xlim[0] - 0.2) & (cen[:, 0] < xlim[1] + 0.2) &
                    (cen[:, 1] > ylim[0] - 0.2) & (cen[:, 1] < ylim[1] + 0.2))[0]
-    fig, ax = plt.subplots(figsize=(10, 5))
+    fig, ax = plt.subplots(figsize=(13, 5.4))
     vs = v[sel]
     lo, hi = np.nanpercentile(vs, [1, 99])
     if field in ("Cp",):
@@ -226,7 +244,8 @@ def field_image(case_dir, field, xlim=(-0.4, 1.6), ylim=(-0.5, 0.5), cmap="jet")
                         linewidths=0.05)
     pc.set_clim(lo, hi)
     ax.add_collection(pc)
-    fig.colorbar(pc, ax=ax, label=field, shrink=0.8)
+    fig.colorbar(pc, ax=ax, label=field, shrink=0.85, pad=0.015)
+    ax.set_xlabel("x/c"); ax.set_ylabel("y/c")
     if field == "Mach":
         import matplotlib.tri as mtri
         t = mtri.Triangulation(cen[sel, 0], cen[sel, 1])
@@ -251,9 +270,17 @@ def raw_outline(spec):
 
 
 def panel_polar(spec, alphas):
+    """inviscid panel solutions; the panels at a sharp trailing edge (singular
+    Cp, -100 and below) are dropped from the plotted distribution"""
     import panel
     o = raw_outline(spec)
-    return [panel.solve([o], a) for a in alphas], o
+    out = [panel.solve([o], a) for a in alphas]
+    for r in out:
+        for e in r["elements"]:
+            x = np.asarray(e["x"])
+            k = x < 0.995
+            e["x"], e["Cp"] = list(x[k]), list(np.asarray(e["Cp"])[k])
+    return out, o
 
 
 def count_angles(s):
