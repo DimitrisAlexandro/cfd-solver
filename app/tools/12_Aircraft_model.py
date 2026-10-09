@@ -1,3 +1,4 @@
+import json
 import re
 
 import pandas as pd
@@ -150,6 +151,21 @@ with right:
                              "Full analysis on the Stability and control page.")
         except Exception as e:                  # noqa: BLE001
             st.caption(f"Quick stability check not available: {e}")
+
+if not err:
+    with right:
+        import tempfile
+        from pathlib import Path as _P
+        import aero_database as D
+        with tempfile.TemporaryDirectory() as td:
+            D.write_avl(new, td)
+            avl = (_P(td) / "aircraft.avl").read_text()
+            mass_f = (_P(td) / "aircraft.mass").read_text()
+        c1, c2, c3 = st.columns(3)
+        c1.download_button("Download aircraft (JSON)", json.dumps(new.to_dict(), indent=1),
+                           file_name=f"{path.stem}.json", width="stretch")
+        c2.download_button("Download AVL geometry", avl, file_name=f"{path.stem}.avl", width="stretch")
+        c3.download_button("Download AVL mass file", mass_f, file_name=f"{path.stem}.mass", width="stretch")
 
 if save and not err:
     slug = re.sub(r"[^A-Za-z0-9_-]+", "_", fname.strip()) or "aircraft"
