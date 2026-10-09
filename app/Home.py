@@ -1,65 +1,71 @@
-"""AeroLab - interactive front end of the cfd-solver project.
+"""Overview page (entry point: AeroLab.py)."""
+import time
 
-    cd ~/cfd-solver && streamlit run app/Home.py
-"""
 import streamlit as st
 
 import common as C
+import ui
 
-C.page_setup("Home")
+C.page_setup()
+ui.header("AeroLab", "Airfoil and wing aerodynamics with your own mesher and RANS solver. "
+                     "Each analysis runs in the background; results stay in cases/.")
 
-st.title("✈️ AeroLab")
-st.caption("Your own mesher + finite-volume RANS solver, from 2D airfoils to wings — "
-           "choose an analysis on the left or below.")
+TOOLS = {
+    "Analysis": [
+        ("tools/1_Airfoil_analysis.py", "Airfoil polar",
+         "Cl, Cd, Cm against α; Cp, Cf and flow fields. Free or fixed transition, compressible "
+         "with shocks.", "10–30 min"),
+        ("tools/2_Multi_element.py", "Multi-element airfoil",
+         "Slat, main and flap on one mesh; forces per element.", "5–10 min per angle"),
+        ("tools/3_Wing.py", "Wing",
+         "Vortex lattice on CFD section polars: CL–α to stall, drag polar, span loading.",
+         "seconds with cached polars"),
+    ],
+    "Design": [
+        ("tools/5_Inverse_design.py", "Inverse design",
+         "Pressure distribution in, airfoil shape out.", "seconds"),
+        ("tools/6_Optimizer.py", "Shape optimizer",
+         "Minimum drag at your design Cl, with thickness and Cm limits.", "about 1 h"),
+        ("tools/7_Wing_sizing.py", "Wing sizing",
+         "Mass, speeds and span limit in; area, aspect ratio, taper and twist out.",
+         "about 5 min"),
+        ("tools/8_Drag_rise.py", "Drag rise",
+         "Mach sweep at fixed lift: drag-divergence Mach, shock growth.", "about 45 min"),
+    ],
+    "Data": [
+        ("tools/4_Geometry_preview.py", "Geometry check",
+         "Thickness, trailing edge, inviscid Cp and the CFD mesh before a run.", "instant"),
+        ("tools/9_Polar_library.py", "Polar library", "Overlay and download every polar computed.", ""),
+        ("tools/10_Jobs_and_results.py", "Runs", "Progress, logs and results of every run.", ""),
+        ("tools/11_Validation.py", "Validation",
+         "Comparisons with wind-tunnel data and reference codes.", ""),
+    ],
+}
 
 jobs = C.list_jobs()
-running = [j for j in jobs if j["status"] == "running"]
-c1, c2, c3 = st.columns(3)
-c1.metric("Running jobs", len(running))
-c2.metric("Saved polars", len(C.scan_polars()))
-c3.metric("Finished runs", sum(j["status"] == "finished" for j in jobs))
-
-st.subheader("Analyses")
-cards = [
-    ("pages/1_Airfoil_analysis.py", "🛩️ Airfoil analysis",
-     "Polar of any airfoil (NACA, TMR 0012, RAE 2822, your .dat). Spalart-Allmaras RANS, "
-     "free e^N / fixed / no transition, incompressible or **compressible (shocks)**, "
-     "laminar below Re 1e5, mesh level, solver choice. Cp, Cf, flow fields."),
-    ("pages/2_Multi_element.py", "🪶 Multi-element airfoils",
-     "Slat + main + flap (30P30N presets or your own elements and deflections), "
-     "per-element forces, inviscid panel-method preview."),
-    ("pages/3_Wing.py", "🛫 Wing (quasi-3D)",
-     "Vortex lattice + your CFD section polars: taper, sweep, dihedral, twist, root/tip "
-     "airfoils. C_L–α with stall, drag polar, C_m, span loading, stalled strips."),
-    ("pages/4_Geometry_preview.py", "📐 Geometry & quick look",
-     "Load any airfoil, check thickness / trailing edge, see the mesh, inviscid Cp in a "
-     "second (panel method)."),
-    ("pages/9_Polar_library.py", "📚 Polar library",
-     "Every polar you computed — browse, overlay, compare, download."),
-    ("pages/10_Jobs_and_results.py", "⏱️ Jobs & results",
-     "Live progress of running analyses, logs, cancel; open finished results."),
-    ("pages/5_Inverse_design.py", "✏️ Inverse design",
-     "Edit the pressure distribution you want → the airfoil shape that produces it (seconds), "
-     "then check it with CFD."),
-    ("pages/6_Optimizer.py", "🎯 Airfoil optimizer",
-     "Minimum drag / maximum L/D at your cruise Cl with thickness and Cm limits: the shape is "
-     "changed and re-run with the CFD solver until it is the best."),
-    ("pages/7_Wing_sizing.py", "📏 Wing sizing wizard",
-     "Mass, cruise speed, altitude, stall speed → wing area, span, taper, twist ranked by cruise "
-     "L/D, with where the stall starts."),
-    ("pages/8_Drag_rise.py", "🌀 Drag-rise explorer",
-     "Mach sweep at fixed lift (compressible solver): drag-divergence Mach, shocks forming in "
-     "the Mach field, Korn-equation comparison."),
-    ("pages/11_Validation.py", "✅ Validation",
-     "How the solver compares with experiments and references (credibility)."),
-]
-cols = st.columns(2)
-for i, (page, title, text) in enumerate(cards):
-    with cols[i % 2].container(border=True):
-        st.page_link(page, label=title)
-        st.markdown(text)
-
-if running:
-    st.subheader("Running now")
-    for j in running:
-        st.write(f"• **{j['title']}** — started {int((__import__('time').time() - j['started']) / 60)} min ago")
+left, right = st.columns([7, 4], gap="large")
+with left:
+    for group, rows in TOOLS.items():
+        st.markdown(f"#### {group}")
+        for page, title, text, t in rows:
+            c1, c2, c3 = st.columns([2.1, 5, 1.6], vertical_alignment="center")
+            c1.page_link(page, label=title)
+            c2.markdown(text)
+            if t:
+                c3.caption(t)
+with right:
+    k = st.columns(3)
+    k[0].metric("Running", sum(j["status"] == "running" for j in jobs))
+    k[1].metric("Finished", sum(j["status"] == "finished" for j in jobs))
+    k[2].metric("Saved polars", len(C.scan_polars()))
+    st.markdown("#### Recent runs")
+    if not jobs:
+        st.caption("No runs yet. Start with an airfoil polar; NACA 2412 at Re 3e6 takes about "
+                   "15 minutes on two cores.")
+    for j in jobs[:8]:
+        when = time.strftime("%d %b %H:%M", time.localtime(j["started"]))
+        st.markdown(f"{ui.status_md(j['status'])} {j['title']}  \n"
+                    f"<span style='color:{ui.GRAPHITE};font-size:0.8rem'>{when}</span>",
+                    unsafe_allow_html=True)
+    if jobs:
+        st.page_link("tools/10_Jobs_and_results.py", label="All runs")
