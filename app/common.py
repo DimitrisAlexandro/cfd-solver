@@ -19,6 +19,7 @@ CASES = ROOT / "cases"
 VAL = ROOT / "validation"
 JOBS = CASES / "_jobs"
 POLAR_CACHE = CASES / "wing_polars"
+AIRCRAFT = CASES / "aircraft"
 for p in (CASES, JOBS):
     p.mkdir(parents=True, exist_ok=True)
 if str(SRC) not in sys.path:
@@ -71,7 +72,8 @@ def job_status(job):
     if _alive(job["pid"]):
         return "running"
     done = {"polar": "polar.json", "wing": "wing.json", "drag_rise": "drag_rise.json",
-            "optimize": "optimize.json", "inverse": "inverse.json", "sizing": "sizing.json"}
+            "optimize": "optimize.json", "inverse": "inverse.json", "sizing": "sizing.json",
+            "aero_db": "database_done.json", "loads": "loads.json"}
     f = Path(job["out"]) / done.get(job["kind"], "_none_")
     return "finished" if f.exists() else "failed"
 
