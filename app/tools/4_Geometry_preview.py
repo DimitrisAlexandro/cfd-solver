@@ -12,7 +12,7 @@ ui.header("Geometry check", "Check a section before spending CFD time: shape, th
 
 c1, c2 = st.columns([5, 6])
 with c1:
-    spec, name = views.airfoil_picker("geo")
+    spec, name = views.airfoil_picker("geo", allow_flap=True)
 if spec is None:
     st.stop()
 import airfoil_geom as ag
