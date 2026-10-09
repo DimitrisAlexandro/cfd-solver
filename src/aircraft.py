@@ -237,7 +237,7 @@ def demo_aircraft():
                   controls=[Control("rudder", 0.08, 0.95, 0.4, "symmetric")], ns=8, nc=5)
     fus = Fuselage(length=7.3, diameter=1.15, x=0.0, z=0.0, x_max=0.3, tail_ratio=0.15)
     return Aircraft("Demo trainer (generic, 750 kg)", [wing, htail, fin], fus, mass=750.0,
-                    cg=(2.30, 0.0, -0.1), cd_extra=0.006)
+                    cg=(2.30, 0.0, -0.1), cd_extra=0.012)
 
 
 def surface_quads(s):
