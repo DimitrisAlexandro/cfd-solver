@@ -506,7 +506,8 @@ def cfd_polars(airfoil, re_list, mach, alphas, cache_dir, level=1.0, jobs=2, ar=
             m = mach if mach >= 0.3 else 0.0
             res = pl.polar(airfoil, re, alphas, level=level, jobs=jobs, log=False,
                            transition=transition if m < 0.4 else "off", mach=m)
-            data = [{k: r[k] for k in ("alpha", "Cl", "Cd", "Cm", "status", "iterations")}
+            data = [{k: r.get(k) for k in ("alpha", "Cl", "Cd", "Cm", "status", "iterations",
+                                           "Cd_p", "Cd_v", "x_tr_upper", "x_tr_lower")}
                     for r in res]
             if 0 < mach < 0.3:              # Prandtl-Glauert for the low-speed polars
                 b = 1 / math.sqrt(1 - mach**2)

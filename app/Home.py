@@ -21,6 +21,18 @@ TOOLS = {
          "Vortex lattice on CFD section polars: CL–α to stall, drag polar, span loading.",
          "seconds with cached polars"),
     ],
+    "Aircraft": [
+        ("tools/12_Aircraft_model.py", "Aircraft model",
+         "Wing, tails, fin, control surfaces, fuselage, mass and c.g., in 3D.", "instant"),
+        ("tools/13_Stability.py", "Stability and control",
+         "Trim, neutral point, all derivatives, hinge moments, flight modes and responses.", "seconds"),
+        ("tools/14_Aero_database.py", "Aero database",
+         "Coefficient tables over α, β, Mach and controls; JSBSim, AVL, Excel; section polar matrices.",
+         "1–3 min (aircraft)"),
+        ("tools/15_Loads.py", "Flight loads",
+         "V–n diagram, load cases, shear, bending and torsion along the span, Nastran export.",
+         "about 30 s"),
+    ],
     "Design": [
         ("tools/5_Inverse_design.py", "Inverse design",
          "Pressure distribution in, airfoil shape out.", "seconds"),
