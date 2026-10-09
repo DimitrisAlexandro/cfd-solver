@@ -32,6 +32,8 @@ TOOLS = {
         ("tools/15_Loads.py", "Flight loads",
          "V–n diagram, load cases, shear, bending and torsion along the span, Nastran export.",
          "about 30 s"),
+        ("tools/16_Performance.py", "Performance",
+         "Speeds, climb, ceilings, range, endurance, glide, takeoff and landing distances.", "about 1 min"),
     ],
     "Design": [
         ("tools/5_Inverse_design.py", "Inverse design",
