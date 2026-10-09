@@ -15,8 +15,25 @@ NAMES = {"tmr0012": "NACA 0012, sharp TE (NASA TMR)",
          "../validation/reference/rae2822.dat": "RAE 2822 (transonic)"}
 
 
-def airfoil_picker(key="af", label="Airfoil"):
-    """library section, any NACA 4/5-digit code, or an uploaded .dat"""
+def airfoil_picker(key="af", label="Airfoil", allow_flap=False):
+    """library section, any NACA 4/5-digit code, or an uploaded .dat;
+    allow_flap: optional plain trailing-edge flap (spec suffix @flap=cf,deg)"""
+    spec, name = _airfoil_picker(key, label)
+    if allow_flap and spec is not None:
+        c1, c2, c3 = st.columns([2, 1, 1], vertical_alignment="bottom")
+        on = c1.checkbox("Plain trailing-edge flap", key=key + "flap",
+                         help="Sealed plain flap: the camber line aft of the hinge is rotated, "
+                              "with a smooth 4 % chord hinge blend; chord reference unchanged")
+        cf = c2.number_input("Flap chord / c", 0.1, 0.5, 0.25, 0.05, disabled=not on, key=key + "fcf")
+        de = c3.number_input("Deflection (°, + down)", -30.0, 45.0, 20.0, 5.0, disabled=not on, key=key + "fde")
+        if on and de != 0:
+            import airfoil_geom as ag
+            spec = ag.flap_spec(spec, cf, de)
+            name = f"{name}_flap{round(100 * cf)}c{de:g}"
+    return spec, name
+
+
+def _airfoil_picker(key="af", label="Airfoil"):
     c1, c2 = st.columns([3, 2])
     pick = c1.selectbox(label, C.BUILTIN_AIRFOILS + ["NACA code", "Upload .dat file"],
                         key=key + "pick", format_func=lambda s: NAMES.get(s, C.display_name(s)))
@@ -39,6 +56,10 @@ def airfoil_picker(key="af", label="Airfoil"):
 def section_plot(spec, height=200, title=None):
     """airfoil outline, equal axes"""
     title = title and title.replace(str(Path(str(spec)).stem), C.display_name(Path(str(spec)).stem))
+    if "@flap=" in str(spec):
+        import airfoil_geom as ag
+        b, (cf, d) = ag.parse_flap(spec)
+        title = f"{C.display_name(Path(str(b)).stem)}, flap {100 * cf:g} % c at {d:g}°"
     try:
         o = C.raw_outline(spec)
     except Exception as e:

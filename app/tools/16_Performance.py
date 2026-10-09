@@ -141,10 +141,10 @@ def show(out):
         c1, c2 = st.columns(2)
         c1.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
         c1.caption(f"Lift-off at {TO['V_lof']:.1f} m/s; CL max with takeoff flap {TO['CLmax']:.2f} "
-                   f"(flap increment {TO['flap_dCLmax_estimate']:.2f}, estimate).")
+                   f"(flap increment {TO['flap_dCLmax_estimate']:.2f}, {TO.get('flap_source', 'estimate')}).")
         c2.dataframe(pd.DataFrame(rows2), hide_index=True, width="stretch")
         c2.caption(f"Approach {LD['V_approach']:.1f} m/s, touchdown {LD['V_touchdown']:.1f} m/s; CL max with "
-                   f"landing flap {LD['CLmax']:.2f} (increment {LD['flap_dCLmax_estimate']:.2f}, estimate).")
+                   f"landing flap {LD['CLmax']:.2f} (increment {LD['flap_dCLmax_estimate']:.2f}, {LD.get('flap_source', 'estimate')}).")
     with tabs[4]:
         views.downloads(out, ("performance.json", "aircraft_used.json"), "pf")
         if (out / "performance.png").exists():

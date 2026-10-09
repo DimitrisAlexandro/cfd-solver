@@ -85,7 +85,8 @@ def cached_polars(airfoil, polar_dir, mach):
     """every cached section polar of this airfoil (any Re; low-speed ones
     when mach < 0.3, else the nearest Mach)"""
     import re as _re
-    stem = Path(str(airfoil)).stem
+    import airfoil_geom as ag
+    stem = ag.section_stem(airfoil)
     out = {}
     for f in Path(polar_dir).glob(f"{stem}_Re*_M*.json"):
         m = _re.match(r".+_Re([\d.e+-]+)_M([\d.]+)_", f.name)

@@ -16,7 +16,7 @@ setup, preview = st.columns([5, 6], gap="large")
 with setup:
     with st.container(border=True):
         ui.step("Section", first=True)
-        spec, name = views.airfoil_picker()
+        spec, name = views.airfoil_picker(allow_flap=True)
         derot = st.checkbox("Derotate: put the chord line on the x axis", False,
                             help="For .dat files whose chord isn't horizontal")
 
