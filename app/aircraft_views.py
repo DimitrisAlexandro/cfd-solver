@@ -27,6 +27,8 @@ def aircraft_picker(key="acpick", label="Aircraft"):
     files = sorted(C.AIRCRAFT.glob("*.json"))
     cur = st.session_state.get("aircraft_file")
     idx = next((i for i, f in enumerate(files) if str(f) == cur), 0)
+    if st.session_state.pop("aircraft_force", False):      # a new file was just saved: select it
+        st.session_state[key] = files[idx]
 
     def name(p):
         try:
@@ -36,6 +38,12 @@ def aircraft_picker(key="acpick", label="Aircraft"):
     f = st.selectbox(label, files, index=idx, format_func=name, key=key)
     st.session_state["aircraft_file"] = str(f)
     return A.Aircraft.load(f), f
+
+
+def select(path):
+    """make a saved aircraft file the selected one on every aircraft page"""
+    st.session_state["aircraft_file"] = str(path)
+    st.session_state["aircraft_force"] = True
 
 
 def tail_volumes(ac):
@@ -163,3 +171,93 @@ def stability(ac_json, speed, altitude, polar_dir):
 
 def ac_json(ac):
     return json.dumps(ac.to_dict(), sort_keys=True)
+
+
+def _unique_path(slug):
+    p = C.AIRCRAFT / f"{slug}.json"
+    k = 1
+    while p.exists():
+        k += 1
+        p = C.AIRCRAFT / f"{slug}_{k}.json"
+    return p
+
+
+def upload_panel():
+    """import an aircraft from the app's JSON or an AVL geometry (+ mass, airfoil) files"""
+    import re
+    import tempfile
+    import aero_database as D
+    import aircraft_import as AI
+    left, right = st.columns([5, 6], gap="large")
+    with left:
+        with st.container(border=True):
+            ui.step("Files", first=True)
+            ups = st.file_uploader(
+                "Aircraft files", type=["json", "avl", "mass", "dat", "txt"], accept_multiple_files=True,
+                key=f"acupload{st.session_state.get('acup_n', 0)}",
+                help="An aircraft .json saved from this app, or an AVL geometry file (.avl) with, "
+                     "optionally, its mass file (.mass) and the airfoil coordinate files its AFILE "
+                     "lines name (.dat).")
+            st.caption(
+                "**AVL**: SURFACE / SECTION geometry with YDUPLICATE, TRANSLATE, SCALE, ANGLE; NACA, "
+                "AFILE and inline AIRFOIL sections; CONTROL lines named elevator, aileron, rudder or "
+                "flap. Each surface becomes one tapered panel through its root and tip sections. "
+                "**Mass file**: total mass, c.g. and inertias about the c.g. from all mass lines.")
+            with tempfile.TemporaryDirectory() as td:
+                demo = A.demo_aircraft()
+                D.write_avl(demo, td)
+                avl_t = (Path(td) / "aircraft.avl").read_text()
+                mass_t = (Path(td) / "aircraft.mass").read_text()
+            c1, c2, c3 = st.columns(3)
+            c1.download_button("Example .json", json.dumps(demo.to_dict(), indent=1),
+                               file_name="example_aircraft.json", width="stretch")
+            c2.download_button("Example .avl", avl_t, file_name="example_aircraft.avl", width="stretch")
+            c3.download_button("Example .mass", mass_t, file_name="example_aircraft.mass", width="stretch")
+    if st.session_state.get("acup_saved"):
+        with left:
+            st.success(f"Saved {st.session_state.pop('acup_saved')}. It is now the selected aircraft on "
+                       "every aircraft page; check and complete it on the Edit tab.")
+    if not ups:
+        with right:
+            st.info("Upload an aircraft to preview it here before saving.")
+        return
+    files = {u.name: u.getvalue() for u in ups}
+    try:
+        ac, warns = AI.read_files(files, C.CASES / "_uploads")
+    except Exception as e:                          # noqa: BLE001
+        with left:
+            st.error(f"These files can't be read as an aircraft: {e}")
+        return
+    with right:
+        view3d(ac, height=360)
+        vh, vv = tail_volumes(ac)
+        k = st.columns(4)
+        k[0].metric("Wing area", f"{ac.S:.3f} m²")
+        k[1].metric("Span", f"{ac.b:.3f} m")
+        k[2].metric("Mass", f"{ac.mass:g} kg")
+        xm, _ = ac.wing.mac_position()
+        k[3].metric("c.g.", f"{100 * (ac.cg[0] - xm) / ac.c:.1f} % MAC")
+        sf = surfaces_frame(ac)
+        sf["airfoil"] = sf["airfoil"].map(lambda a: C.display_name(Path(str(a)).stem))
+        st.dataframe(sf[["name", "span", "root_chord", "tip_chord", "x", "z", "sweep",
+                                         "dihedral", "incidence", "airfoil", "vertical"]],
+                     hide_index=True, width="stretch")
+        cf = controls_frame(ac)
+        if len(cf):
+            st.dataframe(cf, hide_index=True, width="stretch")
+    with left:
+        for w in warns:
+            st.warning(w)
+        with st.container(border=True):
+            ui.step("Save")
+            c1, c2 = st.columns([2, 1], vertical_alignment="bottom")
+            stem = Path(next(iter(n for n in files if n.lower().endswith((".avl", ".json"))), "aircraft")).stem
+            fname = c1.text_input("File name", stem, key="acupname")
+            if c2.button("Save aircraft", type="primary", width="stretch", key="acupsave"):
+                slug = re.sub(r"[^A-Za-z0-9_-]+", "_", fname.strip()) or "aircraft"
+                out = _unique_path(slug)
+                ac.save(out)
+                select(out)
+                st.session_state["acup_n"] = st.session_state.get("acup_n", 0) + 1
+                st.session_state["acup_saved"] = out.name
+                st.rerun()
