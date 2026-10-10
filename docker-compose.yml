@@ -1,0 +1,17 @@
+# AeroLab on a server:
+#   cp .env.example .env    (set a password)
+#   docker compose up -d --build
+#   open http://<server>:8501
+services:
+  aerolab:
+    build: .
+    image: aerolab
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      - AEROLAB_PASSWORD=${AEROLAB_PASSWORD:-}
+    volumes:
+      - aerolab-cases:/data/cases        # results, polars, aircraft: kept across updates
+volumes:
+  aerolab-cases:

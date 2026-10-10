@@ -1,0 +1,8 @@
+.git
+venv
+.venv
+cases
+**/__pycache__
+.pytest_cache
+*.npz
+tests

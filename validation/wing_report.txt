@@ -1,0 +1,37 @@
+Quasi-3D wing tool (vortex lattice + section polars): validation
+
+1. elliptic planform, thin-airfoil sections (e must be 1)
+   AR   4: CL_a 3.7642/rad  lifting line 4.1888  e 0.9992
+   AR   6: CL_a 4.4203/rad  lifting line 4.7124  e 0.9995
+   AR  10: CL_a 5.0790/rad  lifting line 5.2360  e 0.9999
+   AR  20: CL_a 5.6585/rad  lifting line 5.7120  e 1.0001
+   AR  40: CL_a 5.9708/rad  lifting line 5.9840  e 1.0000
+   grid convergence AR 6 (strips/half, chordwise): (10,1) 4.4952 e 1.0010, (10,4) 4.5521 e 1.0009, (10,8) 4.6243 e 0.9980, (20,1) 4.4336 e 1.0001, (20,4) 4.4577 e 1.0003, (20,8) 4.4768 e 0.9999, (40,1) 4.4026 e 0.9998, (40,4) 4.4203 e 0.9995, (40,8) 4.4252 e 0.9995, (80,1) 4.3870 e 0.9994, (80,4) 4.4038 e 0.9989, (80,8) 4.4052 e 0.9989
+2. flat wings vs DATCOM lift slope
+   rectangular AR   1: 1.4773  DATCOM 1.4833  (-0.4 %)  e 0.999
+   rectangular AR   2: 2.4984  DATCOM 2.6026  (-4.0 %)  e 0.997
+   rectangular AR   4: 3.6391  DATCOM 3.8832  (-6.3 %)  e 0.990
+   rectangular AR   6: 4.2407  DATCOM 4.5287  (-6.4 %)  e 0.978
+   rectangular AR  10: 4.8611  DATCOM 5.1510  (-5.6 %)  e 0.951
+   rectangular AR  20: 5.4500  DATCOM 5.6862  (-4.2 %)  e 0.893
+   AR 5, taper 0.5, sweep  0: 4.0944  DATCOM 4.2480  (-3.6 %)
+   AR 5, taper 0.5, sweep 15: 4.0558  DATCOM 4.2009  (-3.5 %)
+   AR 5, taper 0.5, sweep 30: 3.8435  DATCOM 3.9468  (-2.6 %)
+   AR 5, taper 0.5, sweep 45: 3.3879  DATCOM 3.4425  (-1.6 %)
+   AR 5, taper 0.5, sweep 60: 2.6054  DATCOM 2.6363  (-1.2 %)
+3. compressibility (AR 6, taper 0.5, sweep 30)
+   M 0.0: 4.0547  DATCOM 4.1624  (-2.6 %)
+   M 0.3: 4.1644  DATCOM 4.2725  (-2.5 %)
+   M 0.5: 4.3884  DATCOM 4.4946  (-2.4 %)
+   M 0.7: 4.8248  DATCOM 4.9144  (-1.8 %)
+   M 0.8: 5.1985  DATCOM 5.2556  (-1.1 %)
+4. nonlinear sections: AR 100 rectangular wing with the CFD NACA 0012 polar
+   alpha   0.0: wing CL -0.0001  section Cl at alpha - alpha_i -0.0001    CDp 0.00830
+   alpha   2.0: wing CL 0.2148  section Cl at alpha - alpha_i 0.2181  (-1.5 %)  CDp 0.00838
+   alpha   4.0: wing CL 0.4270  section Cl at alpha - alpha_i 0.4336  (-1.5 %)  CDp 0.00872
+   alpha   6.0: wing CL 0.6375  section Cl at alpha - alpha_i 0.6480  (-1.6 %)  CDp 0.00934
+   alpha   8.0: wing CL 0.8420  section Cl at alpha - alpha_i 0.8569  (-1.7 %)  CDp 0.01026
+   alpha  10.0: wing CL 1.0381  section Cl at alpha - alpha_i 1.0577  (-1.8 %)  CDp 0.01169
+   alpha  12.0: wing CL 1.2238  section Cl at alpha - alpha_i 1.2482  (-2.0 %)  CDp 0.01381
+   alpha  14.0: wing CL 1.3922  section Cl at alpha - alpha_i 1.4205  (-2.0 %)  CDp 0.01716
+   alpha  16.0: wing CL 1.5327  section Cl at alpha - alpha_i 1.5621  (-1.9 %)  CDp 0.02263

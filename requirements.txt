@@ -7,3 +7,7 @@ pyamg
 threadpoolctl
 numba
 pypardiso        # optional: coupled solver (MKL PARDISO); Phase 4b
+streamlit>=1.50   # app (AeroLab): ./run_app.sh (streamlit run app/AeroLab.py)
+plotly
+pandas
+openpyxl          # Excel export (aero database)
