@@ -25,7 +25,11 @@ def airfoil_picker(key="af", label="Airfoil", allow_flap=False):
                          help="Sealed plain flap: the camber line aft of the hinge is rotated, "
                               "with a smooth 4 % chord hinge blend; chord reference unchanged")
         cf = c2.number_input("Flap chord / c", 0.1, 0.5, 0.25, 0.05, disabled=not on, key=key + "fcf")
-        de = c3.number_input("Deflection (°, + down)", -30.0, 45.0, 20.0, 5.0, disabled=not on, key=key + "fde")
+        de = c3.number_input("Deflection (°, + down)", -30.0, 30.0, 20.0, 5.0, disabled=not on, key=key + "fde",
+                             help="Validated 0–20°. Beyond about 20° the flow on a plain flap separates and "
+                                  "the RANS runs often diverge.")
+        if on and abs(de) > 20:
+            st.caption("Above 20° the flap flow separates; expect unsteady or diverged points.")
         if on and de != 0:
             import airfoil_geom as ag
             spec = ag.flap_spec(spec, cf, de)

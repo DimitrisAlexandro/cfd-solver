@@ -54,6 +54,70 @@ def fig_stability(ac, rep, out):
     fig.tight_layout(); fig.savefig(out, dpi=110); plt.close(fig)
 
 
+def flap_report():
+    """CFD polars of the plain-flapped NACA 2412 (25 % chord) vs clean; increments
+    against thin-airfoil theory (lift) and Raymer's table (max lift)"""
+    import airfoil_geom as ag
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import wing as W
+    cf, re = 0.25, 2.2e6
+    th = math.acos(2 * cf - 1)
+    tau = 1 - (th - math.sin(th)) / math.pi
+    data = {}
+    for d in (0, 10, 20):
+        f = POL / f"{ag.section_stem(ag.flap_spec('naca2412', cf, d))}_Re{re:.3g}_M0.12_L1_free.json".replace("+", "")
+        if f.exists():
+            data[d] = [r for r in json.loads(f.read_text()) if r.get("Cl") is not None and np.isfinite(r["Cl"])]
+    if len(data) < 2:
+        return None
+    fig, axs = plt.subplots(1, 3, figsize=(16, 4.6))
+    rows = []
+    base = data[0]
+    sp0 = W.SectionPolar.from_results(base)
+    for d, res in data.items():
+        a = [r["alpha"] for r in res]
+        axs[0].plot(a, [r["Cl"] for r in res], "o-", ms=3, label="clean" if d == 0 else f"flap {d}°")
+        axs[1].plot([r["Cd"] for r in res], [r["Cl"] for r in res], "o-", ms=3)
+        axs[2].plot(a, [r["Cm"] for r in res], "o-", ms=3)
+        if d:
+            sp = W.SectionPolar.from_results(res)
+            cl0 = float(sp(0.0)[0]) - float(sp0(0.0)[0])
+            theory = 2 * math.pi * tau * math.radians(d)
+            rows.append({"deflection": d, "dCl_alpha0": cl0, "thin_airfoil": theory,
+                         "ratio": cl0 / theory, "clmax": sp.clmax, "dclmax": sp.clmax - sp0.clmax,
+                         "raymer_dclmax": 0.9 * min(d / 40, 1), "a_clmax": sp.a_clmax})
+    axs[0].set_xlabel("α (deg)"); axs[0].set_ylabel("Cl"); axs[0].legend(fontsize=8)
+    axs[1].set_xlabel("Cd"); axs[1].set_ylabel("Cl"); axs[1].set_xlim(0, 0.08)
+    axs[2].set_xlabel("α (deg)"); axs[2].set_ylabel("Cm, c/4")
+    for ax in axs:
+        ax.grid(alpha=0.3)
+    fig.suptitle(f"NACA 2412 with a {100 * cf:g} % plain flap, Re {re:.2g}, free transition (RANS)")
+    fig.tight_layout(); fig.savefig(VAL / "flap_sections_demo.png", dpi=110); plt.close(fig)
+    L = ["# Plain-flap sections (CFD)", "",
+         "Geometry: `airfoil_geom.deflect_flap` (spec `naca2412@flap=25c20`): camber line rotated aft of the "
+         "hinge at 75 % chord, smooth 4 %-chord sealed-hinge blend, chord reference unchanged. Inviscid check "
+         "(panel method): ΔCl = 1.06–1.09 × thin-airfoil flap theory for 5–30° (`tests/test_flap.py`).", "",
+         f"RANS (Spalart–Allmaras, e^N transition), Re {re:.2g}:", "",
+         "| flap | ΔCl at α 0 | thin airfoil 2πτδ | ratio (viscous effectiveness) | Cl_max | ΔCl_max | Raymer ΔCl_max | α at Cl_max |",
+         "|---|---|---|---|---|---|---|---|"]
+    for r in rows:
+        L.append(f"| {r['deflection']}° | {r['dCl_alpha0']:.3f} | {r['thin_airfoil']:.3f} | {r['ratio']:.2f} | "
+                 f"{r['clmax']:.3f} | {r['dclmax']:+.3f} | {r['raymer_dclmax']:.3f} | {r['a_clmax']:g}° |")
+    L += ["", f"Clean section: Cl_max {sp0.clmax:.3f} at {sp0.a_clmax:g}°.", "",
+          "The viscous lift increment falls below thin-airfoil theory as the deflection grows (boundary "
+          "layer on the flap's upper surface), the usual plain-flap behaviour; the performance tool uses "
+          "these CFD Cl_max increments for takeoff and landing when the polars exist.", "",
+          "Validated range: 0–20°. At 25° the lift at α 0 is already lower than at 20° (flow separated on "
+          "the flap) and cold starts at higher angles diverge; at 30° no angle converged, also after "
+          "widening the hinge blend (mesh non-orthogonality 58° → 44°) and with coarse-mesh sequencing. "
+          "Larger deflections need a slotted-flap model (multi-element tool) or unsteady RANS.", "",
+          "![flap sections](flap_sections_demo.png)"]
+    (VAL / "flap_report.md").write_text("\n".join(L) + "\n")
+    return rows
+
+
 def main():
     VAL.mkdir(exist_ok=True)
     ac = A.demo_aircraft()
@@ -78,13 +142,14 @@ def main():
     shutil.copy(lo / "span_loads.png", VAL / "aircraft_loads_span_demo.png")
     # ---- performance
     pr = P.Propulsion(75.0, 0.80, 1.8, 300.0, 60.0)
-    pf = A._jsonable(P.run(ac, pr, 0.0, POL, 80.0, 0.0, 10.0, 30.0, log=lambda *a: None))
+    pf = A._jsonable(P.run(ac, pr, 0.0, POL, 80.0, 0.0, 10.0, 20.0, log=lambda *a: None))
     po = CASES / "perf_demo_trainer_report"
     po.mkdir(parents=True, exist_ok=True)
     (po / "performance.json").write_text(json.dumps(pf, indent=1))
     P.plots(pf, po)
     shutil.copy(po / "performance.png", VAL / "aircraft_performance_demo.png")
     write_md(ac, val, rep, db, ld, pf)
+    print(flap_report())
 
 
 def _f(v, fmt=".3f"):
