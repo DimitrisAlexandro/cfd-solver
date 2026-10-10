@@ -26,7 +26,7 @@ import numpy as np
 
 import aircraft as A
 
-UNITS = {"m": 1.0, "mm": 1e-3, "cm": 1e-2, "in": 0.0254, "ft": 0.3048}
+UNITS = {"m": 1.0, "dm": 0.1, "cm": 1e-2, "mm": 1e-3, "in": 0.0254, "ft": 0.3048}
 AXES = {"x": 0, "y": 1, "z": 2}
 
 

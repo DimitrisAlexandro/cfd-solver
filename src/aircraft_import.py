@@ -269,7 +269,7 @@ def read_mass(text):
         if m:
             v = float(m.group(2))
             u = m.group(3).lower()
-            conv = {"m": 1, "cm": 0.01, "mm": 1e-3, "in": 0.0254, "ft": 0.3048,
+            conv = {"m": 1, "dm": 0.1, "cm": 0.01, "mm": 1e-3, "in": 0.0254, "ft": 0.3048,
                     "kg": 1, "g": 1e-3, "lb": 0.45359237, "slug": 14.5939}.get(u, 1.0)
             if m.group(1).lower() == "lunit":
                 lunit = v * conv
