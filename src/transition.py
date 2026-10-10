@@ -104,6 +104,16 @@ def _cd2_ret_over_hs(H):        # 2 Re_theta CD / H*
                     0.207 - 0.0016 * (H - 4) ** 2 / (1 + 0.02 * (H - 4) ** 2))
 
 
+def _separated(y, H_sep):
+    """laminar separation, or a march that left the physical range: in the
+    steep adverse gradient behind a high-alpha suction peak one RK4 sub-step
+    can throw H from ~3.5 to large negative values (NACA 2412, Re 2.2e6,
+    alpha 10: H 3.55 -> -143); the march then ran on to the trailing edge
+    and reported 'laminar to the trailing edge' -> transition jumped aft and
+    the leading-edge region stalled"""
+    return (not np.all(np.isfinite(y))) or y[1] >= H_sep or y[1] < 1.02 or y[0] <= 0.0
+
+
 def laminar_bl(s, Ue, re, H_sep=3.8):
     """Laminar integral boundary layer on a given edge-velocity distribution
     (momentum + kinetic-energy integral equations, Drela's laminar closure):
@@ -161,14 +171,30 @@ def laminar_bl(s, Ue, re, H_sep=3.8):
             k4 = rhs(x + hh, y + hh * k3)
             y = y + hh / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
             x += hh
-            if y[1] >= H_sep or not np.all(np.isfinite(y)):
+            if _separated(y, H_sep):
                 break
-        if y[1] >= H_sep or not np.all(np.isfinite(y)):
+        if _separated(y, H_sep):
             sep = i
             break
         th[i], H[i] = y
     ret = Ue * th * re
     return th, H, ret, sep
+
+
+def march_start(Ue, u_min=0.02):
+    """index where the laminar march starts: the last of the leading stations
+    with U_e ~ 0. Next to the stagnation point the RANS wall pressure can
+    slightly exceed the free-stream total pressure (Cp > 1 by a few 1e-3:
+    numerical total-pressure error), U_e = sqrt(1 - 2 p) is then clipped to
+    0 for one or two columns; marching from there gave theta from U_e ~ 0
+    and an immediate spurious 'laminar separation' (NACA 2412, Re 2.2e6,
+    alpha 14: transition estimate 0.2 c instead of 0.01 c -> the leading-edge
+    laminar region burst into stall and the solution diverged)."""
+    Ue = np.asarray(Ue, float)
+    i0 = 0
+    while i0 + 2 < len(Ue) and Ue[i0 + 1] < u_min:
+        i0 += 1
+    return i0
 
 
 # ----------------------------------------------------------------------
@@ -298,6 +324,16 @@ class Transition:
         self._sep_hist = {"upper": [], "lower": []}      # last 3 settled estimates
         self._last_dir = {"upper": 0, "lower": 0}
         self.last = None
+        # intermittency changes are blended in over ramp_n iterations (set by
+        # solve_with_transition; 0 = at once). gamma multiplies the eddy
+        # viscosity, so switching a region laminar in one iteration removes
+        # nu_t ~ 1e4 nu there at once: a cold start deep in stall (NACA 2412,
+        # Re 4.4e6, alpha 18; the turbulent start-up flow still unsettled)
+        # took the lower surface laminar to the trailing edge, and the
+        # trailing-edge cells under the separated upper flow blew up within
+        # 10 iterations. The converged solution is the same.
+        self.ramp_n = 0
+        self._ramp = None
         m = solver.m
         wall = np.where(solver.b_wall)[0]
         # nearest wall face of every cell, and wall face -> column
@@ -306,6 +342,8 @@ class Transition:
         from turbulence import wall_distance
         _, self._nearest = wall_distance(m, wall, return_index=True)
         self._face_col = cKDTree(self.cols["xw"]).query(m.bxf[wall])[1]
+        x_te = float(m.bxf[wall][:, 0].max())
+        self._before_te = m.xc[:, 0] < x_te - 0.003 * float(np.ptp(m.bxf[wall][:, 0]))
         if self.auto_start:
             solver.turb.gamma = None               # fully turbulent until the first estimate
         else:
@@ -332,16 +370,47 @@ class Transition:
         lam_col = np.zeros(len(self.cols["xw"]), bool)
         for side in ("upper", "lower"):
             sd = surf[side]
+            # at high |alpha| the stagnation point lies on the other side of
+            # the leading edge: the stretch stagnation point -> leading edge
+            # (x decreasing) is laminar whenever transition is downstream of it
+            i_le = int(np.argmin(sd["x"]))
             lam = sd["x"] <= self.x_tr[side]
+            if self.x_tr[side] > sd["x"][i_le]:
+                lam[:i_le + 1] = True
             # laminar only up to the first point past x_tr (monotone in s)
             stop = np.argmax(~lam) if (~lam).any() else len(lam)
             lam_col[sd["i"][:stop]] = True
         lam_col[surf["i_stag"]] = True
         face_lam = lam_col[self._face_col]
-        gamma = np.where(face_lam[self._nearest], 0.0, 1.0)
-        self.s.turb.gamma = gamma
+        # the wake and the trailing-edge corner cells stay turbulent (as the
+        # wake in XFOIL): with a lower surface laminar to the trailing edge
+        # these cells (wall distance ~1e-4 c) were laminar too, and under a
+        # separated upper-surface flow they blew up (NACA 2412, Re 4.4e6,
+        # cold start at alpha 18-22)
+        gamma = np.where(face_lam[self._nearest] & self._before_te, 0.0, 1.0)
+        cur = self.s.turb.gamma
+        if self.ramp_n > 0:
+            g0 = np.ones_like(gamma) if cur is None else np.asarray(cur, float).copy()
+            if np.any(g0 != gamma):
+                self._ramp = [g0, gamma, 0]
+                self.s.turb.gamma = g0
+            else:
+                self._ramp = None
+                self.s.turb.gamma = gamma
+        else:
+            self.s.turb.gamma = gamma
         self.surf = surf
         return gamma
+
+    def step(self):
+        """one iteration of an intermittency blend in progress"""
+        if self._ramp is None:
+            return
+        g0, g1, k = self._ramp
+        k += 1
+        w = min(k / self.ramp_n, 1.0)
+        self.s.turb.gamma = g0 + w * (g1 - g0)
+        self._ramp = None if w >= 1.0 else [g0, g1, k]
 
     def estimate(self, surf):
         """Transition estimate per surface from the laminar integral boundary
@@ -352,23 +421,35 @@ class Transition:
         out = {}
         for side in ("upper", "lower"):
             sd = surf[side]
-            th, H, ret, sep = laminar_bl(sd["s"], sd["Ue"], self.re)
+            i0 = march_start(sd["Ue"])
+            s, Ue, x = sd["s"][i0:] - sd["s"][i0], sd["Ue"][i0:], sd["x"][i0:]
+            i_le = int(np.argmin(x))
+
+            def x_at(sv):
+                """chordwise position of the arc length sv; on the stretch
+                ahead of the leading edge -> the leading edge"""
+                if sv <= s[i_le]:
+                    return float(x[i_le])
+                return float(min(np.interp(sv, s, x), 1.0)) if sv <= s[-1] else 1.0
+
+            th, H, ret, sep = laminar_bl(s, Ue, self.re)
             end = sep if sep is not None else len(th)
             end = max(end, 2)
-            N, rate = integrate_N(sd["s"][:end], H[:end], ret[:end], th[:end])
+            N, rate = integrate_N(s[:end], H[:end], ret[:end], th[:end])
             hit = np.where(N >= self.ncrit)[0]
             if len(hit):
                 j = hit[0]
                 f = (self.ncrit - N[j - 1]) / max(N[j] - N[j - 1], 1e-12)
-                x_est, how = sd["x"][j - 1] + f * (sd["x"][j] - sd["x"][j - 1]), "N_crit"
+                x_est, how = x_at(s[j - 1] + f * (s[j] - s[j - 1])), "N_crit"
             elif sep is not None:
-                x_est = min(sd["x"][sep] + 4e4 / (self.re * max(sd["Ue"][sep], 0.1)), 1.0)
+                # Horton's bubble transition length, measured along the surface
+                x_est = x_at(s[sep] + 4e4 / (self.re * max(Ue[sep], 0.1)))
                 how = "laminar separation"
             else:
                 x_est, how = 1.0, "laminar to the trailing edge"
             out[side] = {"x_est": float(x_est), "how": how, "N_end": float(N[end - 1]),
-                         "x_sep": None if sep is None else float(sd["x"][sep]),
-                         "N": N, "x": sd["x"][:end], "H": H[:end], "theta": th[:end]}
+                         "x_sep": None if sep is None else float(x[sep]),
+                         "N": N, "x": x[:end], "H": H[:end], "theta": th[:end]}
         return out
 
     def update(self, settled=True):
@@ -437,6 +518,13 @@ def solve_with_transition(solver, tr, tol=1e-7, max_iter=12000, chunk=400, settl
     n_start1, n_start2 = max(int(150 * scale), 10), max(int(300 * scale), 20)
     total = 0
     prev_F = None
+    tr.ramp_n = settle
+    user_cb = callback
+
+    def callback(it, r):
+        tr.step()
+        return user_cb(it, r) if user_cb is not None else None
+
     if tr.auto_start:                     # start: fully turbulent first
         # at least 150 iterations even if the residual is already small: a
         # warm-started field (previous angle, rotated) looks converged at once

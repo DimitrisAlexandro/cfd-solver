@@ -197,8 +197,10 @@ def _sides(pts):
     return (sx, sy), (s_le, s[-1]), dense_u, dense_l
 
 
-def repanel(pts, n_side=160, te_blend=0.85, n_te=3, te_thick=TE_THICK):
-    """Normalised raw loop -> mesher loop (CCW), n_side points per side."""
+def repanel(pts, n_side=160, te_blend=0.85, n_te=3, te_thick=TE_THICK, rescale=True):
+    """Normalised raw loop -> mesher loop (CCW), n_side points per side.
+    rescale: stretch back to x_TE = 1 after cutting a sharp trailing edge
+    (off for flapped sections: their chord reference is the unflapped one)."""
     (sx, sy), (s_le, s_end), du, dl = _sides(pts)
     xu, yu = sx(du), sy(du)
     xl, yl = sx(dl), sy(dl)
@@ -222,7 +224,7 @@ def repanel(pts, n_side=160, te_blend=0.85, n_te=3, te_thick=TE_THICK):
     up = np.c_[sx(su), sy(su)]
     lo = np.c_[sx(sl), sy(sl)]
     lo[0] = up[0]                                          # common LE point
-    scale = 1.0 / up[-1, 0] if x_cut < x_end - 1e-12 else 1.0
+    scale = 1.0 / up[-1, 0] if (x_cut < x_end - 1e-12 and rescale) else 1.0
     up, lo = up * scale, lo * scale
     t = np.linspace(0, 1, n_te + 1)[1:-1]
     base = lo[-1] + t[:, None] * (up[-1] - lo[-1])
@@ -249,7 +251,7 @@ def check(loop):
         if np.any((d1 * d2 < 0) & (d3 * d4 < 0)):
             raise ValueError("airfoil outline intersects itself")
     i_le = int(np.argmin(loop[:, 0]))
-    x = np.linspace(0.01, 0.99, 197)
+    x = np.linspace(0.01, 0.99, 197) * min(1.0, float(loop[:, 0].max()))   # flapped: TE ahead of x = 1
     # CCW loop: from the TE along the lower... find both sides by y at each x
     th = []
     for xx in x:
@@ -267,10 +269,82 @@ def check(loop):
             "le": loop[i_le].tolist()}
 
 
+FLAP_TAG = "@flap="
+
+
+def parse_flap(spec):
+    """'naca2412@flap=25c20' -> ('naca2412', (0.25, 20.0)): flap chord in % of
+    the chord, deflection in deg (+ = trailing edge down, 'p' = decimal
+    point, so the tag has no dots and file names stay unambiguous); no tag
+    -> (spec, None)"""
+    s = str(spec)
+    if FLAP_TAG not in s:
+        return s, None
+    base, f = s.split(FLAP_TAG, 1)
+    c, d = f.split("c", 1)
+    cf, delta = float(c.replace("p", ".")) / 100.0, float(d.replace("p", "."))
+    if not (0.05 <= cf <= 0.6):
+        raise ValueError(f"flap chord fraction {cf} outside 0.05 .. 0.6")
+    return base, (cf, delta)
+
+
+def flap_spec(spec, cf, delta):
+    """section spec with a plain flap of cf (fraction of chord) at delta deg"""
+    if abs(delta) < 1e-9:
+        return str(spec)
+    return f"{spec}{FLAP_TAG}" + f"{round(cf * 100):d}c{delta:g}".replace(".", "p")
+
+
+def section_stem(spec):
+    """file-name stem of a section spec (flap tag kept; Path.stem would cut a
+    .dat file's tag off)"""
+    base, flap = parse_flap(spec)
+    stem = Path(str(base)).stem
+    if flap:
+        stem += FLAP_TAG + f"{round(flap[0] * 100):d}c{flap[1]:g}".replace(".", "p")
+    return stem
+
+
+def deflect_flap(pts, cf, delta_deg, blend=0.04, n=240):
+    """Plain (sealed) trailing-edge flap on a normalised outline: the camber
+    line aft of the hinge (x = 1 - cf) is rotated by delta (+ = trailing
+    edge down) with the angle blended smoothly over `blend` chord around
+    the hinge (a rounded, sealed hinge: no gap, no kink for the mesher);
+    the thickness distribution is carried along normal to the rotated
+    reference direction. Chord reference unchanged (1). Returns the outline
+    upper TE -> LE -> lower TE (counter-clockwise)."""
+    p = np.asarray(pts, float)
+    (sx, sy), (s_le, s_end), du, dl = _sides(p)
+    xu, yu, xl, yl = sx(du), sy(du), sx(dl), sy(dl)
+    b = np.linspace(0, np.pi, n)
+    x = 0.5 * (1 - np.cos(b)) * min(xu[-1], xl[-1])
+    yU, yL = np.interp(x, xu, yu), np.interp(x, xl, yl)
+    yc, th = 0.5 * (yU + yL), 0.5 * (yU - yL)
+    xh = 1.0 - cf
+    # above 20 deg the blend widens with the deflection (same turn radius as
+    # at 20 deg): a tighter concave lower-surface corner squeezed the
+    # boundary-layer cells (30 deg: 58 deg non-orthogonality) and the RANS
+    # solution diverged at every angle
+    blend = blend * max(1.0, abs(delta_deg) / 20.0)
+    u = np.clip((x - (xh - 0.5 * blend)) / blend, 0, 1)
+    phi = -math.radians(delta_deg) * u * u * (3 - 2 * u)            # smoothstep, clockwise
+    C = np.zeros((n, 2))
+    C[0] = (x[0], yc[0])
+    for i in range(n - 1):
+        f = 0.5 * (phi[i] + phi[i + 1])
+        d = np.array([x[i + 1] - x[i], yc[i + 1] - yc[i]])
+        R = np.array([[math.cos(f), -math.sin(f)], [math.sin(f), math.cos(f)]])
+        C[i + 1] = C[i] + R @ d
+    nrm = np.c_[-np.sin(phi), np.cos(phi)]                            # rotated "up"
+    up = C + th[:, None] * nrm
+    lo = C - th[:, None] * nrm
+    return np.vstack([up[::-1], lo[1:]])
+
+
 def load_airfoil(spec, n_side=160, te_thick=TE_THICK, n_te=3, derotate=False):
     """spec: 'naca2412', 'naca23012', '0012', 'tmr0012' or a .dat path.
     Returns (loop, info). The loop goes to hybrid_mesher.build_mesh(wall=loop)."""
-    s = str(spec).strip()
+    s, flap = parse_flap(str(spec).strip())
     low = s.lower()
     if low in ("tmr", "tmr0012", "naca0012tmr"):
         raw, name = tmr0012_raw(), "NACA 0012 (NASA TMR, sharp TE)"
@@ -283,6 +357,30 @@ def load_airfoil(spec, n_side=160, te_thick=TE_THICK, n_te=3, derotate=False):
             raise FileNotFoundError(f"airfoil '{s}': not a NACA code and no such file")
         raw, name = read_dat(p)
     norm, info = normalise(raw, derotate=derotate)
-    loop = repanel(norm, n_side=n_side, te_thick=te_thick, n_te=n_te)
-    info.update(check(loop), name=name, source=s)
+    if flap:
+        norm = deflect_flap(norm, *flap)
+        name += f", flap {flap[0]:g} c at {flap[1]:g}°"
+    loop = repanel(norm, n_side=n_side, te_thick=te_thick, n_te=n_te, rescale=flap is None)
+    info.update(check(loop), name=name, source=str(spec), flap=flap)
     return loop, info
+
+
+def sharp_outline(spec):
+    """normalised raw outline TE -> around -> TE, counter-clockwise (no
+    repanelling, sharp trailing edge as given): input of the panel method
+    and of the CST fit (design tools)"""
+    s, flap = parse_flap(str(spec).strip())
+    low = s.lower()
+    if low in ("tmr", "tmr0012", "naca0012tmr"):
+        raw = tmr0012_raw()
+    elif low.startswith("naca") or (low.isdigit() and len(low) in (4, 5)):
+        raw = naca_raw(low.replace("naca", "").replace(" ", ""))
+    else:
+        raw = read_dat(Path(s))[0]
+    n, _ = normalise(raw)
+    if flap:
+        n = deflect_flap(n, *flap)
+    x, y = n[:, 0], n[:, 1]
+    if 0.5 * np.sum(x * np.roll(y, -1) - np.roll(x, -1) * y) < 0:
+        n = n[::-1]
+    return n

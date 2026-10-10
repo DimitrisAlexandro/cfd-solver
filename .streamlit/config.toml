@@ -1,0 +1,84 @@
+# AeroLab look: engineering data sheet (see app/ui.py for the CSS and the plot template).
+# IBM Plex is bundled in app/static/fonts (SIL Open Font License), so it works offline.
+[server]
+enableStaticServing = true
+
+[theme]
+base = "light"
+primaryColor = "#1D4E89"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#EEF1F4"
+textColor = "#17202B"
+linkColor = "#1D4E89"
+borderColor = "#CDD4DC"
+showWidgetBorder = true
+baseRadius = "small"
+baseFontSize = 14
+font = "IBM Plex Sans, Helvetica, Arial, sans-serif"
+headingFont = "IBM Plex Sans, Helvetica, Arial, sans-serif"
+codeFont = "IBM Plex Mono, Menlo, Consolas, monospace"
+showSidebarBorder = true
+
+[[theme.fontFaces]]
+family = "IBM Plex Sans"
+url = "app/static/fonts/ibm-plex-sans-latin-400-normal.woff2"
+weight = 400
+style = "normal"
+unicodeRange = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD"
+
+[[theme.fontFaces]]
+family = "IBM Plex Sans"
+url = "app/static/fonts/ibm-plex-sans-greek-400-normal.woff2"
+weight = 400
+style = "normal"
+unicodeRange = "U+0370-0377,U+037A-037F,U+0384-038A,U+038C,U+038E-03A1,U+03A3-03FF"
+
+[[theme.fontFaces]]
+family = "IBM Plex Sans"
+url = "app/static/fonts/ibm-plex-sans-latin-500-normal.woff2"
+weight = 500
+style = "normal"
+unicodeRange = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD"
+
+[[theme.fontFaces]]
+family = "IBM Plex Sans"
+url = "app/static/fonts/ibm-plex-sans-greek-500-normal.woff2"
+weight = 500
+style = "normal"
+unicodeRange = "U+0370-0377,U+037A-037F,U+0384-038A,U+038C,U+038E-03A1,U+03A3-03FF"
+
+[[theme.fontFaces]]
+family = "IBM Plex Sans"
+url = "app/static/fonts/ibm-plex-sans-latin-600-normal.woff2"
+weight = 600
+style = "normal"
+unicodeRange = "U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+2074,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD"
+
+[[theme.fontFaces]]
+family = "IBM Plex Sans"
+url = "app/static/fonts/ibm-plex-sans-greek-600-normal.woff2"
+weight = 600
+style = "normal"
+unicodeRange = "U+0370-0377,U+037A-037F,U+0384-038A,U+038C,U+038E-03A1,U+03A3-03FF"
+
+[[theme.fontFaces]]
+family = "IBM Plex Mono"
+url = "app/static/fonts/ibm-plex-mono-latin-400-normal.woff2"
+weight = 400
+style = "normal"
+
+[[theme.fontFaces]]
+family = "IBM Plex Mono"
+url = "app/static/fonts/ibm-plex-mono-latin-500-normal.woff2"
+weight = 500
+style = "normal"
+
+[theme.sidebar]
+backgroundColor = "#EEF1F4"
+secondaryBackgroundColor = "#FFFFFF"
+
+[client]
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false
