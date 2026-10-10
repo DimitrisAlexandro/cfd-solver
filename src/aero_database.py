@@ -335,17 +335,16 @@ def write_avl(ac, out):
         if s.symmetric:
             L += ["YDUPLICATE", f"{s.y:.4f}"]
         L += ["ANGLE", "0.0", ""]
-        etas = sorted({0.0, 1.0} | {c.eta0 for c in s.controls} | {c.eta1 for c in s.controls})
-        tl = math.tan(math.radians(s.sweep))
-        td = math.tan(math.radians(s.dihedral))
+        etas = sorted({0.0, 1.0} | {c.eta0 for c in s.controls} | {c.eta1 for c in s.controls}
+                      | set(s.stations()[0].tolist()))
         for e in etas:
-            c = s.chord(e)
-            x = s.x + 0.25 * s.root_chord + e * s.semi * tl - 0.25 * c
+            c = float(s.chord(e))
+            x = float(s.x_le(e))
             if s.vertical:
                 y, z = s.y, s.z + e * s.semi
             else:
-                y, z = s.y + e * s.semi, s.z + e * s.semi * td
-            inc = s.incidence + s.twist * e
+                y, z = s.y + e * s.semi, s.z + float(s.rise(e))
+            inc = s.incidence + float(s.twist_at(e))
             L += ["SECTION", f"{x:.4f} {y:.4f} {z:.4f} {c:.4f} {inc:.3f}   | Xle Yle Zle Chord Ainc"]
             af = s.airfoil if (s.tip_airfoil is None or e < 0.5) else s.tip_airfoil
             L += af_lines(af)
