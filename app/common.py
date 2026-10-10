@@ -15,13 +15,20 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
-CASES = ROOT / "cases"
+CASES = Path(os.environ.get("AEROLAB_CASES", ROOT / "cases"))   # results; a volume on a server
 VAL = ROOT / "validation"
 JOBS = CASES / "_jobs"
 POLAR_CACHE = CASES / "wing_polars"
 AIRCRAFT = CASES / "aircraft"
 for p in (CASES, JOBS):
     p.mkdir(parents=True, exist_ok=True)
+# starter section polars shipped with the code (NACA 2412 / 0012, flapped 2412): copied into an
+# empty store, so a fresh install (cloud, server) has CFD sections for the aircraft tools
+if not POLAR_CACHE.exists() or not any(POLAR_CACHE.glob("*.json")):
+    import shutil
+    POLAR_CACHE.mkdir(parents=True, exist_ok=True)
+    for f in (ROOT / "data" / "wing_polars").glob("*.json"):
+        shutil.copy(f, POLAR_CACHE / f.name)
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 

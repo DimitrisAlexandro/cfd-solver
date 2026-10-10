@@ -1,0 +1,13 @@
+# AeroLab on Streamlit Community Cloud (this file, next to the entrypoint app/AeroLab.py, takes
+# precedence over the root requirements.txt). Runtime only; the root file adds the test and
+# offline-viewer tools and the optional MKL solver.
+numpy
+scipy
+matplotlib
+numba
+pyamg
+threadpoolctl
+streamlit>=1.50
+plotly
+pandas
+openpyxl
