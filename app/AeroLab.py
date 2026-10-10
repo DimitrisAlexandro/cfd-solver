@@ -15,6 +15,33 @@ import ui  # noqa: E402
 ui.brand(HERE / "assets")
 
 
+def _password():
+    """optional shared password: environment AEROLAB_PASSWORD or secrets 'password'"""
+    import os
+    pw = os.environ.get("AEROLAB_PASSWORD")
+    if not pw:
+        try:
+            pw = st.secrets.get("password")
+        except Exception:                        # noqa: BLE001  (no secrets file)
+            pw = None
+    return pw
+
+
+_pw = _password()
+if _pw and not st.session_state.get("auth_ok"):
+    import hmac
+    c = st.columns([1, 1, 1])[1]
+    with c:
+        st.markdown("### AeroLab")
+        entered = st.text_input("Password", type="password")
+        if entered:
+            if hmac.compare_digest(entered, _pw):
+                st.session_state["auth_ok"] = True
+                st.rerun()
+            st.error("Wrong password.")
+    st.stop()
+
+
 def P(file, title, default=False):
     url = None if default else title.lower().replace(" ", "-")
     return st.Page(str(HERE / file), title=title, default=default, url_path=url)

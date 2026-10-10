@@ -11,3 +11,4 @@ __pycache__/
 *.vtk
 *.png
 *.msh
+.env
