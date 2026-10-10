@@ -131,7 +131,14 @@ def test_avl_import(tmp_path):
     assert ac.mass == pytest.approx(1.6) and ac.cg[0] == pytest.approx(0.08)
     assert ac.inertias()[0] == pytest.approx(0.8 * 0.1**2)
     assert ac.cd_extra == pytest.approx(0.01)
-    assert any("cranked" in m for m in warns) and any("BODY" in m for m in warns)
+    assert any("kink" in m for m in warns) and any("BODY" in m for m in warns)
+    # the crank is kept: one kink at the inner/outer panel break, exact planform area
+    assert len(w.kinks) == 1
+    k = w.kinks[0]
+    assert (k["y"], k["chord"], k["dx"], k["dz"], k["twist"]) == pytest.approx((0.6, 0.22, 0.0, 0.03, 0.0))
+    assert w.area == pytest.approx(2 * (0.22 * 0.6 + 0.5 * (0.22 + 0.12) * 0.7))
+    assert w.x_le(1.0) == pytest.approx(0.06, abs=1e-5) and w.rise(1.0) == pytest.approx(0.10, abs=1e-5)
+    assert not h.kinks and not f.kinks
     # the imported aircraft analyses
     d = A.Analysis(ac, 12.0, 0.0, None).derivatives(2.0)
     assert d["Cm_a"] < 0 and d["Cn_b"] > 0
@@ -160,3 +167,16 @@ def test_json_import():
     assert b.to_dict() == ac.to_dict() and w == []
     with pytest.raises(ValueError):
         AI.read_files({"x.txt": b"hello"})
+
+
+def test_avl_roundtrip_kinks(tmp_path):
+    import aero_database as D
+    import validate_aircraft as VA
+    ac = VA.test_cranked()
+    D.write_avl(ac, tmp_path)                 # also writes sections at the control edges
+    b, _ = AI.read_files({"a.avl": (tmp_path / "aircraft.avl").read_bytes()}, tmp_path)
+    for s0, s1 in zip(ac.surfaces, b.surfaces):
+        assert len(s1.kinks) == len(s0.kinks) == 1, s0.name          # collinear sections dropped
+        for k in ("y", "chord", "dx", "dz", "twist"):
+            assert s1.kinks[0][k] == pytest.approx(s0.kinks[0].get(k, 0.0), abs=1e-3)
+        assert s1.area == pytest.approx(s0.area, rel=1e-4)
