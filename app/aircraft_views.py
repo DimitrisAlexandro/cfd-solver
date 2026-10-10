@@ -154,7 +154,16 @@ def controls_frame(ac):
     return pd.DataFrame(rows, columns=["surface", "name", "eta0", "eta1", "cf", "mode"])
 
 
-def build_from_frames(base, sdf, cdf, **kw):
+KINK_COLS = ["surface", "y", "chord", "dx", "dz", "twist"]
+
+
+def kinks_frame(ac):
+    rows = [{"surface": s.name, **{k: float(kk.get(k, 0.0)) for k in KINK_COLS[1:]}}
+            for s in ac.surfaces for kk in sorted(s.kinks, key=lambda k: float(k["y"]))]
+    return pd.DataFrame(rows, columns=KINK_COLS)
+
+
+def build_from_frames(base, sdf, cdf, kdf=None, **kw):
     """Aircraft from the edited tables (+ scalar fields in kw)"""
     surfs = []
     for _, r in sdf.iterrows():
@@ -167,7 +176,11 @@ def build_from_frames(base, sdf, cdf, **kw):
                                float(r["dihedral"]), float(r["twist"]), float(r["incidence"]),
                                str(r["airfoil"]).strip() or "naca0012",
                                (str(r["tip_airfoil"]).strip() or None) if r["tip_airfoil"] is not None else None,
-                               bool(r["symmetric"]), bool(r["vertical"]), ctrls, int(r["ns"]), int(r["nc"])))
+                               bool(r["symmetric"]), bool(r["vertical"]), ctrls, int(r["ns"]), int(r["nc"]),
+                               kinks=[{k: float(q[k]) if q[k] == q[k] else 0.0 for k in KINK_COLS[1:]}
+                                      for _, q in (kdf if kdf is not None else pd.DataFrame(columns=KINK_COLS)).iterrows()
+                                      if str(q["surface"]) == str(r["name"]) and q["y"] == q["y"]
+                                      and q["chord"] == q["chord"] and float(q["chord"]) > 0]))
     d = base.to_dict()
     d.update(kw)
     d["surfaces"] = [A.asdict(s) for s in surfs]
@@ -268,6 +281,10 @@ def upload_panel():
         st.dataframe(sf[["name", "span", "root_chord", "tip_chord", "x", "z", "sweep",
                                          "dihedral", "incidence", "airfoil", "vertical"]],
                      hide_index=True, width="stretch")
+        kf = kinks_frame(ac)
+        if len(kf):
+            st.caption("Panel breaks (kinks): y from the root, chord, leading-edge dx / dz, twist")
+            st.dataframe(kf, hide_index=True, width="stretch")
         cf = controls_frame(ac)
         if len(cf):
             st.dataframe(cf, hide_index=True, width="stretch")

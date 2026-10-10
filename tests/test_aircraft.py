@@ -142,3 +142,58 @@ def test_propeller_and_flap_models(demo):
     assert pr.power(3000.0) < P0                                                  # altitude lapse
     d10, d30 = P.flap_increment(ac, 10.0), P.flap_increment(ac, 30.0)
     assert 0 < d10 < d30 < 0.6
+
+
+# ---------------------------------------------------------------------- multi-panel surfaces
+def _cranked():
+    import validate_aircraft as VA
+    return VA.test_cranked()
+
+
+def test_kink_geometry_exact():
+    w = _cranked().wing                    # 2 m constant chord 1.6, then taper to 0.7 at 5.5 m
+    assert w.area == pytest.approx(2 * (1.6 * 2.0 + 0.5 * (1.6 + 0.7) * 3.5))
+    # MAC of the two panels, area-weighted (analytic)
+    s1, m1 = 1.6 * 2.0, 1.6
+    lam = 0.7 / 1.6
+    s2, m2 = 0.5 * 2.3 * 3.5, 2 / 3 * 1.6 * (1 + lam + lam**2) / (1 + lam)
+    assert w.mac == pytest.approx((s1 * m1 + s2 * m2) / (s1 + s2), rel=1e-9)
+    assert w.chord(2.0 / 5.5) == pytest.approx(1.6) and w.chord(1.0) == pytest.approx(0.7)
+    assert w.rise(2.0 / 5.5) == pytest.approx(0.0) and w.twist_at(2.0 / 5.5) == pytest.approx(0.0)
+    assert w.twist_at(1.0) == pytest.approx(-3.0)
+
+
+def test_collinear_kink_changes_nothing(demo):
+    ac, an = demo
+    w = ac.wing
+    e = 2.0 / w.semi
+    b = A.Aircraft.from_dict(ac.to_dict())
+    b.wing.kinks = [{"y": 2.0, "chord": float(w.chord(e)), "dx": float(w.x_le(e) - w.x),
+                     "dz": float(w.rise(e)), "twist": float(w.twist_at(e))}]
+    assert b.S == pytest.approx(ac.S) and b.c == pytest.approx(ac.c)
+    d0, d1 = an.derivatives(2.0), A.Analysis(b, 50.0, 0.0, None).derivatives(2.0)
+    for k in ("CL_a", "Cm_a", "Cl_b", "Cn_b", "static_margin"):
+        assert d1[k] == pytest.approx(d0[k], rel=0.01, abs=1e-3), k
+
+
+def test_cranked_against_aerosandbox():
+    pytest.importorskip("aerosandbox")
+    import validate_aircraft as VA
+    ac = _cranked()
+    r, d = VA.ours(ac, 2.0)
+    ref = VA.compare_asb(ac, 2.0)
+    assert r["CL"] == pytest.approx(ref["CL"], rel=0.03)
+    assert d["CL_a"] == pytest.approx(ref["CLa"], rel=0.02)
+    assert d["Cm_a"] == pytest.approx(ref["Cma"], rel=0.02)
+    assert d["x_np"] == pytest.approx(ref["x_np"], abs=0.01)
+    assert d["Cn_b"] == pytest.approx(ref["Cnb"], rel=0.1)
+
+
+def test_cranked_loads_balance():
+    import loads as Ld
+    ac = _cranked()
+    an = A.Analysis(ac, 50.0, 0.0, None)
+    t = an.trim()
+    r = an.solve(alpha=t["alpha_trim"], controls={"elevator": t["control_trim"]})
+    st, _ = Ld.span_loads(ac, an, r, 1.0, 0, 0.35, 0.0)
+    assert st["shear"][0] == pytest.approx(0.5 * r["surfaces"]["wing"]["CL"] * an.qbar * ac.S, rel=0.03)

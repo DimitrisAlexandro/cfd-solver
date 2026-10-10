@@ -21,6 +21,20 @@ Same geometry in AeroSandbox's vortex-lattice method (independent code; symmetri
 | Cnb | 0.1204 | 0.1210 | -0.5 % |
 | Clp | -0.5287 | -0.5461 | +3.2 % |
 
+Multi-panel surfaces (kinks): wing with a 2 m constant-chord centre panel and a swept, tapered outer panel with a dihedral break and 3° washout; tail and fin with a kink:
+
+| quantity | AeroLab | AeroSandbox | difference |
+|---|---|---|---|
+| CL | 0.2600 | 0.2565 | +1.4 % |
+| Cm | 0.0580 | 0.0589 | -1.6 % |
+| CLa | 5.3949 | 5.3461 | +0.9 % |
+| Cma | -1.7877 | -1.7775 | -0.6 % |
+| x_np | 2.9580 | 2.9595 | -0.1 % |
+| CYb | -0.2732 | -0.2702 | -1.1 % |
+| Clb | -0.0999 | -0.1131 | +11.7 % |
+| Cnb | 0.0946 | 0.0893 | +6.0 % |
+| Clp | -0.5068 | -0.5165 | +1.9 % |
+
 Rate derivatives (AeroSandbox's q and r derivatives use another definition: its CL_q is 1.5 CL_a on a plain high-aspect-ratio wing, where theory gives CL_q = CL_a):
 
 - AR 30 wing pitching about c/4: CL_q 5.769 vs CL_a 5.745 (theory: equal); Cm_q -0.766 vs 2-D −π/4 = -0.785
@@ -62,7 +76,7 @@ Trim α 2.27°, elevator +0.88°, CL 0.424, L/D 14.0. Neutral point x 2.582 m, s
 
 ## Aero database
 
-682 states (α −6…24° × β −10…10°, elevator, aileron, rudder, flap deflections), nonlinear sections, in 71 s. Files: database.xlsx, jsbsim_aero.xml (complete `<aerodynamics>` section), aircraft.avl + aircraft.mass, CSV/JSON.
+682 states (α −6…24° × β −10…10°, elevator, aileron, rudder, flap deflections), nonlinear sections, in 56 s. Files: database.xlsx, jsbsim_aero.xml (complete `<aerodynamics>` section), aircraft.avl + aircraft.mass, CSV/JSON.
 
 ![database](aircraft_database_demo.png)
 
@@ -92,7 +106,7 @@ Check: with inertia relief off, the root shear of the half wing equals half the 
 
 ## Performance (75 kW, fixed-pitch propeller, 80 kg fuel, sea level)
 
-Trimmed CL_max 1.67; polar fit CD0 0.0244, Oswald e 0.83. Stall 24.0 m/s, V_max 67.0 m/s, best climb 4.78 m/s at 40 m/s, service ceiling 6623 m, best glide 16.5, range 1586 km at 40 m/s. Takeoff to 15 m 336 m (ground roll 178 m), landing from 15 m 433 m. Flap CL_max increments: takeoff 0.12 (CFD section polars (Re 2.2e+06)), landing 0.17 (CFD section polars (Re 2.2e+06)).
+Trimmed CL_max 1.69; polar fit CD0 0.0244, Oswald e 0.83. Stall 23.9 m/s, V_max 67.0 m/s, best climb 4.78 m/s at 40 m/s, service ceiling 6623 m, best glide 16.5, range 1587 km at 40 m/s. Takeoff to 15 m 334 m (ground roll 177 m), landing from 15 m 432 m. Flap CL_max increments: takeoff 0.12 (CFD section polars (Re 2.2e+06)), landing 0.17 (CFD section polars (Re 2.2e+06)).
 
 ![performance](aircraft_performance_demo.png)
 

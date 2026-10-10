@@ -77,3 +77,20 @@ def test_stl_bytes_roundtrip():
     assert t.shape == m.shape and np.allclose(t, m, atol=1e-5)
     with pytest.raises(ValueError):
         S.read_stl(b"hello")
+
+
+def test_cranked_roundtrip(tmp_path):
+    import validate_aircraft as VA
+    ac = VA.test_cranked()
+    ac.fuselage = A.Fuselage(7.5, 1.1, 0.0, 0.0, 0.3, 0.15)
+    b, _, _ = S.to_aircraft(S.aircraft_mesh(ac), af_dir=tmp_path)
+    w0, w1 = ac.wing, b.wing
+    assert len(w1.kinks) == 1 and w1.kinks[0]["y"] == pytest.approx(2.0, abs=0.03)
+    assert w1.area == pytest.approx(w0.area, rel=0.005) and w1.mac == pytest.approx(w0.mac, rel=0.005)
+    for e in (0.0, 0.3, 0.6, 1.0):
+        assert w1.chord(e) == pytest.approx(w0.chord(e), abs=0.01)
+        assert w1.x_le(e) == pytest.approx(w0.x_le(e), abs=0.01)
+        assert w1.rise(e) == pytest.approx(w0.rise(e), abs=0.01)
+    for s0 in ac.surfaces[1:]:
+        s1 = next(s for s in b.surfaces if s.vertical == s0.vertical and s is not w1)
+        assert s1.area == pytest.approx(s0.area, rel=0.03)

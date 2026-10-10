@@ -193,17 +193,6 @@ def _surface_from_avl(s, airfoils, warn, inline_dir):
     x0 = xq_r - (r["p"][1] - y0 if not vertical else 0.0) * math.tan(math.radians(sweep)) - 0.25 * r["c"]
     if not vertical:
         z0 = r["p"][2] - (r["p"][1] - y0) * math.tan(math.radians(dihedral))
-    # trapezoid fit check
-    if len(secs) > 2:
-        eta = (span_c - span_c[0]) / max(span_c[-1] - span_c[0], 1e-12)
-        c_lin = r["c"] + (t["c"] - r["c"]) * eta
-        dev = np.max(np.abs(np.array([q["c"] for q in secs]) - c_lin)) / max(r["c"], 1e-9)
-        a_true = float(np.trapezoid([q["c"] for q in secs], span_c))
-        a_fit = 0.5 * (r["c"] + t["c"]) * (span_c[-1] - span_c[0])
-        if dev > 0.02:
-            warn(f"'{s['name']}' has {len(secs)} sections (cranked planform); fitted with one tapered "
-                 f"panel through root and tip: chord off by up to {100 * dev:.0f} % of the root chord, "
-                 f"area {100 * (a_fit / a_true - 1):+.1f} %. Adjust the chords on the Edit tab if needed.")
     span_len = semi * (2 if symmetric else 1)
 
     def af_of(q):
@@ -250,10 +239,39 @@ def _surface_from_avl(s, airfoils, warn, inline_dir):
                                round(min(max(1 - xh, 0.05), 0.6), 4), mode))
     nc = int(min(max(s["nchord"] or 6, 2), 12))
     ns = int(min(max(s["nspan"] or 12, 4), 30))
-    return A.Surface(s["name"], float(span_len), float(r["c"]), float(t["c"]), float(x0),
-                     float(y0), float(z0), round(sweep, 3), round(dihedral, 3),
-                     round(float(t["ainc"] - r["ainc"]), 3), round(float(r["ainc"] + s["angle"]), 3),
+    surf = A.Surface(s["name"], float(span_len), float(r["c"]), float(t["c"]), float(x0),
+                     float(y0), float(z0), round(sweep, 6), round(dihedral, 6),
+                     round(float(t["ainc"] - r["ainc"]), 4), round(float(r["ainc"] + s["angle"]), 4),
                      af_r, af_t if af_t != af_r else None, bool(symmetric), bool(vertical), ctrls, ns, nc)
+    # intermediate sections become kinks, except those on the straight line between their
+    # neighbours (e.g. sections AVL needs only at control-surface edges)
+    pts = [(0.0, float(r["c"]), 0.0, 0.0, 0.0)]
+    for q in secs[1:-1]:
+        y = float((q["p"][2] - z0) if vertical else (q["p"][1] - y0))
+        if 1e-6 < y < semi * (1 - 1e-6):
+            pts.append((y, float(q["c"]), float(q["p"][0] - x0),
+                        0.0 if vertical else float(q["p"][2] - z0), float(q["ainc"] - r["ainc"])))
+    tip = A.Surface(**{**A.asdict(surf), "controls": []})
+    pts.append((semi, float(t["c"]), float(tip.x_le(1.0) - x0), float(tip.rise(1.0)), float(t["ainc"] - r["ainc"])))
+    pts = sorted(pts)
+    tol = np.array([1.0, 0.002 * r["c"], 0.002 * r["c"], 0.002 * r["c"], 0.02])
+    changed = True
+    while changed and len(pts) > 2:
+        changed = False
+        for k in range(1, len(pts) - 1):
+            a, m, b = np.array(pts[k - 1]), np.array(pts[k]), np.array(pts[k + 1])
+            w = (m[0] - a[0]) / max(b[0] - a[0], 1e-12)
+            if np.all(np.abs(m[1:] - (a[1:] + w * (b[1:] - a[1:]))) <= tol[1:]):
+                del pts[k]
+                changed = True
+                break
+    kinks = [{"y": round(p[0], 5), "chord": round(p[1], 5), "dx": round(p[2], 5), "dz": round(p[3], 5),
+              "twist": round(p[4], 4)} for p in pts[1:-1]]
+    surf.kinks = kinks
+    if kinks:
+        warn(f"'{s['name']}': {len(kinks)} kink station(s) kept (multi-panel surface; see the Panel "
+             "breaks table on the Edit tab).")
+    return surf
 
 
 def read_mass(text):

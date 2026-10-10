@@ -37,21 +37,37 @@ def test_aircraft():
     return A.Aircraft("validation", [wing, ht, fin], A.Fuselage(), mass=750, cg=(2.4, 0, 0))
 
 
+def test_cranked():
+    """multi-panel wing: constant-chord centre panel, swept tapered outer panel with
+    a dihedral break and washout; tail with a swept outer panel"""
+    wing = A.Surface("wing", span=11.0, root_chord=1.6, tip_chord=0.7, x=2.0, z=0.0, sweep=8.0,
+                     dihedral=4.0, twist=-3.0, incidence=2.0, airfoil="naca0012",
+                     kinks=[{"y": 2.0, "chord": 1.6, "dx": 0.0, "dz": 0.0, "twist": 0.0}],
+                     controls=[A.Control("aileron", 0.6, 0.95, 0.25, "antisymmetric")], ns=18, nc=8)
+    ht = A.Surface("htail", span=3.6, root_chord=0.9, tip_chord=0.45, x=6.5, z=0.5, sweep=12.0,
+                   incidence=-2.0, airfoil="naca0012",
+                   kinks=[{"y": 0.8, "chord": 0.85, "dx": 0.03, "dz": 0.0, "twist": 0.0}],
+                   controls=[A.Control("elevator", 0.0, 1.0, 0.4)], ns=12, nc=8)
+    fin = A.Surface("fin", span=1.4, root_chord=1.2, tip_chord=0.55, x=6.1, z=0.5, sweep=30.0,
+                    airfoil="naca0012", symmetric=False, vertical=True,
+                    kinks=[{"y": 0.5, "chord": 1.0, "dx": 0.25}],
+                    controls=[A.Control("rudder", 0.0, 1.0, 0.4)], ns=10, nc=8)
+    return A.Aircraft("cranked validation", [wing, ht, fin], A.Fuselage(), mass=800, cg=(2.5, 0, 0))
+
+
 def to_asb(ac):
     import aerosandbox as asb
     wings = []
     for s in ac.surfaces:
-        tl = math.tan(math.radians(s.sweep))
-        td = math.tan(math.radians(s.dihedral))
         xs = []
-        for eta in (0.0, 1.0):
-            c = s.chord(eta)
-            x = s.x + 0.25 * s.root_chord + eta * s.semi * tl - 0.25 * c
+        for eta in s.stations()[0]:             # root, kinks, tip
+            c = float(s.chord(eta))
+            x = float(s.x_le(eta))
             if s.vertical:
                 le = [x, s.y, s.z + eta * s.semi]
             else:
-                le = [x, s.y + eta * s.semi, s.z + eta * s.semi * td]
-            xs.append(asb.WingXSec(xyz_le=le, chord=c, twist=s.incidence + s.twist * eta,
+                le = [x, s.y + eta * s.semi, s.z + float(s.rise(eta))]
+            xs.append(asb.WingXSec(xyz_le=le, chord=c, twist=s.incidence + float(s.twist_at(eta)),
                                    airfoil=asb.Airfoil("naca0012")))
         wings.append(asb.Wing(name=s.name, xsecs=xs, symmetric=s.symmetric))
     return asb.Airplane(wings=wings, xyz_ref=list(ac.cg), s_ref=ac.S, c_ref=ac.c, b_ref=ac.b)
@@ -104,6 +120,16 @@ def main():
              ("CLq", d["CL_q"]), ("CYr", d["CY_r"])]
     out["aircraft_vs_aerosandbox"] = {k: {"aerolab": v, "aerosandbox": ref.get(k)} for k, v in pairs}
     out["aircraft_vs_aerosandbox"]["x_np"] = {"aerolab": d["x_np"], "aerosandbox": ref.get("x_np")}
+    # multi-panel (cranked) surfaces: same comparison
+    ack = test_cranked()
+    rk, dk = ours(ack, 2.0)
+    try:
+        refk = compare_asb(ack, 2.0)
+    except Exception as e:                       # noqa: BLE001
+        refk = {"error": str(e)}
+    pk = [("CL", rk["CL"]), ("Cm", rk["Cm"]), ("CLa", dk["CL_a"]), ("Cma", dk["Cm_a"]), ("x_np", dk["x_np"]),
+          ("CYb", dk["CY_b"]), ("Clb", dk["Cl_b"]), ("Cnb", dk["Cn_b"]), ("Clp", dk["Cl_p"])]
+    out["cranked_vs_aerosandbox"] = {k: {"aerolab": v, "aerosandbox": refk.get(k)} for k, v in pk}
     # pitch-rate derivatives: thin-airfoil limit (high aspect ratio wing pitching about c/4:
     # CL_q -> CL_a, Cm_q -> -pi/4 x (3D factor)); AeroSandbox's q / r derivatives use a
     # different definition (its CL_q is 1.5 CL_a on this wing), so rates are checked here

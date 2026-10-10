@@ -178,6 +178,15 @@ def write_md(ac, val, rep, db, ld, pf):
         a, b = vs[k]["aerolab"], vs[k]["aerosandbox"]
         diff = f"{100 * (a - b) / abs(b):+.1f} %" if b else "–"
         L.append(f"| {k} | {a:.4f} | {b:.4f} | {diff} |")
+    if "cranked_vs_aerosandbox" in val:
+        ck = val["cranked_vs_aerosandbox"]
+        L += ["", "Multi-panel surfaces (kinks): wing with a 2 m constant-chord centre panel and a swept, "
+              "tapered outer panel with a dihedral break and 3° washout; tail and fin with a kink:", "",
+              "| quantity | AeroLab | AeroSandbox | difference |", "|---|---|---|---|"]
+        for k in ("CL", "Cm", "CLa", "Cma", "x_np", "CYb", "Clb", "Cnb", "Clp"):
+            a, b = ck[k]["aerolab"], ck[k]["aerosandbox"]
+            diff = f"{100 * (a - b) / abs(b):+.1f} %" if b else "–"
+            L.append(f"| {k} | {a:.4f} | {b:.4f} | {diff} |")
     pr, yr = val["pitch_rate_thin_airfoil_limit"], val["yaw_rate_fin_classical"]
     L += ["", "Rate derivatives (AeroSandbox's q and r derivatives use another definition: its CL_q is "
           "1.5 CL_a on a plain high-aspect-ratio wing, where theory gives CL_q = CL_a):", "",
