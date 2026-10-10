@@ -321,6 +321,11 @@ def deflect_flap(pts, cf, delta_deg, blend=0.04, n=240):
     yU, yL = np.interp(x, xu, yu), np.interp(x, xl, yl)
     yc, th = 0.5 * (yU + yL), 0.5 * (yU - yL)
     xh = 1.0 - cf
+    # above 20 deg the blend widens with the deflection (same turn radius as
+    # at 20 deg): a tighter concave lower-surface corner squeezed the
+    # boundary-layer cells (30 deg: 58 deg non-orthogonality) and the RANS
+    # solution diverged at every angle
+    blend = blend * max(1.0, abs(delta_deg) / 20.0)
     u = np.clip((x - (xh - 0.5 * blend)) / blend, 0, 1)
     phi = -math.radians(delta_deg) * u * u * (3 - 2 * u)            # smoothstep, clockwise
     C = np.zeros((n, 2))

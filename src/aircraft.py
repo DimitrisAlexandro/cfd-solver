@@ -663,7 +663,9 @@ class Analysis:
             cf = ac.controls()[name][1].cf
             Sc = (L.S["area"][st] * cf).sum()
             cc = (L.S["c"][st] ** 2 * L.S["ds"][st]).sum() / max((L.S["c"][st] * L.S["ds"][st]).sum(), 1e-12) * cf
-            hinge[name] = float(-(Fn * arm).sum() / (q0 * Sc * cc)) * float(np.sign(g[0]) or 1)
+            # in the sense of a positive control deflection: sign of the gain on
+            # the panels used (right-hand surface; the list starts on the left wing)
+            hinge[name] = float(-(Fn * arm).sum() / (q0 * Sc * cc)) * float(np.sign(g[right][0]) or 1)
         stalled = (cl > 0.98 * self.clmax) | (np.degrees(a_eff) > self.a_clmax)
         # per-strip force (rho V^2 = 1 units) and the panel forces, for structural loads
         Fs = np.zeros((L.nstrip, 3))
