@@ -136,7 +136,7 @@ with tab_sec:
             af, aname = views.airfoil_picker("sdb")
             c1, c2 = st.columns(2)
             sflaps = c1.text_input("Plain-flap deflections (deg)", "0",
-                                   help="0 = clean section only; e.g. 0, 10, 20, 30 adds flapped polars")
+                                   help="0 = clean section only; e.g. 0, 10, 20 adds flapped polars (validated up to 20°)")
             scf = c2.number_input("Flap chord / c", 0.1, 0.5, 0.25, 0.05, key="sdbcf")
             ui.step("Conditions")
             c1, c2 = st.columns(2)

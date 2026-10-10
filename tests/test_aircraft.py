@@ -74,7 +74,8 @@ def test_signs_and_trim(demo):
     assert c["elevator"]["Cm"] < 0 and c["elevator"]["CL"] > 0
     assert c["aileron"]["Cl"] > 0 and c["rudder"]["Cn"] < 0 and c["rudder"]["CY"] > 0
     assert c["flap"]["CL"] > 0
-    assert c["elevator"]["Ch_d"] < 0
+    for n in ("elevator", "aileron", "rudder", "flap"):          # unbalanced controls: restoring
+        assert c[n]["Ch_d"] < 0, n
     t = an.trim()
     assert t["CL"] == pytest.approx(ac.mass * A.G0 / (an.qbar * ac.S), rel=1e-4)
     assert abs(t["Cm"]) < 1e-4
