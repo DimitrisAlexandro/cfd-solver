@@ -122,3 +122,30 @@ def write_pvd(path, entries):
         s += f'<DataSet timestep="{t:.6g}" group="" part="0" file="{f}"/>\n'
     s += "</Collection>\n</VTKFile>\n"
     Path(path).write_text(s)
+
+
+def read_vtu_cell_data(path):
+    """cell data of a VTU written by write_vtu (binary base64, UInt64 header)
+    -> {name: array}"""
+    import base64
+    import re
+    txt = Path(path).read_text()
+    cd = txt[txt.find("<CellData>"):txt.find("</CellData>")]
+    out = {}
+    for m in re.finditer(r'<DataArray type="(\w+)" Name="([^"]+)"(?: NumberOfComponents="(\d+)")?'
+                         r' format="binary">([^<]*)</DataArray>', cd):
+        typ, name, nc, data = m.groups()
+        raw = base64.b64decode(data.strip())[8:]
+        dt = {"Float64": np.float64, "Float32": np.float32, "Int64": np.int64,
+              "Int32": np.int32, "UInt8": np.uint8}[typ]
+        a = np.frombuffer(raw, dt)
+        nc = int(nc or 1)
+        out[name] = a.reshape(-1, nc) if nc > 1 else a
+    return out
+
+
+def read_case_mesh(folder):
+    """(points, list of cell vertex arrays) from a case folder's mesh.npz"""
+    d = np.load(Path(folder) / "mesh.npz", allow_pickle=True)
+    nodes, off = d["cell_nodes"], d["cell_offsets"]
+    return d["points"], [nodes[off[i]:off[i + 1]] for i in range(len(off) - 1)]

@@ -453,7 +453,10 @@ def cmd_polar(a):
     if warn:
         lines += ["", "notes:"] + [f"  - {w}" for w in warn]
     (out / "report.txt").write_text("\n".join(lines) + "\n")
-    (out / "polar.json").write_text(json.dumps({"info": info, "re": a.re, "results": res,
+    settings = {"mach": a.mach, "prandtl_glauert": bool(pg), "transition": tr_label,
+                "refine": a.refine, "solver": a.solver, "alpha": a.alpha}
+    (out / "polar.json").write_text(json.dumps({"info": info, "re": a.re, "settings": settings,
+                                                "results": res,
                                                 "xfoil": {lab: {str(k): v for k, v in d.items()}
                                                           for lab, d, _ in xf}}))
     print("\n".join(lines[4:]))
