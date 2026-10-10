@@ -168,11 +168,17 @@ with tab_edit:
                 D.write_avl(new, td)
                 avl = (_P(td) / "aircraft.avl").read_text()
                 mass_f = (_P(td) / "aircraft.mass").read_text()
-            c1, c2, c3 = st.columns(3)
+            import stl_aircraft as S
+            c1, c2 = st.columns(2)
             c1.download_button("Download aircraft (JSON)", json.dumps(new.to_dict(), indent=1),
                                file_name=f"{path.stem}.json", width="stretch")
-            c2.download_button("Download AVL geometry", avl, file_name=f"{path.stem}.avl", width="stretch")
-            c3.download_button("Download AVL mass file", mass_f, file_name=f"{path.stem}.mass", width="stretch")
+            c2.download_button("Download STL (surface mesh, m)", S.stl_bytes(S.aircraft_mesh(new), new.name),
+                               file_name=f"{path.stem}.stl", width="stretch",
+                               help="Closed surfaces of the lifting surfaces and the fuselage, for CAD, "
+                                    "meshing or 3-D printing.")
+            c1, c2 = st.columns(2)
+            c1.download_button("Download AVL geometry", avl, file_name=f"{path.stem}.avl", width="stretch")
+            c2.download_button("Download AVL mass file", mass_f, file_name=f"{path.stem}.mass", width="stretch")
 
     if save and not err:
         slug = re.sub(r"[^A-Za-z0-9_-]+", "_", fname.strip()) or "aircraft"
