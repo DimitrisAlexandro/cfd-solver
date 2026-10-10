@@ -60,9 +60,20 @@ def tail_volumes(ac):
     return vh, vv
 
 
-def view3d(ac, markers=None, height=460):
-    """surfaces (controls coloured), fuselage, c.g. and other points"""
+def view3d(ac, markers=None, height=460, mesh=None):
+    """surfaces (controls coloured), fuselage, c.g. and other points; optionally
+    an imported surface mesh (V, T) drawn over the model"""
     f = go.Figure()
+    if mesh is not None:
+        V, T = mesh                             # wireframe: stays visible on the model's surfaces
+        E = np.unique(np.sort(np.concatenate([T[:, [0, 1]], T[:, [1, 2]], T[:, [2, 0]]]), 1), axis=0)
+        if len(E) > 25000:                      # drawing only: a subset of the edges
+            E = E[np.random.default_rng(0).choice(len(E), 25000, replace=False)]
+        P = np.full((3 * len(E), 3), np.nan)
+        P[0::3], P[1::3] = V[E[:, 0]], V[E[:, 1]]
+        f.add_trace(go.Scatter3d(x=P[:, 0], y=P[:, 1], z=P[:, 2], mode="lines", hoverinfo="skip",
+                                 line=dict(color="#C2571A", width=1), opacity=0.55, name="STL",
+                                 showlegend=False))
     for s in ac.surfaces:
         for kind, q in A.surface_quads(s):
             col = "#9DB4CF" if kind == "surface" else CTRL_COLOR.get(kind, "#C2571A")
@@ -193,12 +204,14 @@ def upload_panel():
         with st.container(border=True):
             ui.step("Files", first=True)
             ups = st.file_uploader(
-                "Aircraft files", type=["json", "avl", "mass", "dat", "txt"], accept_multiple_files=True,
+                "Aircraft files", type=["json", "avl", "mass", "dat", "txt", "stl"], accept_multiple_files=True,
                 key=f"acupload{st.session_state.get('acup_n', 0)}",
-                help="An aircraft .json saved from this app, or an AVL geometry file (.avl) with, "
+                help="An aircraft .json saved from this app; an AVL geometry file (.avl) with, "
                      "optionally, its mass file (.mass) and the airfoil coordinate files its AFILE "
-                     "lines name (.dat).")
+                     "lines name (.dat); or a surface mesh of the aircraft (.stl, binary or ASCII).")
             st.caption(
+                "**STL**: wing, tails, fins and fuselage are recognised from cuts through the mesh and "
+                "fitted with tapered panels; sections from the mesh. "
                 "**AVL**: SURFACE / SECTION geometry with YDUPLICATE, TRANSLATE, SCALE, ANGLE; NACA, "
                 "AFILE and inline AIRFOIL sections; CONTROL lines named elevator, aileron, rudder or "
                 "flap. Each surface becomes one tapered panel through its root and tip sections. "
@@ -208,7 +221,10 @@ def upload_panel():
                 D.write_avl(demo, td)
                 avl_t = (Path(td) / "aircraft.avl").read_text()
                 mass_t = (Path(td) / "aircraft.mass").read_text()
-            c1, c2, c3 = st.columns(3)
+            import stl_aircraft as S
+            c1, c2, c3, c4 = st.columns(4)
+            c4.download_button("Example .stl", S.stl_bytes(S.aircraft_mesh(demo), demo.name),
+                               file_name="example_aircraft.stl", width="stretch")
             c1.download_button("Example .json", json.dumps(demo.to_dict(), indent=1),
                                file_name="example_aircraft.json", width="stretch")
             c2.download_button("Example .avl", avl_t, file_name="example_aircraft.avl", width="stretch")
@@ -222,14 +238,24 @@ def upload_panel():
             st.info("Upload an aircraft to preview it here before saving.")
         return
     files = {u.name: u.getvalue() for u in ups}
+    mesh = None
+    stl = [n for n in files if n.lower().endswith(".stl")]
     try:
-        ac, warns = AI.read_files(files, C.CASES / "_uploads")
+        if stl:
+            with left:
+                ac, warns, mesh = _stl_options(stl[0], files[stl[0]])
+            if ac is None:
+                return
+        else:
+            ac, warns = AI.read_files(files, C.CASES / "_uploads")
     except Exception as e:                          # noqa: BLE001
         with left:
             st.error(f"These files can't be read as an aircraft: {e}")
         return
     with right:
-        view3d(ac, height=360)
+        view3d(ac, height=360, mesh=mesh)
+        if mesh is not None:
+            st.caption("Orange lines: the uploaded mesh. Blue surfaces: the fitted model.")
         vh, vv = tail_volumes(ac)
         k = st.columns(4)
         k[0].metric("Wing area", f"{ac.S:.3f} m²")
@@ -261,3 +287,69 @@ def upload_panel():
                 st.session_state["acup_n"] = st.session_state.get("acup_n", 0) + 1
                 st.session_state["acup_saved"] = out.name
                 st.rerun()
+
+
+@st.cache_data(show_spinner=False, max_entries=4)
+def _stl_read(data):
+    import stl_aircraft as S
+    t = S.read_stl(data)
+    u = S.guess_units(t)
+    return t, u, S.guess_orientation(t, u)
+
+
+@st.cache_data(show_spinner=False, max_entries=8)
+def _stl_import(data, la, nose, up, units, sections, mass, cg, controls, name, af_dir):
+    import stl_aircraft as S
+    t = S.read_stl(data)
+    ac, warns, info = S.to_aircraft(t, la, nose, up, units, sections, af_dir, mass, cg, controls, name)
+    return json.dumps(ac.to_dict()), warns, info["V"], info["T"], info["mesh"]
+
+
+def _stl_options(fname, data):
+    """STL import settings (axes, units, sections, mass) -> (aircraft, warnings, (V, T))"""
+    import re
+    import stl_aircraft as S
+    with st.spinner("Reading the mesh"):
+        tris, u0, (la0, nose0, up0) = _stl_read(data)
+    with st.container(border=True):
+        ui.step("Mesh axes and units")
+        ext = np.ptp(tris.reshape(-1, 3), axis=0)
+        st.caption(f"{len(tris):,} triangles; extent x {ext[0]:.4g}, y {ext[1]:.4g}, z {ext[2]:.4g} "
+                   f"(file units). Detected: length along {la0}, nose at its {nose0}imum, up {up0}, {u0}.")
+        c1, c2, c3, c4 = st.columns(4)
+        units = c1.selectbox("Units", list(S.UNITS), index=list(S.UNITS).index(u0), key="stlu")
+        la = c2.selectbox("Length axis", ["x", "y", "z"], index="xyz".index(la0), key="stlla")
+        nose = c3.selectbox("Nose at", ["min", "max"], index=["min", "max"].index(nose0),
+                            format_func=lambda v: f"{v}. {la}", key="stlnose")
+        ups = ["+x", "-x", "+y", "-y", "+z", "-z"]
+        up = c4.selectbox("Up", ups, index=ups.index(up0), key="stlup")
+        ui.step("Model")
+        c1, c2 = st.columns(2)
+        sections = c1.radio("Sections", ["naca", "cut"], key="stlsec", horizontal=True,
+                            format_func=lambda v: {"naca": "nearest NACA 4-digit", "cut": "cut from the mesh"}[v],
+                            help="Cut sections keep the mesh's real shape (a fine mesh is needed); "
+                                 "NACA fits are smooth and robust on coarse meshes.")
+        controls = c2.checkbox("Add typical control surfaces", True, key="stlctl")
+    if la == up[-1]:
+        st.error("The length axis and the up axis must differ.")
+        return None, [], None
+    name = Path(fname).stem
+    af_dir = str(C.CASES / "_uploads" / f"stl_{re.sub(r'[^A-Za-z0-9_-]+', '_', name)}")
+    with st.spinner("Cutting the mesh and fitting the surfaces"):
+        js, warns, V, T, minfo = _stl_import(data, la, nose, up, units, sections, 750.0, 0.25,
+                                             bool(controls), name, af_dir)
+    ac = A.Aircraft.from_dict(json.loads(js))
+    st.caption(f"Model size: length {minfo['length']:.3f} m, span {minfo['span']:.3f} m, "
+               f"height {minfo['height']:.3f} m. Check the units if these look wrong.")
+    with st.container(border=True):
+        ui.step("Mass and balance (not in an STL file)")
+        ws = 60.0 if ac.b < 5 else 600.0          # typical wing loading, N/m²: models / light aircraft
+        m0 = float(f"{ws * ac.S / A.G0:.2g}")
+        c1, c2 = st.columns(2)
+        mass = c1.number_input("Mass (kg)", 0.001, 1e6, m0, key=f"stlmass{name}{units}", format="%.4g",
+                               help=f"Default from a typical wing loading of {ws:g} N/m²; enter the real mass.")
+        cg = c2.number_input("c.g. (% MAC)", -50.0, 100.0, 25.0, 1.0, key="stlcg")
+    ac.mass = float(mass)
+    xm, _ = ac.wing.mac_position()
+    ac.cg = (round(xm + cg / 100 * ac.wing.mac, 4), 0.0, 0.0)
+    return ac, warns, (V, T)
