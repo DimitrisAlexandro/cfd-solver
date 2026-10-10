@@ -85,30 +85,80 @@ class Surface:
     controls: list = field(default_factory=list)
     ns: int = 12                # spanwise panels per side
     nc: int = 6                 # chordwise panels
+    # kink stations between root and tip (cranked / multi-panel surfaces), dicts:
+    #   y      distance from the root along the semi-span (m)
+    #   chord  local chord (m)
+    #   dx     leading-edge x relative to the root leading edge (m)
+    #   dz     height relative to the root (m; horizontal surfaces)
+    #   twist  incidence relative to the root (deg)
+    # The root -> tip definition (tip chord, sweep, dihedral, twist) sets the tip station.
+    kinks: list = field(default_factory=list)
 
     @property
     def semi(self):
         return 0.5 * self.span if self.symmetric else self.span
 
+    def stations(self):
+        """(eta, chord, dx_le, dz, twist) at root, kinks and tip; eta = fraction of the semi-span"""
+        sm = self.semi
+        tl, td = math.tan(math.radians(self.sweep)), math.tan(math.radians(self.dihedral))
+        rows = [(0.0, self.root_chord, 0.0, 0.0, 0.0)]
+        for k in sorted(self.kinks, key=lambda k: float(k["y"])):
+            y = float(k["y"])
+            if 1e-9 < y < sm * (1 - 1e-6):
+                rows.append((y / sm, float(k["chord"]), float(k.get("dx", 0.0)),
+                             0.0 if self.vertical else float(k.get("dz", 0.0)), float(k.get("twist", 0.0))))
+        rows.append((1.0, self.tip_chord, 0.25 * self.root_chord + sm * tl - 0.25 * self.tip_chord,
+                     0.0 if self.vertical else sm * td, self.twist))
+        return np.array(rows, float).T
+
+    def _interp(self, i, eta):
+        st = self.stations()
+        return np.interp(np.abs(eta), st[0], st[i])
+
     def chord(self, eta):
-        return self.root_chord + (self.tip_chord - self.root_chord) * np.abs(eta)
+        return self._interp(1, eta) if self.kinks else \
+            self.root_chord + (self.tip_chord - self.root_chord) * np.abs(eta)
+
+    def x_le(self, eta):
+        """leading-edge x at eta"""
+        return self.x + self._interp(2, eta)
+
+    def rise(self, eta):
+        """height of the leading edge above the root (dihedral), horizontal surfaces"""
+        return self._interp(3, eta)
+
+    def twist_at(self, eta):
+        """incidence relative to the root (deg)"""
+        return self._interp(4, eta)
+
+    def _moments(self):
+        """exact integrals over the semi-span (Simpson per linear panel): area,
+        int c^2, int c*eta, int c*x_qc (per unit semi-span)"""
+        st = self.stations()
+        I = np.zeros(4)
+        for a, b in zip(range(len(st[0]) - 1), range(1, len(st[0]))):
+            e = np.array([st[0, a], 0.5 * (st[0, a] + st[0, b]), st[0, b]])
+            c = self.chord(e)
+            xq = self.x_le(e) + 0.25 * c
+            w = (e[2] - e[0]) / 6 * np.array([1, 4, 1])
+            I += [w @ c, w @ c**2, w @ (c * e), w @ (c * xq)]
+        return I
 
     @property
     def area(self):
-        return 0.5 * (self.root_chord + self.tip_chord) * self.span
+        return self._moments()[0] * self.semi * (2 if self.symmetric else 1)
 
     @property
     def mac(self):
-        cr, lam = self.root_chord, self.tip_chord / self.root_chord
-        return 2 / 3 * cr * (1 + lam + lam**2) / (1 + lam)
+        m = self._moments()
+        return m[1] / m[0]
 
     def mac_position(self):
-        """leading edge (x, spanwise station) of the mean aerodynamic chord"""
-        lam = self.tip_chord / self.root_chord
-        eta = (1 + 2 * lam) / (3 * (1 + lam))
-        c = self.chord(eta)
-        x_qc = self.x + 0.25 * self.root_chord + eta * self.semi * math.tan(math.radians(self.sweep))
-        return x_qc - 0.25 * c, eta
+        """leading edge (x) and spanwise station (eta) of the mean aerodynamic chord;
+        x from the chord-weighted quarter-chord line"""
+        m = self._moments()
+        return m[3] / m[0] - 0.25 * m[1] / m[0], m[2] / m[0]
 
 
 @dataclass
@@ -243,15 +293,15 @@ def demo_aircraft():
 def surface_quads(s):
     """planform quads for drawing: list of (kind, 4x3 points); kind is
     'surface' or the control name. Mirrored for symmetric surfaces."""
-    etas = sorted({0.0, 1.0} | {c.eta0 for c in s.controls} | {c.eta1 for c in s.controls})
-    tl, td = math.tan(math.radians(s.sweep)), math.tan(math.radians(s.dihedral))
+    etas = sorted({0.0, 1.0} | {c.eta0 for c in s.controls} | {c.eta1 for c in s.controls}
+                  | set(s.stations()[0].tolist()))
 
     def pt(eta, f, side):
-        c = s.chord(eta)
-        x = s.x + 0.25 * s.root_chord + eta * s.semi * tl - 0.25 * c + f * c
+        c = float(s.chord(eta))
+        x = float(s.x_le(eta)) + f * c
         if s.vertical:
             return np.array([x, s.y, s.z + eta * s.semi])
-        return np.array([x, s.y + side * eta * s.semi, s.z + eta * s.semi * td])
+        return np.array([x, s.y + side * eta * s.semi, s.z + float(s.rise(eta))])
     out = []
     for side in ((1, -1) if s.symmetric else (1,)):
         for e0, e1 in zip(etas[:-1], etas[1:]):
@@ -381,25 +431,22 @@ class Lattice:
                 xe = np.linspace(0, 1, s.nc + 1)
             # spanwise stations per side: clustered at the tip, control edges inserted
             e = np.sin(0.5 * math.pi * np.linspace(0, 1, s.ns + 1))
-            for c in s.controls:
-                for v in (c.eta0, c.eta1):
-                    if 1e-6 < v < 1 - 1e-6:
-                        j = int(np.argmin(np.abs(e - v)))
-                        if abs(e[j] - v) < 0.35 * np.min(np.diff(e)):
-                            e[j] = v
-                        else:
-                            e = np.sort(np.r_[e, v])
+            edges = [v for c in s.controls for v in (c.eta0, c.eta1)] + s.stations()[0][1:-1].tolist()
+            for v in edges:                     # control edges and kinks on panel edges
+                if 1e-6 < v < 1 - 1e-6:
+                    j = int(np.argmin(np.abs(e - v)))
+                    if abs(e[j] - v) < 0.35 * np.min(np.diff(e)):
+                        e[j] = v
+                    else:
+                        e = np.sort(np.r_[e, v])
             eta = np.r_[-e[::-1], e[1:]] if s.symmetric else e
-            tl = math.tan(math.radians(s.sweep))
-            td = math.tan(math.radians(s.dihedral))
             span = s.semi * eta
-            if s.vertical:
-                qc = np.c_[s.x + 0.25 * s.root_chord + np.abs(span) * tl,
-                           np.full_like(span, s.y), s.z + span]
-            else:
-                qc = np.c_[s.x + 0.25 * s.root_chord + np.abs(span) * tl, s.y + span,
-                           s.z + np.abs(span) * td]
             cn = s.chord(eta)
+            xq = s.x_le(eta) + 0.25 * cn
+            if s.vertical:
+                qc = np.c_[xq, np.full_like(span, s.y), s.z + span]
+            else:
+                qc = np.c_[xq, s.y + span, s.z + s.rise(eta)]
             le = qc - np.c_[0.25 * cn, 0 * cn, 0 * cn]
             for i in range(len(eta) - 1):
                 em = 0.5 * (eta[i] + eta[i + 1])
@@ -525,7 +572,7 @@ class Analysis:
         twist = np.zeros(L.nstrip)
         for k, s in enumerate(ac.surfaces):
             m = L.S["surf"] == k
-            twist[m] = np.radians(s.incidence + s.twist * L.S["eta"][m])
+            twist[m] = np.radians(s.incidence + s.twist_at(L.S["eta"][m]))
         self.theta_base = twist - a0s
         # fuselage
         f = ac.fuselage

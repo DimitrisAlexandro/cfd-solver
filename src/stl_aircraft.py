@@ -278,7 +278,29 @@ def _tracks(sl, axis, wcol, stations, L, thin=0.25):
     return tracks
 
 
+def _segments(Y, tol=0.03, max_seg=4):
+    """split a sampled curve (n x channels, normalised) into straight pieces: greedy
+    Douglas-Peucker on the largest deviation, at most max_seg pieces"""
+    def dev(i0, i1):
+        if i1 - i0 < 2:
+            return 0.0, i0
+        t = np.linspace(0, 1, i1 - i0 + 1)[:, None]
+        d = np.abs(Y[i0:i1 + 1] - (Y[i0] + t * (Y[i1] - Y[i0]))).max(1)
+        k = int(np.argmax(d[1:-1])) + 1
+        return float(d[k]), i0 + k
+    br = [0, len(Y) - 1]
+    while len(br) - 1 < max_seg:
+        worst = max(((dev(a, b), a, b) for a, b in zip(br[:-1], br[1:])), key=lambda v: v[0][0])
+        (d, k), a, b = worst
+        if d <= tol or k - a < 2 or b - k < 2:
+            break
+        br = sorted(br + [k])
+    return br
+
+
 def _fit(tr, V, axis, wcol, s_root):
+    """piecewise-linear fit of a surface track: straight panels between kinks.
+    Returns the root -> tip definition, the kinks and the fit quality."""
     s = np.array([q["s"] for q in tr])
     c = np.array([q["chord"] for q in tr])
     xq = np.array([q["qc"][0] for q in tr])
@@ -295,6 +317,23 @@ def _fit(tr, V, axis, wcol, s_root):
         if new.sum() < 3 or new.sum() == keep.sum():
             break
         keep = new
+    # straight pieces (kinks where the planform, dihedral or twist line breaks)
+    sk, ck, xk, wk, ik = s[keep], c[keep], xq[keep], wq[keep], inc[keep]
+    cm = float(ck.mean())
+    Y = np.stack([ck / cm, xk / cm, wk / cm, ik / 25.0], 1)
+    br = _segments(Y) if len(sk) >= 7 else [0, len(sk) - 1]
+    fits = []
+    for a, b in zip(br[:-1], br[1:]):
+        sl = slice(a, b + 1)
+        fits.append({k: np.polyfit(sk[sl], v[sl], 1) for k, v in (("c", ck), ("x", xk), ("w", wk), ("i", ik))})
+    kinks_s = []
+    for f1, f2, b in zip(fits[:-1], fits[1:], br[1:-1]):
+        # break position: where the lines of the channel with the largest slope change meet
+        dsl = {k: abs(f1[k][0] - f2[k][0]) / (cm if k != "i" else 25.0) for k in f1}
+        k = max(dsl, key=dsl.get)
+        den = f1[k][0] - f2[k][0]
+        y = (f2[k][1] - f1[k][1]) / den if abs(den) > 1e-12 else sk[b]
+        kinks_s.append(float(np.clip(y, sk[max(b - 1, 0)], sk[min(b + 1, len(sk) - 1)])))
     # tip: outermost mesh point in the box of the last section
     q = tr[-1]
     m = ((V[:, 0] > q["xr"][0] - 0.5 * q["chord"]) & (V[:, 0] < q["xr"][1] + 0.5 * q["chord"])
@@ -304,17 +343,30 @@ def _fit(tr, V, axis, wcol, s_root):
     s_tip = min(s_tip, s[-1] + 1.5 * ds)
     if s_root is None:
         s_root = s[0] - 0.5 * ds
-    ev = lambda k, x: float(np.polyval(f[k], x))  # noqa: E731
-    cr, ct = ev("c", s_root), max(ev("c", s_tip), 0.02 * ev("c", s_root))
-    semi = s_tip - s_root
+
+    def ev(f, k, x):
+        return float(np.polyval(f[k], x))
+    st = [(s_root, *(ev(fits[0], k, s_root) for k in "cxwi"))]
+    for y, f1, f2 in zip(kinks_s, fits[:-1], fits[1:]):
+        st.append((y, *(0.5 * (ev(f1, k, y) + ev(f2, k, y)) for k in "cxwi")))
+    st.append((s_tip, *(ev(fits[-1], k, s_tip) for k in "cxwi")))
+    st = np.array(st)                                   # s, chord, x_qc, w_qc, incidence
+    st[:, 1] = np.maximum(st[:, 1], 0.02 * st[0, 1])
+    sr, cr, xr, wr, ir = st[0]
+    stp, ct, xt, wt, it = st[-1]
+    semi = stp - sr
+    x_le_root = xr - 0.25 * cr
+    kinks = [{"y": round(float(y - sr), 5), "chord": round(float(cc), 5),
+              "dx": round(float(xx - 0.25 * cc - x_le_root), 5), "dz": round(float(ww - wr), 5),
+              "twist": round(float(ii - ir), 4)} for y, cc, xx, ww, ii in st[1:-1]]
     a_mesh = float(np.trapezoid(c, s)) + 0.5 * ds * (c[0] + c[-1])
     if s_root < s[0] - ds:              # root extended into the fuselage
         a_mesh += (s[0] - s_root) * c[0]
-    return {"s": s, "s_root": s_root, "s_tip": s_tip, "semi": semi, "cr": cr, "ct": ct,
-            "x_le": ev("x", s_root) - 0.25 * cr, "w": ev("w", s_root),
-            "sweep": math.degrees(math.atan(f["x"][0])), "slope_w": math.degrees(math.atan(f["w"][0])),
-            "inc": ev("i", s_root), "twist": ev("i", s_tip) - ev("i", s_root),
-            "area_fit": 0.5 * (cr + ct) * semi, "area_mesh": a_mesh, "n": len(tr),
+    return {"s": s, "s_root": sr, "s_tip": stp, "semi": semi, "cr": cr, "ct": ct,
+            "x_le": x_le_root, "w": wr,
+            "sweep": math.degrees(math.atan2(xt - xr, semi)), "slope_w": math.degrees(math.atan2(wt - wr, semi)),
+            "inc": ir, "twist": it - ir, "kinks": kinks,
+            "area_fit": float(np.trapezoid(st[:, 1], st[:, 0])), "area_mesh": a_mesh, "n": len(tr),
             "c_mean": float(c.mean())}
 
 
@@ -440,7 +492,8 @@ def to_aircraft(tris, length_axis="x", nose="min", up_axis="+z", units="m", sect
         af, af_t = _pick_sections(t, f, sections, af_dir, re.sub(r"\W+", "_", f"{name}_{nm}"))
         s = A.Surface(nm, round(2 * f["semi"], 4), round(f["cr"], 4), round(f["ct"], 4), round(f["x_le"], 4),
                       0.0, round(f["w"], 4), round(f["sweep"], 2), round(f["slope_w"], 2), round(f["twist"], 2),
-                      round(f["inc"], 2), af, af_t, True, False, [], 14 if idx == 0 else 8, 6 if idx == 0 else 5)
+                      round(f["inc"], 2), af, af_t, True, False, [], 14 if idx == 0 else 8, 6 if idx == 0 else 5,
+                      kinks=f["kinks"])
         surfs.append(s)
         info["surfaces"].append((nm, f))
     for t, f in vkeep:
@@ -453,7 +506,7 @@ def to_aircraft(tris, length_axis="x", nose="min", up_axis="+z", units="m", sect
         af, af_t = _pick_sections(t, f, sections, af_dir, re.sub(r"\W+", "_", f"{name}_{nm}"))
         s = A.Surface(nm, round(f["semi"], 4), round(f["cr"], 4), round(f["ct"], 4), round(f["x_le"], 4),
                       round(yc, 4), round(f["s_root"], 4), round(f["sweep"], 2), 0.0, 0.0, 0.0, af, af_t,
-                      False, True, [], 8, 5)
+                      False, True, [], 8, 5, kinks=[{**k, "dz": 0.0} for k in f["kinks"]])
         surfs.append(s)
         info["surfaces"].append((nm, f))
     if not vkeep:
@@ -529,23 +582,23 @@ def _loft(rings, caps):
 def surface_mesh(s, n_span=12, n_af=40):
     r_root, c_root = _section_ring(s.airfoil, n_af)
     r_tip, c_tip = _section_ring(s.tip_airfoil, n_af) if s.tip_airfoil else (r_root, c_root)
-    tl, td = math.tan(math.radians(s.sweep)), math.tan(math.radians(s.dihedral))
-    etas = np.linspace(-1, 1, 2 * n_span + 1) if s.symmetric else np.linspace(0, 1, n_span + 1)
+    half = np.unique(np.r_[np.linspace(0, 1, n_span + 1), s.stations()[0]])   # kinks are stations
+    etas = np.r_[-half[::-1], half[1:]] if s.symmetric else half
 
     def place(e, pts):
         ae = abs(e)
         c = float(s.chord(ae))
-        i = math.radians(s.incidence + s.twist * ae)
+        i = math.radians(s.incidence + float(s.twist_at(ae)))
         dx = (pts[:, 0] - 0.25) * c
         yt = pts[:, 1] * c
-        xq = s.x + 0.25 * s.root_chord + ae * s.semi * tl
+        xq = float(s.x_le(ae)) + 0.25 * c
         if s.vertical:
             return np.stack([xq + dx * math.cos(i) + yt * math.sin(i),
                              s.y + yt * math.cos(i) - dx * math.sin(i),
                              np.full(len(pts), s.z + ae * s.semi)], 1)
         return np.stack([xq + dx * math.cos(i) + yt * math.sin(i),
                          np.full(len(pts), s.y + e * s.semi),
-                         s.z + ae * s.semi * td - dx * math.sin(i) + yt * math.cos(i)], 1)
+                         s.z + float(s.rise(ae)) - dx * math.sin(i) + yt * math.cos(i)], 1)
     rings, caps = [], []
     for e in etas:
         w = abs(e)
