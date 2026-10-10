@@ -92,6 +92,21 @@ with tab_edit:
                                      "symmetric": "Mirrored", "vertical": "Vertical",
                                      "ns": st.column_config.NumberColumn("Panels span", min_value=2, max_value=60),
                                      "nc": st.column_config.NumberColumn("Panels chord", min_value=1, max_value=20)})
+            ui.step("Panel breaks (kinks)")
+            st.caption("Optional stations between root and tip for cranked or multi-panel surfaces "
+                       "(XFLR5 / AVL style). y = distance from the root along the semi-span; dx, dz = "
+                       "leading-edge position relative to the root leading edge; twist relative to the "
+                       "root. The row above still sets the tip (tip chord, sweep and dihedral of the "
+                       "root-to-tip line, tip twist). Straight lines between stations.")
+            kdf = st.data_editor(AV.kinks_frame(ac), num_rows="dynamic", width="stretch", key=f"kdf{path}",
+                                 column_config={
+                                     "surface": st.column_config.SelectboxColumn(
+                                         "Surface", options=[n for n in sdf["name"].astype(str) if n.strip()]),
+                                     "y": st.column_config.NumberColumn("y from root (m)", min_value=0.0, format="%.3f"),
+                                     "chord": st.column_config.NumberColumn("Chord (m)", min_value=0.0, format="%.3f"),
+                                     "dx": st.column_config.NumberColumn("LE dx (m)", format="%.3f"),
+                                     "dz": st.column_config.NumberColumn("LE dz (m)", format="%.3f"),
+                                     "twist": st.column_config.NumberColumn("Twist (°)", format="%.2f")})
             ui.step("Control surfaces")
             st.caption("Span range as a fraction of the semi-span (0 root, 1 tip); chord fraction aft of "
                        "the hinge. Sign conventions: elevator + = trailing edge down, aileron + = roll "
@@ -123,7 +138,7 @@ with tab_edit:
 
     try:
         new = AV.build_from_frames(
-            ac, sdf, cdf, name=name, mass=mass, cg=(cgx, 0.0, cgz), cd_extra=cdx,
+            ac, sdf, cdf, kdf, name=name, mass=mass, cg=(cgx, 0.0, cgz), cd_extra=cdx,
             inertia=(Ixx, Iyy, Izz) if use_I else None,
             fuselage=dict(length=fl, diameter=fd, x=fx, z=fz, x_max=fxm, tail_ratio=ftr))
         err = None
