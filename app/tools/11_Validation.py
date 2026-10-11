@@ -26,6 +26,8 @@ items = [
      ["aircraft_stability_demo.png", "aircraft_database_demo.png", "aircraft_loads_vn_demo.png",
       "aircraft_loads_span_demo.png", "aircraft_performance_demo.png"], "aircraft_report.md"),
     ("Plain-flap sections (CFD)", ["flap_sections_demo.png"], "flap_report.md"),
+    ("Conceptual design: drag buildup, propeller, sizing (vs Cessna 172 and Pipistrel Velis Electro), "
+     "weight and balance", ["design_tools_validation.png"], "design_tools_report.md"),
     ("Design tools: demonstration cases", ["design_drag_rise_naca0012.png", "design_drag_rise_naca0012_fields.png",
                                            "design_wing_sizing_demo.png", "design_inverse_rae2822.png",
                                            "design_optimize_naca2412.png"], "design_report.md"),
