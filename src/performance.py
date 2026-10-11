@@ -7,7 +7,9 @@ piston-propeller propulsion model.
 Method
   * Trimmed drag polar CD(CL) of the aircraft (elevator trim, nonlinear
     CFD sections up to the trimmed CL_max) at the given altitude.
-  * Propulsion: shaft power P(h) = P0 (sigma - (1 - sigma)/7.55) (Gagg-
+  * Propulsion (simple model; --propulsion uses propeller.py instead: BEMT
+    propeller, fixed pitch or constant speed, piston / turboprop / electric):
+    shaft power P(h) = P0 (sigma - (1 - sigma)/7.55) (Gagg-
     Ferrar); fixed-pitch propeller with eta(V) = eta_max (2 r - r^2),
     r = V / V_design, i.e. thrust falling linearly from 2 eta_max P/V_design
     at rest to eta_max P/V_design at the design speed, capped by momentum-
@@ -47,6 +49,7 @@ class Propulsion:
     def __init__(self, power_kw=75.0, eta=0.80, prop_diameter=1.8, bsfc=300.0, v_design=60.0, fom=0.7):
         self.P0 = power_kw * 1e3
         self.eta, self.D, self.bsfc, self.Vd, self.fom = eta, prop_diameter, bsfc, v_design, fom
+        self.kind = "piston"
 
     def power(self, h):
         sig = W.isa(h)[0] / 1.225
@@ -213,12 +216,26 @@ def run(ac, prop, altitude=0.0, polar_dir=None, fuel=60.0, reserve=0.0, to_flap=
         a = m[0]
         return float(np.interp(lim, [rocs[a], rocs[a - 1]], [hs[a], hs[a - 1]])) if a > 0 else 0.0
     # range / endurance (Breguet, propeller), mean conditions
-    c_kg = prop.bsfc / 3.6e9                                       # kg per J (shaft)
-    W1 = (ac.mass - (fuel - reserve)) * g
-    lnr = math.log(Wt / W1) if fuel > reserve else 0.0
     LD = L0["cl"] / L0["cd"]
-    eta_V = np.array([prop.efficiency(v) for v in L0["V"]])
-    R = eta_V / (c_kg * g) * LD * lnr
+    if hasattr(prop, "eta_at_thrust"):
+        # BEMT propeller: efficiency at the thrust needed for level flight (part throttle)
+        ok = np.isfinite(L0["D"])
+        Vg = np.linspace(L0["V"][ok].min(), L0["V"][ok].max(), 12)
+        Dg = np.interp(Vg, L0["V"][ok], L0["D"][ok])
+        eg = [prop.eta_at_thrust(v, d, altitude) for v, d in zip(Vg, Dg)]
+        eta_V = np.interp(L0["V"], Vg, eg)
+    else:
+        eta_V = np.array([prop.efficiency(v) for v in L0["V"]])
+    if getattr(prop, "kind", "piston") == "electric":
+        # electric: constant mass; R = E_shaft eta_p (L/D) / W
+        e = prop.engine
+        E_shaft = e.battery_kwh * 3.6e6 * e.usable * e.eta_motor
+        R = E_shaft * eta_V * LD / Wt
+    else:
+        c_kg = prop.bsfc / 3.6e9                                   # kg per J (shaft)
+        W1 = (ac.mass - (fuel - reserve)) * g
+        lnr = math.log(Wt / W1) if fuel > reserve else 0.0
+        R = eta_V / (c_kg * g) * LD * lnr
     E = R / L0["V"]
     ir, ie = int(np.nanargmax(R)), int(np.nanargmax(E))
     # glide (power off)
@@ -290,8 +307,10 @@ def run(ac, prop, altitude=0.0, polar_dir=None, fuel=60.0, reserve=0.0, to_flap=
     TO, LDG = takeoff(), landing()
     res = {
         "aircraft": ac.name, "altitude": altitude, "mass": ac.mass, "fuel": fuel,
-        "propulsion": {"power_kw": prop.P0 / 1e3, "eta": prop.eta, "prop_diameter": prop.D, "bsfc": prop.bsfc,
-                       "v_design": prop.Vd},
+        "propulsion": (prop.describe() if hasattr(prop, "describe") else
+                       {"model": "simple", "power_kw": prop.P0 / 1e3, "eta": prop.eta, "prop_diameter": prop.D,
+                        "bsfc": prop.bsfc, "v_design": prop.Vd}),
+        "eta_prop_cruise": eta_V.tolist(),
         "polar": pol, "polar_fit": {"CD0": k0, "k1": k1, "k2": k2, "e_oswald": 1 / (math.pi * ac.b**2 / ac.S * k2)},
         "CLmax_trimmed": CLmax, "V_stall": L0["Vs"], "V_max": Vmax,
         "best_rate": {"V": float(L0["V"][i]), "roc": float(L0["roc"][i])},
@@ -349,10 +368,16 @@ def main(argv=None):
     ap.add_argument("--mu-roll", type=float, default=0.04, help="rolling friction (0.04 paved, 0.08 grass)")
     ap.add_argument("--mu-brake", type=float, default=0.40, help="braking friction (0.4 dry paved, 0.2 grass)")
     ap.add_argument("--polar-dir", default="../cases/wing_polars")
+    ap.add_argument("--propulsion", default=None,
+                    help="JSON file: engine + BEMT propeller (propeller.make_propulsion); replaces the simple model")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     ac = A.Aircraft.load(a.aircraft)
-    prop = Propulsion(a.power, a.eta, a.prop_diameter, a.bsfc, a.v_design)
+    if a.propulsion:
+        import propeller as PR
+        prop = PR.make_propulsion(json.loads(Path(a.propulsion).read_text()), a.polar_dir)
+    else:
+        prop = Propulsion(a.power, a.eta, a.prop_diameter, a.bsfc, a.v_design)
     res = run(ac, prop, a.alt, a.polar_dir, a.fuel, a.reserve, a.to_flap, a.ld_flap, a.mu_roll, a.mu_brake)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)

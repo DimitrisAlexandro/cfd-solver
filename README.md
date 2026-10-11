@@ -55,8 +55,8 @@ and the NACA 0012 (`data/wing_polars`), so the aircraft tools use CFD sections f
 | Group | Page | Command line |
 |---|---|---|
 | Analysis | Airfoil polar (incl. plain flaps, compressible), Multi-element, Wing | `src/airfoil.py`, `src/wing.py` |
-| Aircraft | Aircraft model (3D), Stability and control, Aero database, Flight loads, Performance | `src/aircraft.py`, `src/aero_database.py`, `src/loads.py`, `src/performance.py` |
-| Design | Inverse design, Shape optimizer, Wing sizing, Drag rise | `src/design_*.py` |
+| Aircraft | Aircraft model (3D), Weight and balance, Drag buildup, Propeller and engine, Stability and control, Aero database, Flight loads, Performance | `src/aircraft.py`, `src/weight_balance.py`, `src/drag_buildup.py`, `src/propeller.py`, `src/aero_database.py`, `src/loads.py`, `src/performance.py` |
+| Design | Conceptual sizing, Inverse design, Shape optimizer, Wing sizing, Drag rise | `src/sizing.py`, `src/design_*.py` |
 | Data | Geometry check, Polar library, Runs, Validation | |
 
 Examples:
@@ -85,3 +85,20 @@ experiments, wing theory and DATCOM, AeroSandbox vortex lattice). Reports:
 `transition_stall_fix.md`. The app's Validation page shows them all.
 
 Tests: `python -m pytest -q tests`.
+
+## Designing a new aircraft
+
+1. **Conceptual sizing** (`src/sizing.py`): mission, field lengths, climb, ceiling, configuration and
+   propulsion in; constraint diagram, mission fuel or battery, Class I/II weights, converged take-off
+   mass, geometry, component masses and c.g. positions, landing gear and propulsion out. Save it as an
+   aircraft model and press **Verify**: the Performance tool checks every requirement.
+2. **Weight and balance** (`src/weight_balance.py`): edit components, loading diagram, scissor plot for
+   the tail size, landing-gear checks.
+3. **Drag buildup** (`src/drag_buildup.py`): component CD0 with laminar runs, roughness, gear, cooling,
+   struts; sets the model's extra drag.
+4. **Propeller and engine** (`src/propeller.py`): minimum-induced-loss blade design and BEMT analysis,
+   fixed pitch or constant speed, piston / turboprop / electric; the Performance page uses it.
+5. Then Stability and control, Flight loads, Aero database and Performance as before.
+
+Validation: `python src/validate_design_tools.py --verify` (Cessna 172 and Pipistrel Velis Electro
+sizing checks, drag buildup, propeller, scissor plot) → `validation/design_tools_report.md`.
