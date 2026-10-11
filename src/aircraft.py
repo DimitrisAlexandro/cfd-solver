@@ -214,6 +214,10 @@ class Aircraft:
     b_ref: float | None = None
     c_ref: float | None = None
     cd_extra: float = 0.0       # extra drag area / S_ref (gear, cooling, ...)
+    # design data (sizing / weight and balance / propulsion pages); optional
+    components: list = field(default_factory=list)   # {name, group, mass, x, z, max}
+    gear: dict = field(default_factory=dict)         # x_main, x_nose, track, z_ground
+    propulsion: dict = field(default_factory=dict)   # propeller.make_propulsion spec
 
     # reference values default to the main wing (first surface)
     @property
