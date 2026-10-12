@@ -57,7 +57,8 @@ and the NACA 0012 (`data/wing_polars`), so the aircraft tools use CFD sections f
 | Analysis | Airfoil polar (incl. plain flaps, compressible), Multi-element, Wing | `src/airfoil.py`, `src/wing.py` |
 | Aircraft | Aircraft model (3D), Weight and balance, Drag buildup, Propeller and engine, Stability and control, Aero database, Flight loads, Performance | `src/aircraft.py`, `src/weight_balance.py`, `src/drag_buildup.py`, `src/propeller.py`, `src/aero_database.py`, `src/loads.py`, `src/performance.py` |
 | Design | Conceptual sizing, Inverse design, Shape optimizer, Wing sizing, Drag rise | `src/sizing.py`, `src/design_*.py` |
-| Data | Geometry check, Polar library, Runs, Validation | |
+| Workspace | Projects (dependency graph, stale tracking, variants, comparison) | `src/project.py` |
+| Data | Geometry check, Polar library, Runs, Validation, Confidence | `src/trust.py` |
 
 Examples:
 
@@ -85,6 +86,53 @@ experiments, wing theory and DATCOM, AeroSandbox vortex lattice). Reports:
 `transition_stall_fix.md`. The app's Validation page shows them all.
 
 Tests: `python -m pytest -q tests`.
+
+## Projects: a design as a dependency graph
+
+A project holds variants of a design; each variant is a graph of analyses (aircraft model →
+stability, drag, weight and balance, loads → wing structure → aeroelasticity, performance; CFD
+section polars). Every result is stored under the fingerprint of its inputs, so:
+
+- change a parameter or an input file and the page shows what is **out of date and why**
+  ("mass: 750 → 820", "input changed: Flight loads");
+- **Run what's out of date** recomputes only those analyses, in dependency order;
+- variants **share** every result whose inputs are identical: a CFRP-wing variant reruns only the
+  structure and aeroelasticity (about 4 s), not the whole chain;
+- **Compare variants**: key results side by side with the change against the baseline (better / worse
+  coloured), the confidence of each result, and the parameter differences.
+
+```bash
+cd src
+python project.py new "Trainer study" --template aircraft
+python project.py run ../cases/projects/trainer-study                   # ~1 min
+python project.py variant ../cases/projects/trainer-study cfrp --set "structure.material=CFRP (UD caps, ±45 skins)"
+python project.py status ../cases/projects/trainer-study                # what is stale, and why
+python project.py run ../cases/projects/trainer-study --variant cfrp    # 2 analyses, the rest shared
+python project.py compare ../cases/projects/trainer-study
+```
+
+## Confidence of every result (trust layer)
+
+`src/trust.py` rates every polar point green / amber / red ("validated range", "use with care",
+"low confidence") with an expected uncertainty band for Cl and Cd and the reasons:
+
+- **validation envelope**: 11 validated cases (NASA TMR, XFOIL free and tripped, NASA LTPT E387,
+  JAXA 30P30N, RAE 2822, laminar NACA 0012), each with the Re / Mach / α / transition range it covers
+  and the error found there; the band grows with the distance from the nearest case;
+- **point rules**: convergence, past Cl max (SA over-predicts it), shocks, Prandtl–Glauert above M 0.3,
+  laminar bubbles below Re 1.5e5, coarse mesh, y+ above 1, unusual thickness;
+- **grid study**: reruns chosen angles at mesh levels 0.7 / 1 / 1.4 and gives Richardson extrapolation
+  and the grid convergence index (Celik et al. 2008); it replaces the mesh term of the band.
+
+The polar page shows the bands as error bars and a *Confidence and grid check* tab; the Polar library
+and the Projects page show the level of every result; the aircraft pages show the evidence and limits
+of each tool; the **Confidence** page checks any flow condition before you run it.
+
+```bash
+python trust.py check --re 3e6 --alpha 4 --transition free     # GREEN: Cl ±2 %, Cd ±3 %
+python trust.py polar ../cases/n2412                            # every angle
+python trust.py grid-study ../cases/n2412 --alpha 4,8 --jobs 2  # GCI
+```
 
 ## Designing a new aircraft
 
