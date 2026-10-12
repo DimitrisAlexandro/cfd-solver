@@ -13,8 +13,9 @@ and MSES (Drela & Giles 1987), in the way DLR's TAU couples it to RANS:
   3. amplification factor N(s): XFOIL's envelope rate (DAMPL)
         dN/ds = AF(H) dN/dRe_theta(H) / theta   where Re_theta > Re_theta,crit(H)
   4. transition where N = N_crit (9 = quiet wind tunnel; Mack: N = -8.43 -
-     2.4 ln(Tu)), or at laminar separation + Horton's bubble transition
-     length 4e4 nu/U_e if the laminar layer separates first
+     2.4 ln(Tu)), or at laminar separation + the bubble transition length
+     (Mayle 1991: Re_l = 300 Re_theta,s^0.7; Horton's 4e4 nu/U_e optional)
+     if the laminar layer separates first
   5. laminar regions (stagnation point -> transition): eddy viscosity and SA
      production off (intermittency 0), as CFL3D's prescribed laminar regions
   6. the points are updated from the flow (under-relaxed) until they agree
@@ -298,6 +299,65 @@ def surfaces(bl, cols):
 # ----------------------------------------------------------------------
 # coupling
 # ----------------------------------------------------------------------
+# separation-induced transition (laminar separation bubble)
+# ----------------------------------------------------------------------
+import os
+BUBBLE = os.environ.get("CFD_BUBBLE")          # None: "auto" in the low-Re mode, "horton" above
+LE_BUBBLE_X = 0.15         # "auto": separation ahead of this x/c is a leading-edge bubble
+BUBBLE_K = 1000.0
+# low-Re mode (Re below LOWRE_MAX): bubble length "auto" + trip. "auto": Mayle
+# (K = 1000) for mid-chord bubbles; for leading-edge bubbles (separation ahead
+# of 0.1 c) not shorter than Horton's - Mayle alone made them too short
+# (Re_theta,s ~ 40: Eppler 387, Re 2e5, alpha 8 transition at 0.05 c instead
+# of ~0.14 c, Cd +60 %), Horton's length everywhere burst the mid-chord
+# bubbles at Re 1e5 (alpha 4-10). Above it the
+# validated high-Re behaviour is kept exactly (Horton, no trip): a trip of a
+# fixed 100 nu is ~10x the eddy viscosity of a thin leading-edge boundary
+# layer at Re 2e6 and stalled the NACA 2412 at alpha 14. Near 5e5 Mayle's
+# and Horton's lengths coincide (Re_theta,s ~ 200), so the switch is smooth.
+LOWRE_MAX = 5e5
+# trip behind a separation-induced transition: nuT >= SEED_CHI nu in the
+# separated shear layer over SEED_LENGTH (chords) downstream of x_tr, within
+# SEED_HEIGHT of the wall. Without it SA grows the eddy viscosity in a free
+# shear layer over ~25 shear-layer thicknesses, and a laminar bubble longer
+# than ~0.1 c never reattached (Eppler 387, Re 1e5: stall at alpha 4).
+SEED = os.environ.get("CFD_SEED", "on") != "off"
+SEED_CHI = float(os.environ.get("CFD_SEED_CHI", 100.0))
+SEED_LENGTH = 0.02
+SEED_HEIGHT = 0.05
+# The trip acts on mid-chord bubbles only (separation aft of LE_BUBBLE_X):
+# leading-edge bubbles are thin (Re_theta,s ~ 40) and reattach under SA on
+# their own; tripping them thickened the layer (Eppler 387, Re 2e5, alpha 8:
+# Cd +60 %; the lower-surface bubble at alpha -2: +20 %). Variants tried and
+# not kept: a level 0.7 U_e theta_s and a region of 15-30 x 30-60 theta_s
+# (mid-chord bubbles at Re 1e5-2e5 burst, alpha 6 Cd +28 ... +190 %).
+
+
+def bubble_length(re, ue_sep, theta_sep, model="mayle"):
+    """distance (chords) from laminar separation to transition in the
+    separated shear layer.
+      "mayle":  Re_l = K Re_theta,s^0.7 (Mayle 1991; K = 1000, his long-bubble
+                constant, K = 300 for short bubbles; "mayle:K" sets it) -
+                scales with the boundary layer at separation. With K = 1000
+                and the trip below, the Eppler 387 transition points match
+                XFOIL's to ~0.02 c at Re 1e5-2e5 (K 300 put them 0.15 c
+                early; K 500-800 without the trip stalled);
+      "horton": Re_l = 4e4 (Horton 1968), the constant used before: at
+                Re 1e5 it gave 0.3 c of laminar free shear layer, which steady
+                RANS cannot reattach (Eppler 387 stalled at alpha 4-8)."""
+    ue = max(float(ue_sep), 0.1)
+    if model == "horton":
+        return 4e4 / (re * ue)
+    if str(model).startswith("max"):
+        k = model.split(":", 1)[1] if ":" in str(model) else str(BUBBLE_K)
+        return max(bubble_length(re, ue, theta_sep, f"mayle:{k}"), 4e4 / (re * ue))
+    k = float(model.split(":")[1]) if ":" in str(model) else BUBBLE_K
+    th = float(theta_sep)
+    re_th = max(re * ue * th, 10.0) if math.isfinite(th) else 100.0
+    return k * re_th**0.7 / (re * ue)
+
+
+# ----------------------------------------------------------------------
 class Transition:
     """Free (e^N) or fixed transition for an airfoil solved with SA.
 
@@ -306,8 +366,10 @@ class Transition:
     """
 
     def __init__(self, solver, mesh, re, mode="free", ncrit=NCRIT, x_tr=None,
-                 max_step=0.1, relax=0.8, tol=0.003):
+                 max_step=0.1, relax=0.8, tol=0.003, bubble=None):
         self.s, self.re, self.mode, self.ncrit = solver, re, mode, ncrit
+        self.lowre = re < LOWRE_MAX
+        self.bubble = bubble or BUBBLE or ("auto" if self.lowre else "horton")
         self.cols = airfoil_columns(mesh)
         # x_tr None: guess it from a short fully turbulent start (see
         # solve_with_transition); the estimate only needs the edge velocity
@@ -354,6 +416,7 @@ class Transition:
         turbulent) flow's edge velocity; then the laminar regions are applied."""
         bl = extract(self.s, self.cols, self.re)
         est = self.estimate(surfaces(bl, self.cols))
+        self.est = est
         for side in ("upper", "lower"):
             self.x_tr[side] = float(est[side]["x_est"])
         self.history.append({"x_tr": dict(self.x_tr), "settled": True, "initial_guess": True,
@@ -388,6 +451,7 @@ class Transition:
         # separated upper-surface flow they blew up (NACA 2412, Re 4.4e6,
         # cold start at alpha 18-22)
         gamma = np.where(face_lam[self._nearest] & self._before_te, 0.0, 1.0)
+        self._set_seed(surf, gamma)
         cur = self.s.turb.gamma
         if self.ramp_n > 0:
             g0 = np.ones_like(gamma) if cur is None else np.asarray(cur, float).copy()
@@ -401,6 +465,38 @@ class Transition:
             self.s.turb.gamma = gamma
         self.surf = surf
         return gamma
+
+    def _set_seed(self, surf, gamma):
+        """turbulence trip behind a transition caused by laminar separation"""
+        turb = self.s.turb
+        if not SEED or self.mode != "free" or not self.lowre:
+            turb.seed = None
+            return
+        est = getattr(self, "est", None) or {}
+        cell_col = self._face_col[self._nearest]
+        x_col = self.cols["xw"][:, 0]
+        d = turb.d
+        mask = np.zeros(len(gamma), bool)
+        val = np.zeros(len(gamma))
+        for side in ("upper", "lower"):
+            e = est.get(side) or {}
+            if e.get("how") != "laminar separation":
+                continue
+            xs = e.get("x_sep")
+            if xs is not None and xs < LE_BUBBLE_X:
+                continue                                    # leading-edge bubble: no trip
+            v, L_s, H_s = SEED_CHI * turb.nu, SEED_LENGTH, SEED_HEIGHT
+            on_side = np.zeros(len(x_col), bool)
+            on_side[surf[side]["i"]] = True
+            xc = x_col[cell_col]
+            x0 = self.x_tr[side]
+            m_side = (on_side[cell_col] & (xc >= x0) & (xc <= x0 + L_s) & (d < H_s)
+                      & (gamma > 0.5) & self._before_te)
+            mask |= m_side
+            val[m_side] = v
+        idx = np.where(mask)[0]
+        turb.seed = (idx, val[idx]) if len(idx) else None
+        self.seed_cells = len(idx)
 
     def step(self):
         """one iteration of an intermittency blend in progress"""
@@ -442,12 +538,21 @@ class Transition:
                 f = (self.ncrit - N[j - 1]) / max(N[j] - N[j - 1], 1e-12)
                 x_est, how = x_at(s[j - 1] + f * (s[j] - s[j - 1])), "N_crit"
             elif sep is not None:
-                # Horton's bubble transition length, measured along the surface
-                x_est = x_at(s[sep] + 4e4 / (self.re * max(Ue[sep], 0.1)))
+                # separation-induced transition: bubble transition length from
+                # separation, measured along the surface
+                # (theta at the last attached station: the march stops at separation)
+                model = self.bubble
+                if model == "auto":
+                    # leading-edge bubbles: Mayle's length, but not shorter than Horton's;
+                    # mid-chord bubbles: Mayle's (Horton's longer length burst them at Re 1e5)
+                    model = "max" if x[sep] < LE_BUBBLE_X else "mayle"
+                x_est = x_at(s[sep] + bubble_length(self.re, Ue[sep], th[max(sep - 1, 1)], model))
                 how = "laminar separation"
             else:
                 x_est, how = 1.0, "laminar to the trailing edge"
+            ts = float(th[max(sep - 1, 1)]) if sep is not None else float("nan")
             out[side] = {"x_est": float(x_est), "how": how, "N_end": float(N[end - 1]),
+                         "theta_sep": ts, "ue_sep": float(Ue[sep]) if sep is not None else float("nan"),
                          "x_sep": None if sep is None else float(x[sep]),
                          "N": N, "x": x[:end], "H": H[:end], "theta": th[:end]}
         return out

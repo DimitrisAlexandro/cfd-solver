@@ -27,6 +27,21 @@ with setup:
         mass = c1.number_input("Mass (kg)", 0.1, 1e6, float(ac.mass))
         alt = c2.number_input("Altitude (m)", 0.0, 12000.0, 0.0, 100.0)
         ui.step("Engine and propeller")
+        has_bemt = bool(ac.propulsion)
+        pmodel = st.segmented_control(
+            "Propulsion model", ["Saved with the aircraft (BEMT)", "Simple fixed-pitch model"],
+            default="Saved with the aircraft (BEMT)" if has_bemt else "Simple fixed-pitch model",
+            help="BEMT: the engine and propeller saved on the Propeller page or by Conceptual sizing")
+        use_bemt = pmodel == "Saved with the aircraft (BEMT)"
+        if use_bemt and not has_bemt:
+            st.warning("This aircraft has no saved propulsion: design one on the Propeller page.")
+        if use_bemt and has_bemt:
+            e_ = ac.propulsion.get("engine", {})
+            d_ = ac.propulsion.get("propeller", {}).get("design", {})
+            st.caption(f"{e_.get('kind', 'piston')} {e_.get('power_kw', 0):.0f} kW, "
+                       f"{ac.propulsion.get('mode', 'fixed_pitch').replace('_', ' ')} propeller "
+                       f"⌀ {d_.get('diameter', 0):.2f} m, {d_.get('blades', 2)} blades. The fields below "
+                       "except fuel and runway are not used.")
         c1, c2, c3 = st.columns(3)
         power = c1.number_input("Power, sea level (kW)", 1.0, 5000.0, 75.0)
         eta = c2.number_input("Propeller efficiency, max", 0.3, 0.95, 0.80, 0.01)
@@ -45,7 +60,7 @@ with setup:
         surface = st.segmented_control("Runway", ["paved", "grass"], default="paved") or "paved"
         c1, c2 = st.columns(2, vertical_alignment="center")
         go_ = c1.button("Compute performance", type="primary", width="stretch")
-        c2.caption("About a minute.")
+        c2.caption("About a minute (two with the BEMT propeller).")
 with info:
     AV.view3d(ac, height=300)
     st.markdown(
@@ -65,6 +80,9 @@ if go_:
             "--prop-diameter", dprop, "--bsfc", bsfc, "--fuel", fuel, "--reserve", reserve, "--alt", alt,
             "--to-flap", to_flap, "--ld-flap", ld_flap, "--mu-roll", mu[0], "--mu-brake", mu[1],
             "--polar-dir", C.POLAR_CACHE, "--out", out]
+    if use_bemt and ac.propulsion:
+        (out / "propulsion.json").write_text(json.dumps(ac.propulsion, indent=1))
+        args += ["--propulsion", out / "propulsion.json"]
     st.session_state["pf_job"] = C.start_job("performance", f"Performance {ac.name}, {mass:g} kg", args, out)
 
 
@@ -92,6 +110,14 @@ def show(out):
     k[5].metric("Landing from 15 m", f"{LD['total']:.0f} m")
     c = r["curves"]
     V = np.array(c["V"])
+    pr = r.get("propulsion", {})
+    if pr.get("model") == "BEMT":
+        e_ = pr["engine"]
+        st.caption(f"Propulsion: {e_['kind']} {e_['power_kw']:.0f} kW, BEMT propeller "
+                   f"({pr['mode'].replace('_', ' ')}, ⌀ {pr['propeller']['diameter']:.2f} m, "
+                   f"{pr['propeller']['blades']} blades, β 0.75R {pr['beta_75']:.1f}°); range and endurance "
+                   "use the propeller efficiency at the thrust needed for level flight"
+                   + (f"; battery {e_['battery_kwh']:.1f} kWh." if e_["kind"] == "electric" else "."))
     tabs = st.tabs(["Power and climb", "Range and endurance", "Drag polar", "Takeoff and landing", "Files"])
     with tabs[0]:
         c1, c2, c3 = st.columns(3)
@@ -146,7 +172,7 @@ def show(out):
         c2.caption(f"Approach {LD['V_approach']:.1f} m/s, touchdown {LD['V_touchdown']:.1f} m/s; CL max with "
                    f"landing flap {LD['CLmax']:.2f} (increment {LD['flap_dCLmax_estimate']:.2f}, {LD.get('flap_source', 'estimate')}).")
     with tabs[4]:
-        views.downloads(out, ("performance.json", "aircraft_used.json"), "pf")
+        views.downloads(out, ("performance.json", "aircraft_used.json", "propulsion.json"), "pf")
         if (out / "performance.png").exists():
             st.image(str(out / "performance.png"))
 

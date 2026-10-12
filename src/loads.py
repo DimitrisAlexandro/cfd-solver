@@ -173,12 +173,23 @@ def span_loads(ac, an, res, n, surface=0, x_axis=0.35, wing_mass_frac=0.10, fuel
 
 # ----------------------------------------------------------------------
 def run(ac, Vc, category="normal", altitude=0.0, Vd=None, polar_dir=None, surface=0, x_axis=0.35,
-        wing_mass_frac=0.10, fuel_mass=0.0, fuel_span=(0.1, 0.5), x_mass=0.40, log=print):
+        wing_mass_frac=0.10, fuel_mass=0.0, fuel_span=(0.1, 0.5), x_mass=0.40, log=print, flexible=False):
+    """flexible=True: the wing structure saved with the aircraft (Aircraft.structure)
+    deforms under every case (aeroelastic.flexible_trim): elastic twist and
+    bending slope change the wing incidence, the case is trimmed again until
+    the deformation converges"""
     rho0 = 1.225
     rho = W.isa(altitude)[0]
     log("[loads] CL_max, CL_min and lift slope of the aircraft")
     CLmax, CLmin, CLa = clmax_estimate(ac, altitude, polar_dir, Vc * math.sqrt(rho0 / rho))
     vn = vn_diagram(ac, CLmax, CLmin, CLa, Vc, category, Vd, altitude)
+    beam = None
+    if flexible:
+        import aeroelastic as AE
+        import wing_structure as WS
+        if not getattr(ac, "structure", None) or surface != 0:
+            raise ValueError("flexible loads need the wing structure saved with the aircraft (Wing structure page)")
+        beam = AE.beam_from_structure(ac, WS.from_aircraft(ac), None, fuel_mass=fuel_mass, fuel_span=fuel_span)
     cases = []
     for c in vn["cases"]:
         Vt = c["V_eas"] * math.sqrt(rho0 / rho)
@@ -188,7 +199,11 @@ def run(ac, Vc, category="normal", altitude=0.0, Vd=None, polar_dir=None, surfac
             CLr = 0.0
         else:
             CLr = c["n"] * ac.mass * A.G0 / (an.qbar * ac.S)
-        if ctrl:
+        flex = None
+        if beam is not None:
+            r = AE.flexible_trim(an, beam, CLr, ctrl, inertia=AE.inertia_load(beam, c["n"]))
+            flex = r
+        elif ctrl:
             r = an.trim(CL_req=CLr, control=ctrl, alpha0=CLr / max(CLa, 1e-3) * 57.3)
         else:
             a = math.degrees(CLr / CLa)
@@ -204,6 +219,11 @@ def run(ac, Vc, category="normal", altitude=0.0, Vd=None, polar_dir=None, surfac
                 "root_shear": st_loads["shear"][0], "root_bending": st_loads["bending"][0],
                 "root_torsion": st_loads["torsion"][0], "stations": st_loads, "strips": strips,
                 "CL_over_CLmax": r["CL"] / CLmax}
+        if flex is not None:
+            case["elastic_tip_twist_deg"] = float(np.degrees(flex["elastic_incidence"][
+                np.argmax(np.abs(an.lat.S["eta"]) * (an.lat.S["surf"] == 0))]))
+            case["elastic_iterations"] = flex["elastic_iterations"]
+            case["elastic_converged"] = flex["elastic_converged"]
         cases.append(case)
         log(f"[loads] {c['name']:20s} V_EAS {c['V_eas']:5.1f} m/s  n {c['n']:+5.2f}  α {r['alpha']:5.2f}°  "
             f"root: shear {st_loads['shear'][0] / 1e3:7.2f} kN  bending {st_loads['bending'][0] / 1e3:7.2f} kN m  "
@@ -219,7 +239,7 @@ def run(ac, Vc, category="normal", altitude=0.0, Vd=None, polar_dir=None, surfac
         env[f"{k}_min_case"] = [cases[i]["name"] for i in arr.argmin(0)]
     return {"aircraft": ac.name, "surface": ac.surfaces[surface].name, "altitude": altitude,
             "x_axis": x_axis, "wing_mass_frac": wing_mass_frac, "fuel_mass": fuel_mass,
-            "fuel_span": list(fuel_span), "vn": vn, "cases": cases, "envelope": env}
+            "fuel_span": list(fuel_span), "vn": vn, "cases": cases, "envelope": env, "flexible": bool(flexible)}
 
 
 def write_outputs(res, out):
@@ -317,11 +337,13 @@ def main(argv=None):
     ap.add_argument("--fuel", type=float, default=0.0, help="fuel in the wing (kg, both sides)")
     ap.add_argument("--fuel-span", default="0.1,0.5")
     ap.add_argument("--polar-dir", default="../cases/wing_polars")
+    ap.add_argument("--flexible", action="store_true",
+                    help="flexible wing: uses the wing structure saved with the aircraft")
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     ac = A.Aircraft.load(a.aircraft)
     fs = tuple(float(x) for x in a.fuel_span.split(","))
-    res = run(ac, a.vc, a.category, a.alt, a.vd, a.polar_dir, a.surface, a.axis, a.wing_mass, a.fuel, fs)
+    res = run(ac, a.vc, a.category, a.alt, a.vd, a.polar_dir, a.surface, a.axis, a.wing_mass, a.fuel, fs, flexible=a.flexible)
     write_outputs(res, a.out)
     print(f"-> {a.out}/ (loads.json, envelope.csv, strip_loads.csv, loads_nastran.bdf, vn_diagram.png, span_loads.png)")
 

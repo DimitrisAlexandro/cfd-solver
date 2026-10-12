@@ -21,9 +21,10 @@ Airfoil: naca4412 / naca23012 (NACA 4- and 5-digit), tmr0012 (NASA TMR NACA
 coordinates are only translated and scaled (angle of attack measured from the
 file's x axis, as in XFOIL); --derotate puts the chord line on the x axis.
 
-Flow model: Re >= 1e5 Spalart-Allmaras with free transition (e^N envelope
+Flow model: Re >= 2e4 Spalart-Allmaras with free transition (e^N envelope
 method, N_crit 9; --transition off = fully turbulent, --xtr = fixed trips),
-Re < 1e5 laminar. Incompressible by default; --mach M (Phase 5) runs the
+Re 2e4 to ~5e5: low-Re mode (laminar separation bubbles, separation-induced
+transition). Re < 2e4 laminar (--regime forces either). Incompressible by default; --mach M (Phase 5) runs the
 compressible solver (ideal gas, energy equation, shocks captured; free
 transition only below M 0.4, fixed trips / fully turbulent above);
 --mach M --prandtl-glauert keeps the incompressible solution and corrects it.
@@ -339,8 +340,10 @@ def cmd_polar(a):
     else:
         loop, info = ag.load_airfoil(a.airfoil, derotate=a.derotate)
         plot_geometry(loop, info, out / "geometry.png")
-    turb = a.re >= pl.LAMINAR_RE
+    turb = a.re >= pl.LAMINAR_RE if multi else pl.uses_rans(a.re, a.regime)
+    low = turb and not multi and a.re < 5e5 and a.transition != "off" and not a.xtr
     print(f"[airfoil] {info['name']}  Re {a.re:.3g}  {'SA' if turb else 'laminar'}"
+          f"{' (low-Re mode: separation bubbles)' if low else ''}"
           f"  alpha {alphas}  refine {a.refine}  jobs {a.jobs}")
     t0 = time.time()
     if a.xtr:
@@ -358,7 +361,7 @@ def cmd_polar(a):
     res = pl.polar(a.airfoil, a.re, alphas, level=a.refine, jobs=a.jobs,
                    out=None if a.no_fields else out, max_iter=a.max_iter,
                    transition=trans, ncrit=a.ncrit, solver=a.solver,
-                   mach=a.mach if comp else 0.0)
+                   mach=a.mach if comp else 0.0, regime=a.regime)
     for r in res:
         r["turbulent"] = turb
     if multi:                         # inviscid reference (same outlines, sharp TEs)
@@ -476,6 +479,8 @@ def main(argv=None):
     p.add_argument("--max-iter", type=int, default=6000)
     p.add_argument("--out")
     p.add_argument("--xfoil", action="store_true", help="overlay XFOIL (tripped + free transition)")
+    p.add_argument("--regime", choices=["auto", "rans", "laminar"], default="auto",
+                   help="auto: RANS + e^N transition from Re 2e4 (low-Re mode below ~5e5), laminar below")
     p.add_argument("--no-fields", action="store_true", help="skip per-angle field files")
     p.add_argument("--derotate", action="store_true", help="put the chord line on the x axis")
     p.add_argument("--transition", choices=["free", "off"], default="free",

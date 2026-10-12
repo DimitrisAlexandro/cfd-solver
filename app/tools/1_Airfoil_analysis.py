@@ -44,8 +44,20 @@ with setup:
                                   help="Compressible: ideal gas and energy equation, captures shocks "
                                        "(validated on RAE 2822). Prandtl–Glauert scales the "
                                        "incompressible result by 1/√(1−M²); use it below M 0.3.")
-        if re < 1e5:
-            st.caption("Below Re 1e5 the flow is solved laminar, without a turbulence model.")
+        regime = "auto"
+        if re < 2e4:
+            st.caption("Below Re 2e4 the flow is solved laminar, without a turbulence model.")
+        elif re < 5e5:
+            st.caption("Low-Re mode: laminar separation bubbles with separation-induced transition. "
+                       "Eppler 387 against NASA Langley: drag within 6–9 % on average at Re 2e5–3e5, "
+                       "transition points within ~0.03 c of XFOIL. Near Re 1e5 a mid-chord bubble can "
+                       "burst in steady RANS (flagged 'unsteady', drag too high): check those angles "
+                       "against XFOIL or tests.")
+            if re < 1e5:
+                regime = "laminar" if st.checkbox(
+                    "Solve laminar instead (no turbulence model)", False,
+                    help="The previous behaviour below Re 1e5. Steady laminar flow cannot reattach a "
+                         "separated layer; use it for very clean, low-Re cases only.") else "auto"
 
         ui.step("Transition")
         tr = st.segmented_control("Transition model", ["free (e^N)", "fixed trip", "fully turbulent"],
@@ -125,6 +137,8 @@ if go_:
         args += ["--transition", "off"]
     else:
         args += ["--ncrit", ncrit]
+    if regime != "auto":
+        args += ["--regime", regime]
     if mach > 0:
         args += ["--mach", f"{mach:.4g}"]
         if comp_model.startswith("Prandtl"):
