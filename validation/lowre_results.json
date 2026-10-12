@@ -1,0 +1,1576 @@
+{
+ "1e+05": {
+  "rans": [
+   {
+    "alpha": -2.0,
+    "Cl": 0.16049152884695053,
+    "Cd": 0.017113849445106993,
+    "Cm": -0.08240518257799151,
+    "Cd_p": 0.008675277847910178,
+    "Cd_v": 0.007550276427148311,
+    "status": "unsteady",
+    "iterations": 6000,
+    "time_s": 315.6,
+    "cells": 20358,
+    "yplus_max": 1.7090449066148632,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.858,
+    "x_tr_lower": 0.8019,
+    "transition_converged": true,
+    "transition_converged_by": "averaged (limit cycle)",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.858,
+       "how": "laminar separation",
+       "N_end": 0.9049,
+       "x_sep": 0.5445
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar separation",
+       "N_end": 7.4901,
+       "x_sep": 0.8051
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.858,
+       "how": "laminar separation",
+       "N_end": 0.9035,
+       "x_sep": 0.5445
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar separation",
+       "N_end": 7.832,
+       "x_sep": 0.8481
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.858,
+       "how": "laminar separation",
+       "N_end": 0.9023,
+       "x_sep": 0.5445
+      },
+      "lower": {
+       "x_est": 0.9268,
+       "how": "laminar separation",
+       "N_end": 5.2493,
+       "x_sep": 0.5257
+      }
+     }
+    ],
+    "Cl_amp": 0.02136904328942643,
+    "Cd_amp": 0.0028227839055782,
+    "Cm_amp": 0.005513261766784114
+   },
+   {
+    "alpha": 0.0,
+    "Cl": 0.3896504328743913,
+    "Cd": 0.014483908937869232,
+    "Cm": -0.08325077668453532,
+    "Cd_p": 0.006477683247136521,
+    "Cd_v": 0.008045920693165788,
+    "status": "converged (mean of a small oscillation)",
+    "iterations": 1502,
+    "time_s": 68.9,
+    "cells": 20390,
+    "yplus_max": 1.374107174592518,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.7978,
+    "x_tr_lower": 1.0,
+    "transition_converged": true,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.7945,
+       "how": "laminar separation",
+       "N_end": 0.6625,
+       "x_sep": 0.4973
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 2.21,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.7986,
+       "how": "laminar separation",
+       "N_end": 0.8482,
+       "x_sep": 0.4973
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 2.0023,
+       "x_sep": null
+      }
+     }
+    ],
+    "Cl_amp": 0.00022166981798188434,
+    "Cd_amp": 4.773999963905446e-05,
+    "Cm_amp": 0.00015560179077930142
+   },
+   {
+    "alpha": 2.0,
+    "Cl": 0.6098468759566921,
+    "Cd": 0.016439063528129835,
+    "Cm": -0.08452221410139585,
+    "Cd_p": 0.008020882121510033,
+    "Cd_v": 0.008381872793635019,
+    "status": "converged (mean of a small oscillation)",
+    "iterations": 1503,
+    "time_s": 65.0,
+    "cells": 20364,
+    "yplus_max": 1.1081097594536327,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.7431,
+    "x_tr_lower": 1.0,
+    "transition_converged": true,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.7494,
+       "how": "laminar separation",
+       "N_end": 0.6983,
+       "x_sep": 0.4595
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.7415,
+       "how": "laminar separation",
+       "N_end": 0.8559,
+       "x_sep": 0.4501
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     }
+    ],
+    "Cl_amp": 0.00019717109811923095,
+    "Cd_amp": 6.092992440473281e-05,
+    "Cm_amp": 0.00015507922316430195
+   },
+   {
+    "alpha": 4.0,
+    "Cl": 0.6837201241082848,
+    "Cd": 0.03916018186563658,
+    "Cm": -0.10577743940698142,
+    "Cd_p": 0.013036152125435836,
+    "Cd_v": 0.007263862710598978,
+    "status": "unsteady",
+    "iterations": 6000,
+    "time_s": 364.7,
+    "cells": 20360,
+    "yplus_max": 1.5208230307852106,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.6936,
+    "x_tr_lower": 1.0,
+    "transition_converged": false,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.9834,
+       "how": "laminar separation",
+       "N_end": 2.4693,
+       "x_sep": 0.6373
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.6662,
+       "how": "laminar separation",
+       "N_end": 1.2246,
+       "x_sep": 0.3848
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.6662,
+       "how": "laminar separation",
+       "N_end": 1.2172,
+       "x_sep": 0.394
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     }
+    ],
+    "Cl_amp": 0.2168353437068473,
+    "Cd_amp": 0.01974226636157054,
+    "Cm_amp": 0.05089590548982858
+   },
+   {
+    "alpha": 6.0,
+    "Cl": 0.7972768683905324,
+    "Cd": 0.055960045581645704,
+    "Cm": -0.10924969273833444,
+    "Cd_p": 0.06242603635580839,
+    "Cd_v": 0.004303871536699396,
+    "status": "unsteady",
+    "iterations": 6000,
+    "time_s": 366.8,
+    "cells": 20336,
+    "yplus_max": 1.3978008473608918,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.6347,
+    "x_tr_lower": 1.0,
+    "transition_converged": false,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.8966,
+       "how": "laminar separation",
+       "N_end": 4.0136,
+       "x_sep": 0.6099
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.8424,
+       "how": "laminar separation",
+       "N_end": 1.3671,
+       "x_sep": 0.5351
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.4068,
+       "how": "laminar separation",
+       "N_end": 0.653,
+       "x_sep": 0.1827
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     }
+    ],
+    "Cl_amp": 0.3614006126358399,
+    "Cd_amp": 0.04173648153250238,
+    "Cm_amp": 0.10718144094564024
+   },
+   {
+    "alpha": 8.0,
+    "Cl": 1.2133909141695722,
+    "Cd": 0.02572217707119166,
+    "Cm": -0.07337370051053137,
+    "Cd_p": 0.017311996130788498,
+    "Cd_v": 0.008567067659225344,
+    "status": "unsteady",
+    "iterations": 6000,
+    "time_s": 305.4,
+    "cells": 20348,
+    "yplus_max": 2.2354806481075546,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.3596,
+    "x_tr_lower": 1.0,
+    "transition_converged": true,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.4232,
+       "how": "laminar separation",
+       "N_end": 1.3087,
+       "x_sep": 0.1901
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.7327,
+       "how": "laminar separation",
+       "N_end": 0.8923,
+       "x_sep": 0.3573
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.3609,
+       "how": "laminar separation",
+       "N_end": 1.0513,
+       "x_sep": 0.1612
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     }
+    ],
+    "Cl_amp": 0.005969199826759475,
+    "Cd_amp": 0.0013602285128370226,
+    "Cm_amp": 0.0009239762681252164
+   },
+   {
+    "alpha": 10.0,
+    "Cl": 1.1232026977791632,
+    "Cd": 0.0784485564636988,
+    "Cm": -0.08249975110789412,
+    "Cd_p": 0.052352654171736325,
+    "Cd_v": 0.003819811323488875,
+    "status": "unsteady",
+    "iterations": 6000,
+    "time_s": 333.3,
+    "cells": 20364,
+    "yplus_max": 2.18337936535157,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.1854,
+    "x_tr_lower": 0.9437,
+    "transition_converged": false,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.3067,
+       "how": "laminar separation",
+       "N_end": 0.1272,
+       "x_sep": 0.1036
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.2629,
+       "how": "laminar separation",
+       "N_end": 0.0925,
+       "x_sep": 0.0216
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.3407,
+       "how": "laminar separation",
+       "N_end": 0.2384,
+       "x_sep": 0.1682
+      },
+      "lower": {
+       "x_est": 0.8594,
+       "how": "laminar separation",
+       "N_end": 0.0,
+       "x_sep": 0.0038
+      }
+     }
+    ],
+    "Cl_amp": 0.6542684429680977,
+    "Cd_amp": 0.09962538935328276,
+    "Cm_amp": 0.13561404636636162
+   }
+  ],
+  "xfoil": {
+   "0.0": [
+    0.41904258728027344,
+    0.015487263910472393,
+    -0.09408745169639587,
+    0.8018007108428165,
+    1.0000000966126714
+   ],
+   "-2.0": [
+    0.19997917115688324,
+    0.01450458262115717,
+    -0.09696126729249954,
+    0.8705610657125902,
+    0.7205956361265503
+   ],
+   "2.0": [
+    0.6337220072746277,
+    0.018000636249780655,
+    -0.09303799271583557,
+    0.7414507499298133,
+    1.0000000966126714
+   ],
+   "4.0": [
+    0.8440086245536804,
+    0.020857153460383415,
+    -0.09085623919963837,
+    0.6776467972831868,
+    1.0000000966126714
+   ],
+   "6.0": [
+    1.0520401000976562,
+    0.02134573832154274,
+    -0.0842144712805748,
+    0.5883487473122828,
+    1.0000000966126714
+   ],
+   "8.0": [
+    1.221494197845459,
+    0.021463828161358833,
+    -0.07109814882278442,
+    0.26588546899843923,
+    1.0000000966126714
+   ],
+   "10.0": [
+    1.2859731912612915,
+    0.041248418390750885,
+    -0.052949607372283936,
+    0.04558858605433952,
+    1.0000000966126714
+   ]
+  }
+ },
+ "2e+05": {
+  "rans": [
+   {
+    "alpha": -2.0,
+    "Cl": 0.1671562876400463,
+    "Cd": 0.015099544337626298,
+    "Cm": -0.08004173418508277,
+    "Cd_p": 0.004866793543894022,
+    "Cd_v": 0.010229394848119694,
+    "status": "unsteady",
+    "iterations": 6000,
+    "time_s": 299.7,
+    "cells": 21763,
+    "yplus_max": 1.5379101554839512,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.7555,
+    "x_tr_lower": 0.2569,
+    "transition_converged": true,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.7553,
+       "how": "laminar separation",
+       "N_end": 1.4425,
+       "x_sep": 0.5539
+      },
+      "lower": {
+       "x_est": 0.253,
+       "how": "laminar separation",
+       "N_end": 1.1645,
+       "x_sep": 0.1343
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.7553,
+       "how": "laminar separation",
+       "N_end": 1.4381,
+       "x_sep": 0.5539
+      },
+      "lower": {
+       "x_est": 0.253,
+       "how": "laminar separation",
+       "N_end": 0.9502,
+       "x_sep": 0.0869
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.7553,
+       "how": "laminar separation",
+       "N_end": 1.4411,
+       "x_sep": 0.5539
+      },
+      "lower": {
+       "x_est": 0.2539,
+       "how": "laminar separation",
+       "N_end": 1.5625,
+       "x_sep": 0.1543
+      }
+     }
+    ],
+    "Cl_amp": 0.004223610996322569,
+    "Cd_amp": 0.0014702799000946183,
+    "Cm_amp": 0.0009053459530057179
+   },
+   {
+    "alpha": 0.0,
+    "Cl": 0.37528282000897334,
+    "Cd": 0.010599504153441805,
+    "Cm": -0.07643467908807011,
+    "Cd_p": 0.0033880661399101905,
+    "Cd_v": 0.007211438013531615,
+    "status": "converged",
+    "iterations": 604,
+    "time_s": 32.8,
+    "cells": 21747,
+    "yplus_max": 1.2388141727225062,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.7038,
+    "x_tr_lower": 1.0,
+    "transition_converged": true,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.687,
+       "how": "laminar separation",
+       "N_end": 1.0413,
+       "x_sep": 0.4973
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 3.7925,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.7111,
+       "how": "laminar separation",
+       "N_end": 1.3913,
+       "x_sep": 0.5162
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 3.677,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.7,
+       "how": "laminar separation",
+       "N_end": 1.31,
+       "x_sep": 0.5068
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 3.6627,
+       "x_sep": null
+      }
+     }
+    ]
+   },
+   {
+    "alpha": 2.0,
+    "Cl": 0.6030438881486674,
+    "Cd": 0.011591863996797031,
+    "Cm": -0.07835632212764196,
+    "Cd_p": 0.003991662659387682,
+    "Cd_v": 0.007622581499650134,
+    "status": "converged (mean of a small oscillation)",
+    "iterations": 1506,
+    "time_s": 69.3,
+    "cells": 21817,
+    "yplus_max": 1.0524255603679997,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.6615,
+    "x_tr_lower": 1.0,
+    "transition_converged": true,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.6445,
+       "how": "laminar separation",
+       "N_end": 1.0793,
+       "x_sep": 0.4595
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.2943,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.6689,
+       "how": "laminar separation",
+       "N_end": 1.5272,
+       "x_sep": 0.4784
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.3014,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.6576,
+       "how": "laminar separation",
+       "N_end": 1.4246,
+       "x_sep": 0.4689
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.2912,
+       "x_sep": null
+      }
+     }
+    ],
+    "Cl_amp": 9.332173383952425e-05,
+    "Cd_amp": 2.344116082295903e-05,
+    "Cm_amp": 5.260711408875546e-05
+   },
+   {
+    "alpha": 4.0,
+    "Cl": 0.8266926397365799,
+    "Cd": 0.012849031290570289,
+    "Cm": -0.07976881812731397,
+    "Cd_p": 0.0056524694614407565,
+    "Cd_v": 0.007301721169060399,
+    "status": "unsteady",
+    "iterations": 6000,
+    "time_s": 285.4,
+    "cells": 21831,
+    "yplus_max": 1.370786228982938,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.6105,
+    "x_tr_lower": 1.0,
+    "transition_converged": true,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.6272,
+       "how": "laminar separation",
+       "N_end": 2.1827,
+       "x_sep": 0.4407
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.6052,
+       "how": "laminar separation",
+       "N_end": 2.0147,
+       "x_sep": 0.4219
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.6052,
+       "how": "laminar separation",
+       "N_end": 2.1696,
+       "x_sep": 0.4313
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     }
+    ],
+    "Cl_amp": 0.0004906906232587382,
+    "Cd_amp": 0.00014956647001689114,
+    "Cm_amp": 0.00025735367882590704
+   },
+   {
+    "alpha": 6.0,
+    "Cl": 1.0420753698411398,
+    "Cd": 0.018718750497337736,
+    "Cm": -0.08578946428565218,
+    "Cd_p": 0.016641499883331825,
+    "Cd_v": 0.0036695330614246475,
+    "status": "unsteady",
+    "iterations": 6000,
+    "time_s": 344.3,
+    "cells": 21755,
+    "yplus_max": 1.745645169955415,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.6269,
+    "x_tr_lower": 1.0,
+    "transition_converged": false,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.6636,
+       "how": "laminar separation",
+       "N_end": 5.5628,
+       "x_sep": 0.6644
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.6636,
+       "how": "laminar separation",
+       "N_end": 5.4146,
+       "x_sep": 0.5539
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.6388,
+       "how": "laminar separation",
+       "N_end": 5.4234,
+       "x_sep": 0.4501
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     }
+    ],
+    "Cl_amp": 0.039087257099428785,
+    "Cd_amp": 0.006206783193994146,
+    "Cm_amp": 0.009956317823144739
+   },
+   {
+    "alpha": 8.0,
+    "Cl": 1.2151758580004235,
+    "Cd": 0.018309831067020502,
+    "Cm": -0.07466485159198225,
+    "Cd_p": 0.012524868924333089,
+    "Cd_v": 0.005709903913205226,
+    "status": "converged (mean of a small oscillation)",
+    "iterations": 5481,
+    "time_s": 268.2,
+    "cells": 21771,
+    "yplus_max": 2.027652335333821,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.1393,
+    "x_tr_lower": 1.0,
+    "transition_converged": true,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.132,
+       "how": "laminar separation",
+       "N_end": 0.4965,
+       "x_sep": 0.0306
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.1355,
+       "how": "laminar separation",
+       "N_end": 0.4289,
+       "x_sep": 0.0375
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.1355,
+       "how": "laminar separation",
+       "N_end": 0.9521,
+       "x_sep": 0.045
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     }
+    ],
+    "Cl_amp": 0.002965201685809715,
+    "Cd_amp": 0.00018146806637498944,
+    "Cm_amp": 0.0003857898289022013
+   },
+   {
+    "alpha": 10.0,
+    "Cl": 1.2506484149440307,
+    "Cd": 0.04075033059407407,
+    "Cm": -0.06500695930460842,
+    "Cd_p": 0.037436518580811096,
+    "Cd_v": 0.0027386941971117313,
+    "status": "unsteady",
+    "iterations": 6000,
+    "time_s": 350.9,
+    "cells": 21767,
+    "yplus_max": 2.085804891779301,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.0734,
+    "x_tr_lower": 0.88,
+    "transition_converged": false,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.0865,
+       "how": "laminar separation",
+       "N_end": 0.0,
+       "x_sep": 0.0018
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.0971,
+       "how": "laminar separation",
+       "N_end": 0.268,
+       "x_sep": 0.0081
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.0825,
+       "how": "laminar separation",
+       "N_end": 0.0,
+       "x_sep": 0.0011
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     }
+    ],
+    "Cl_amp": 0.01988838670176396,
+    "Cd_amp": 0.003998397134427147,
+    "Cm_amp": 0.004060445006244584
+   }
+  ],
+  "xfoil": {
+   "0.0": [
+    0.3946218490600586,
+    0.009875163435935974,
+    -0.08117746561765671,
+    0.7209391236149322,
+    1.0000000966126714
+   ],
+   "-2.0": [
+    0.18284878134727478,
+    0.01133638620376587,
+    -0.08515695482492447,
+    0.779506955468708,
+    0.2753008934915232
+   ],
+   "2.0": [
+    0.6220936179161072,
+    0.011096679605543613,
+    -0.08232205361127853,
+    0.6687053323053898,
+    1.0000000966126714
+   ],
+   "4.0": [
+    0.8457112908363342,
+    0.012331913225352764,
+    -0.08244362473487854,
+    0.6109886866902215,
+    1.0000000966126714
+   ],
+   "6.0": [
+    1.0624680519104004,
+    0.013038098812103271,
+    -0.08077728748321533,
+    0.5210927375882728,
+    1.0000000966126714
+   ],
+   "8.0": [
+    1.2253252267837524,
+    0.01913677155971527,
+    -0.07384384423494339,
+    0.11628743140542495,
+    1.0000000966126714
+   ],
+   "10.0": [
+    1.2854321002960205,
+    0.03443222492933273,
+    -0.05625966936349869,
+    0.02373077635953659,
+    1.0000000966126714
+   ]
+  }
+ },
+ "3e+05": {
+  "rans": [
+   {
+    "alpha": -2.0,
+    "Cl": 0.16517922939508564,
+    "Cd": 0.011722725314526148,
+    "Cm": -0.0792507447981902,
+    "Cd_p": 0.0038789332118385317,
+    "Cd_v": 0.008155164449038205,
+    "status": "unsteady",
+    "iterations": 6000,
+    "time_s": 309.4,
+    "cells": 22573,
+    "yplus_max": 1.442598782244558,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.7082,
+    "x_tr_lower": 0.1423,
+    "transition_converged": false,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.7082,
+       "how": "laminar separation",
+       "N_end": 1.7483,
+       "x_sep": 0.5539
+      },
+      "lower": {
+       "x_est": 0.1017,
+       "how": "laminar separation",
+       "N_end": 0.8421,
+       "x_sep": 0.0816
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.7082,
+       "how": "laminar separation",
+       "N_end": 1.7476,
+       "x_sep": 0.5539
+      },
+      "lower": {
+       "x_est": 0.1917,
+       "how": "laminar separation",
+       "N_end": 1.6933,
+       "x_sep": 0.1279
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.7082,
+       "how": "laminar separation",
+       "N_end": 1.7443,
+       "x_sep": 0.5539
+      },
+      "lower": {
+       "x_est": 0.1917,
+       "how": "laminar separation",
+       "N_end": 1.8702,
+       "x_sep": 0.1408
+      }
+     }
+    ],
+    "Cl_amp": 0.0031150923520769924,
+    "Cd_amp": 0.001055847191801209,
+    "Cm_amp": 0.0009314863035162074
+   },
+   {
+    "alpha": 0.0,
+    "Cl": 0.37664221938354564,
+    "Cd": 0.009103626873138083,
+    "Cm": -0.07629636307327811,
+    "Cd_p": 0.0026112753183297373,
+    "Cd_v": 0.0064923515548083455,
+    "status": "converged",
+    "iterations": 693,
+    "time_s": 38.1,
+    "cells": 22605,
+    "yplus_max": 1.247800163265747,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.6687,
+    "x_tr_lower": 1.0,
+    "transition_converged": true,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.6432,
+       "how": "laminar separation",
+       "N_end": 1.327,
+       "x_sep": 0.4973
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 5.0107,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.677,
+       "how": "laminar separation",
+       "N_end": 1.9077,
+       "x_sep": 0.5257
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 4.944,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.6663,
+       "how": "laminar separation",
+       "N_end": 1.8142,
+       "x_sep": 0.5162
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 4.9115,
+       "x_sep": null
+      }
+     }
+    ]
+   },
+   {
+    "alpha": 2.0,
+    "Cl": 0.6042182407180784,
+    "Cd": 0.010009546313872065,
+    "Cm": -0.07788106064971659,
+    "Cd_p": 0.0028231637782908264,
+    "Cd_v": 0.007186382535581236,
+    "status": "converged",
+    "iterations": 628,
+    "time_s": 36.6,
+    "cells": 22577,
+    "yplus_max": 1.2937911000690083,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.6171,
+    "x_tr_lower": 1.0,
+    "transition_converged": true,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.6018,
+       "how": "laminar separation",
+       "N_end": 1.3753,
+       "x_sep": 0.4595
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 1.2347,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.6241,
+       "how": "laminar separation",
+       "N_end": 1.788,
+       "x_sep": 0.4784
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 1.2391,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.6133,
+       "how": "laminar separation",
+       "N_end": 1.6684,
+       "x_sep": 0.4689
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 1.2273,
+       "x_sep": null
+      }
+     }
+    ]
+   },
+   {
+    "alpha": 4.0,
+    "Cl": 0.8294468080865703,
+    "Cd": 0.010986414980327585,
+    "Cm": -0.0792979058202801,
+    "Cd_p": 0.0038226241466920784,
+    "Cd_v": 0.0071637908336355,
+    "status": "converged",
+    "iterations": 960,
+    "time_s": 51.1,
+    "cells": 22595,
+    "yplus_max": 1.3163735233337228,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.5671,
+    "x_tr_lower": 1.0,
+    "transition_converged": true,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.562,
+       "how": "laminar separation",
+       "N_end": 2.5462,
+       "x_sep": 0.4219
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.562,
+       "how": "laminar separation",
+       "N_end": 2.7893,
+       "x_sep": 0.4313
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.562,
+       "how": "laminar separation",
+       "N_end": 2.7557,
+       "x_sep": 0.4313
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     }
+    ]
+   },
+   {
+    "alpha": 6.0,
+    "Cl": 1.0499764116844625,
+    "Cd": 0.0151580528368185,
+    "Cm": -0.08460217593378926,
+    "Cd_p": 0.011399905893114667,
+    "Cd_v": 0.0037581815351385712,
+    "status": "unsteady",
+    "iterations": 6000,
+    "time_s": 371.6,
+    "cells": 22687,
+    "yplus_max": 1.6380476591406103,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.5938,
+    "x_tr_lower": 1.0,
+    "transition_converged": true,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.6595,
+       "how": "laminar separation",
+       "N_end": 6.9442,
+       "x_sep": 0.5257
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.612,
+       "how": "laminar separation",
+       "N_end": 6.6533,
+       "x_sep": 0.4784
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.5968,
+       "how": "laminar separation",
+       "N_end": 6.9753,
+       "x_sep": 0.4501
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     }
+    ],
+    "Cl_amp": 0.012266252070847083,
+    "Cd_amp": 0.0019703745299664887,
+    "Cm_amp": 0.003004804091309342
+   },
+   {
+    "alpha": 8.0,
+    "Cl": 1.2245139814118062,
+    "Cd": 0.01690459099500331,
+    "Cm": -0.0763290893520218,
+    "Cd_p": 0.010927017011770955,
+    "Cd_v": 0.005954651005249309,
+    "status": "converged (mean of a small oscillation)",
+    "iterations": 1501,
+    "time_s": 78.8,
+    "cells": 22695,
+    "yplus_max": 1.9092530466865905,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.0894,
+    "x_tr_lower": 1.0,
+    "transition_converged": true,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.0608,
+       "how": "laminar separation",
+       "N_end": 0.1561,
+       "x_sep": 0.0051
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.0987,
+       "how": "laminar separation",
+       "N_end": 1.0099,
+       "x_sep": 0.034
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.0869,
+       "how": "laminar separation",
+       "N_end": 1.0828,
+       "x_sep": 0.0216
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     }
+    ],
+    "Cl_amp": 0.00024070069974946318,
+    "Cd_amp": 6.710750760474844e-05,
+    "Cm_amp": 4.8333115871795895e-05
+   },
+   {
+    "alpha": 10.0,
+    "Cl": 1.2667899470911663,
+    "Cd": 0.03866065837339954,
+    "Cm": -0.06497016100830143,
+    "Cd_p": 0.033865693693802865,
+    "Cd_v": 0.0032683314175019694,
+    "status": "unsteady",
+    "iterations": 6000,
+    "time_s": 343.7,
+    "cells": 22679,
+    "yplus_max": 1.9508187584286683,
+    "warm_start": false,
+    "solver": "simple",
+    "mach": 0.0,
+    "sequenced": false,
+    "transition": "free, N_crit 9",
+    "x_tr_upper": 0.048,
+    "x_tr_lower": 1.0,
+    "transition_converged": true,
+    "transition_converged_by": "estimate",
+    "transition_estimates": [
+     {
+      "upper": {
+       "x_est": 0.0471,
+       "how": "laminar separation",
+       "N_end": 0.5126,
+       "x_sep": 0.0028
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.0465,
+       "how": "laminar separation",
+       "N_end": 0.0,
+       "x_sep": 0.0006
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     },
+     {
+      "upper": {
+       "x_est": 0.0496,
+       "how": "laminar separation",
+       "N_end": 0.0366,
+       "x_sep": 0.0011
+      },
+      "lower": {
+       "x_est": 1.0,
+       "how": "laminar to the trailing edge",
+       "N_end": 0.0,
+       "x_sep": null
+      }
+     }
+    ],
+    "Cl_amp": 0.044498890158097715,
+    "Cd_amp": 0.005317613800292678,
+    "Cm_amp": 0.0035761932264225145
+   }
+  ],
+  "xfoil": {
+   "0.0": [
+    0.39059963822364807,
+    0.008084913715720177,
+    -0.07918011397123337,
+    0.6835074077243376,
+    1.0000000966126714
+   ],
+   "-2.0": [
+    0.17593100666999817,
+    0.010203036479651928,
+    -0.08154744654893875,
+    0.7373622229914071,
+    0.15994716416984267
+   ],
+   "2.0": [
+    0.6205276250839233,
+    0.008981659077107906,
+    -0.0807432234287262,
+    0.6352541867863442,
+    1.0000000966126714
+   ],
+   "4.0": [
+    0.8465214967727661,
+    0.00987977534532547,
+    -0.08149748295545578,
+    0.5772327656088848,
+    1.0000000966126714
+   ],
+   "6.0": [
+    1.0660470724105835,
+    0.010759030468761921,
+    -0.08104526996612549,
+    0.4813691807495748,
+    1.0000000966126714
+   ],
+   "8.0": [
+    1.2318203449249268,
+    0.01805800572037697,
+    -0.0757308080792427,
+    0.06171844721825504,
+    1.0000000966126714
+   ],
+   "10.0": [
+    1.3155766725540161,
+    0.03028089553117752,
+    -0.0603882372379303,
+    0.015937159196135996,
+    1.0000000966126714
+   ]
+  }
+ }
+}
