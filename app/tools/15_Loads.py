@@ -40,6 +40,11 @@ with setup:
         fuel = c1.number_input("Fuel in the wing (kg)", 0.0, 1e5, 0.0)
         f0 = c2.number_input("Fuel from η", 0.0, 1.0, 0.10, 0.05)
         f1 = c3.number_input("Fuel to η", 0.0, 1.0, 0.50, 0.05)
+        has_struct = bool(getattr(ac, "structure", None))
+        flex = st.checkbox("Flexible wing (elastic twist and bending)", value=False, disabled=not has_struct or surf != 0,
+                           help="Uses the wing structure saved with the aircraft on the Wing structure page; every "
+                                "case is trimmed again with the deformed wing until it converges"
+                                + ("" if has_struct else ". No structure saved with this aircraft yet."))
         c1, c2 = st.columns(2, vertical_alignment="center")
         go_ = c1.button("Compute loads", type="primary", width="stretch")
         c2.caption("About half a minute.")
@@ -61,6 +66,8 @@ if go_:
             "--polar-dir", C.POLAR_CACHE, "--out", out]
     if vd_on:
         args += ["--vd", vd]
+    if flex:
+        args += ["--flexible"]
     st.session_state["ld_job"] = C.start_job("loads", f"Loads {ac.name}, {cat}", args, out)
 
 
@@ -78,6 +85,10 @@ def show(out):
     k[3].metric("V_C", f"{vn['Vc']:.1f} m/s")
     k[4].metric("V_D", f"{vn['Vd']:.1f} m/s")
     k[5].metric("CL max (untrimmed)", f"{vn['CLmax']:.2f}")
+    if res.get("flexible"):
+        tw = [(c["name"], c.get("elastic_tip_twist_deg")) for c in res["cases"] if c.get("elastic_tip_twist_deg") is not None]
+        st.caption("Flexible wing: every case trimmed with the elastic twist and bending of the saved wing structure. "
+                   "Elastic tip twist: " + ", ".join(f"{n} {t:+.2f}°" for n, t in tw[:6]) + (" …" if len(tw) > 6 else ""))
     c1, c2 = st.columns([6, 5])
     cv = vn["curves"]
     V = np.array(cv["V"])

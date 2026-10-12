@@ -42,6 +42,9 @@ TOOLS = {
         ("tools/21_Wing_structure.py", "Wing structure",
          "Wing box from the flight loads: caps, webs, skins, mass, stiffness, deflection, divergence, "
          "aileron reversal and a flutter estimate.", "instant"),
+        ("tools/22_Aeroelasticity.py", "Aeroelasticity",
+         "Wing modes, 3D unsteady aerodynamics, p-k flutter with aileron flutter and mass balance, "
+         "divergence, reversal, flexible loads.", "seconds"),
         ("tools/16_Performance.py", "Performance",
          "Speeds, climb, ceilings, range, endurance, glide, takeoff and landing distances.", "about 1 min"),
     ],

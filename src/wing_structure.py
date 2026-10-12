@@ -433,6 +433,22 @@ def run(ac, loads, settings=None, surface=0, class_ii_mass=None, log=print):
     return res
 
 
+def to_aircraft(st, aileron_dynamics=None):
+    """the sizing result as stored in Aircraft.structure (JSON-able)"""
+    keep = ("eta", "y", "chord", "h_mean", "w", "A_box", "A_upper_cap", "A_lower_cap", "t_web", "t_skin", "EI", "GJ",
+            "m_span", "x_shear_centre", "x_loads_axis", "mass", "settings", "surface")
+    d = {k: (np.asarray(st[k]).tolist() if isinstance(st[k], np.ndarray) else st[k]) for k in keep}
+    d["settings"] = {k: (list(v) if isinstance(v, tuple) else v) for k, v in st["settings"].items()}
+    d["aileron_dynamics"] = aileron_dynamics or {"freq_hz": 15.0, "mass_per_area": 4.0, "cg_aft_hinge": 0.30,
+                                                 "gyration": 0.30}
+    return d
+
+
+def from_aircraft(ac):
+    d = dict(ac.structure or {})
+    return {k: (np.asarray(v) if isinstance(v, list) and k != "settings" else v) for k, v in d.items()}
+
+
 def class_ii_wing(ac, n_limit=3.8, cruise_speed=55.0, cruise_alt=1500.0, fuel=0.0):
     """Raymer's GA wing mass for comparison (sizing.class_ii)"""
     import sizing as SZ
