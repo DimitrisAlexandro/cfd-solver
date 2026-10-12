@@ -48,6 +48,17 @@ def ensure_polar_store():
             shutil.copy(f, POLAR_DIR / f.name)
 
 
+def check_environment():
+    """fail early, with the fix, when the active Python lacks the solver's packages"""
+    import importlib.util
+    missing = [m for m in ("numpy", "scipy", "pandas", "matplotlib", "numba", "pyamg")
+               if importlib.util.find_spec(m) is None]
+    if missing:
+        raise SystemExit(f"[project] this Python ({sys.executable}) is missing {', '.join(missing)}.\n"
+                         f"  Activate the environment you run AeroLab with, or install them:\n"
+                         f"  pip install -r {ROOT / 'requirements.txt'}")
+
+
 def _h(obj):
     return hashlib.sha256(json.dumps(obj, sort_keys=True, default=str).encode()).hexdigest()
 
@@ -272,7 +283,7 @@ def _alive(pid):
 
 class Project:
     def __init__(self, path):
-        self.dir = Path(path)
+        self.dir = Path(path).resolve()        # absolute: runs are executed from src/
         self.data = json.loads((self.dir / "project.json").read_text())
 
     # -------------------------------------------------------------- create / save
@@ -573,6 +584,7 @@ class Project:
         """run every node that isn't up to date (and the ancestors of `targets`), in order.
         Returns {node: state}."""
         ensure_polar_store()
+        check_environment()
         plan = self.plan(variant, targets, force)
         memo, result = {}, {}
         nodes = self.nodes(variant)
@@ -581,9 +593,12 @@ class Project:
         for nid in plan:
             n = nodes[nid]
             kind = KINDS[n["kind"]]
-            if any(result.get(src) == "failed" for src in n["inputs"].values()):
+            st_now = self.status(variant) if any(src not in result for src in n["inputs"].values()) else {}
+            if any(result.get(src) in ("failed", "skipped") or
+                   (src not in result and st_now.get(src, {}).get("state") != "up to date")
+                   for src in n["inputs"].values()):
                 result[nid] = "skipped"
-                log(f"[project] {nid}: skipped (an input failed)")
+                log(f"[project] {nid}: skipped (an input failed or is missing)")
                 continue
             fp = self.fingerprint(variant, nid, memo)
             out = self.run_dir(n["kind"], fp)
