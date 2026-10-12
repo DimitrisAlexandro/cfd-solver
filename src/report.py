@@ -333,6 +333,18 @@ def design_report(p, variant=None, figdir=None):
     if p.diff(p.baseline, variant) and variant != p.baseline:
         blocks.append(P("Changes against the baseline: " + "; ".join(
             f"{n}.{k}: {_fmt(a)} → {_fmt(b)}" for n, k, a, b in p.diff(p.baseline, variant))))
+    try:
+        import preflight as PF
+        pre = PF.check_project(p, variant)
+        warn = [f"{v['label']}: {i['check']} — {i['detail']}" for v in pre["nodes"].values() for i in v["items"]
+                if i["level"] in ("warn", "error")]
+        if warn:
+            blocks.append(H(2, "Setup checks"))
+            blocks.append(P("The pre-run checks flag these points; they affect how far the results can be used.",
+                            "warn"))
+            blocks.append(BUL(warn))
+    except Exception:                                    # noqa: BLE001 (checks are advisory here)
+        pass
     if tpl.get("notes"):
         blocks.append(H(2, "Notes from the template"))
         blocks.append(BUL(tpl["notes"]))

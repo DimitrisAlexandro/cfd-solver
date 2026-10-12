@@ -344,8 +344,8 @@ def trust_details(out, d, ass):
 
 
 PF_LEVEL = {"ok": ("green", "ok"), "info": ("gray", "note"), "warn": ("orange", "check"), "error": ("red", "error")}
-PF_HEAD = {"ok": ("green", "Ready to run"), "info": ("green", "Ready to run"),
-           "warn": ("orange", "Ready, with warnings"), "error": ("red", "Blocked: fix the errors")}
+PF_HEAD = {"ok": ("green", "all clear"), "info": ("green", "all clear"),
+           "warn": ("orange", "warnings to read"), "error": ("red", "blocked, fix the errors")}
 
 
 @st.cache_data(show_spinner=False, max_entries=64)
