@@ -15,6 +15,8 @@ items = [
     ("Transition (e^N) against experiments", ["phase3_naca0012_polar.png", "phase3_naca2412_polar.png"],
      "transition_report.txt"),
     ("Free transition near stall", ["transition_stall_fix.png"], "transition_stall_fix.md"),
+    ("Low-Reynolds-number mode: Eppler 387 at Re 1e5–3e5 against NASA Langley LTPT and XFOIL",
+     ["lowre_e387.png"], "lowre_report.md"),
     ("Multi-element 30P30N against the JAXA wind tunnel", ["multi_30p30n_cp.png", "multi_30p30n_grid.png"],
      "multi_30p30n_report.txt"),
     ("Compressible: Ni bump", ["bump_mach.png"], "bump_report.txt"),
