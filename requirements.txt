@@ -11,3 +11,5 @@ streamlit>=1.50   # app (AeroLab): ./run_app.sh (streamlit run app/AeroLab.py)
 plotly
 pandas
 openpyxl          # Excel export (aero database)
+python-docx      # Word reports
+reportlab        # PDF reports

@@ -85,6 +85,7 @@ def show(out):
     k[3].metric("V_C", f"{vn['Vc']:.1f} m/s")
     k[4].metric("V_D", f"{vn['Vd']:.1f} m/s")
     k[5].metric("CL max (untrimmed)", f"{vn['CLmax']:.2f}")
+    views.trust_notes("loads")
     if res.get("flexible"):
         tw = [(c["name"], c.get("elastic_tip_twist_deg")) for c in res["cases"] if c.get("elastic_tip_twist_deg") is not None]
         st.caption("Flexible wing: every case trimmed with the elastic twist and bending of the saved wing structure. "

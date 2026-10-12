@@ -457,7 +457,12 @@ def cmd_polar(a):
         lines += ["", "notes:"] + [f"  - {w}" for w in warn]
     (out / "report.txt").write_text("\n".join(lines) + "\n")
     settings = {"mach": a.mach, "prandtl_glauert": bool(pg), "transition": tr_label,
-                "refine": a.refine, "solver": a.solver, "alpha": a.alpha}
+                "refine": a.refine, "solver": a.solver, "alpha": a.alpha,
+                # everything needed to rerun this polar (grid checks, project graph, trust layer)
+                "airfoil": a.airfoil, "re": a.re, "ncrit": a.ncrit, "xtr": a.xtr,
+                "transition_mode": "fixed" if a.xtr else trans if isinstance(trans, str) else "fixed",
+                "regime": a.regime, "derotate": a.derotate, "max_iter": a.max_iter,
+                "multi": bool(multi), "low_re_mode": bool(low), "turbulent": bool(turb)}
     (out / "polar.json").write_text(json.dumps({"info": info, "re": a.re, "settings": settings,
                                                 "results": res,
                                                 "xfoil": {lab: {str(k): v for k, v in d.items()}

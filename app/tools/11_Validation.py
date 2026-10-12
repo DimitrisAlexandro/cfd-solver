@@ -35,6 +35,9 @@ items = [
     ("Design tools: demonstration cases", ["design_drag_rise_naca0012.png", "design_drag_rise_naca0012_fields.png",
                                            "design_wing_sizing_demo.png", "design_inverse_rae2822.png",
                                            "design_optimize_naca2412.png"], "design_report.md"),
+    ("Trust layer and project graph: confidence levels, grid convergence index, variants",
+     ["trust_envelope.png", "trust_polar.png", "projects_graph.png", "projects_compare.png"],
+     "trust_and_projects.md"),
     ("Basic solver: cavity, cylinder, unsteady", ["cavity_profiles.png", "cylinder_flow.png",
                                                   "unsteady_cylinder_forces.png"], "unsteady_report.txt"),
 ]

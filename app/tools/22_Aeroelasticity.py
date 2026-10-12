@@ -9,6 +9,7 @@ import streamlit as st
 import aircraft_views as AV
 import common as C
 import ui
+import views
 
 import aeroelastic as AE
 import aircraft as A
@@ -127,6 +128,8 @@ with out:
                  + ("Mass-balance the aileron (c.g. at or ahead of the hinge) or stiffen the control circuit; "
                     if ail and ail["cg_aft_hinge"] > 0 else "Raise the torsional stiffness or move mass forward; ")
                  + "see the mass-balance tab.")
+    views.trust_notes("aeroelastic", mach=(VF if math.isfinite(VF) else req) / 340.3,
+                      antisymmetric=bool(fp and fp["family"] == "antisymmetric"))
     fr = pd.DataFrame([{"mode": i + 1, "type": m["kind"], "f (Hz)": f}
                        for i, (m, f) in enumerate(zip(res["modes"], res["frequencies_hz"]))])
     st.dataframe(fr, hide_index=True, width="stretch", column_config={"f (Hz)": st.column_config.NumberColumn(format="%.2f")})

@@ -80,7 +80,8 @@ def job_status(job):
         return "running"
     done = {"polar": "polar.json", "wing": "wing.json", "drag_rise": "drag_rise.json",
             "optimize": "optimize.json", "inverse": "inverse.json", "sizing": "sizing.json",
-            "aero_db": "database_done.json", "loads": "loads.json", "performance": "performance.json"}
+            "aero_db": "database_done.json", "loads": "loads.json", "performance": "performance.json",
+            "grid_study": "grid_study.json", "project": "run.json"}
     f = Path(job["out"]) / done.get(job["kind"], "_none_")
     return "finished" if f.exists() else "failed"
 
@@ -146,6 +147,14 @@ def fmt_re(re):
     return f"{re / 10 ** e:.3g}e{e}"
 
 
+def fmt_duration(s):
+    if s < 90:
+        return f"{s:.0f} s"
+    if s < 5400:
+        return f"{s / 60:.0f} min"
+    return f"{s / 3600:.1f} h"
+
+
 def display_name(name):
     """'naca2412' / 'NACA 2412' -> 'NACA 2412'; anything else unchanged"""
     s = str(name)
@@ -203,20 +212,28 @@ def load_polar_rows(path):
 # ----------------------------------------------------------------------
 # plots
 # ----------------------------------------------------------------------
-def polar_figures(series):
-    """series: list of (label, rows) -> four plotly figures"""
+def polar_figures(series, bands=None):
+    """series: list of (label, rows) -> four plotly figures. bands: {alpha: (cl_band, cd_band)}
+    (relative, from the trust layer) drawn as uncertainty bars on the first series"""
     import plotly.graph_objects as go
     figs = {k: go.Figure() for k in ("cl", "polar", "cm", "ld")}
-    for lab, rows in series:
+    for i_s, (lab, rows) in enumerate(series):
         r = [x for x in rows if x.get("Cl") is not None and np.isfinite(x["Cl"])]
         a = [x["alpha"] for x in r]
         cl = [x["Cl"] for x in r]
         cd = [x["Cd"] for x in r]
         cm = [x["Cm"] for x in r]
         txt = [x.get("status", "") for x in r]
-        figs["cl"].add_scatter(x=a, y=cl, mode="lines+markers", name=lab, text=txt,
+        ey = ex = None
+        if bands and i_s == 0:
+            b = [bands.get(f"{float(x):g}", (0.0, 0.0)) for x in a]
+            ey = dict(type="data", array=[abs(c) * bb[0] for c, bb in zip(cl, b)], thickness=1, width=3,
+                      color="rgba(86,96,108,0.55)")
+            ex = dict(type="data", array=[abs(c) * bb[1] for c, bb in zip(cd, b)], thickness=1, width=3,
+                      color="rgba(86,96,108,0.55)")
+        figs["cl"].add_scatter(x=a, y=cl, mode="lines+markers", name=lab, text=txt, error_y=ey,
                                hovertemplate="α %{x:g}°<br>Cl %{y:.4f}<br>%{text}<extra>%{fullData.name}</extra>")
-        figs["polar"].add_scatter(x=cd, y=cl, mode="lines+markers", name=lab, text=a,
+        figs["polar"].add_scatter(x=cd, y=cl, mode="lines+markers", name=lab, text=a, error_x=ex, error_y=ey,
                                   hovertemplate="Cd %{x:.5f}<br>Cl %{y:.4f}<br>α %{text:g}°<extra>%{fullData.name}</extra>")
         figs["cm"].add_scatter(x=a, y=cm, mode="lines+markers", name=lab)
         figs["ld"].add_scatter(x=a, y=[c / d if d else None for c, d in zip(cl, cd)],

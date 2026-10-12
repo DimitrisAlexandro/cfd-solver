@@ -108,6 +108,8 @@ def live_job(jid, kind="polar"):
             st.code(C.job_log(jid, tail=40) or "starting...", language=None)
         if j["status"] == "finished":
             st.caption(f"Results saved in {j['out']}")
+            if kind in ("grid_study", "project") and st.button("Show results", key=f"show{jid}"):
+                st.rerun(scope="app")
         elif j["status"] == "failed":
             st.error("The run stopped before writing results. The end of the solver log above "
                      "shows why.")
@@ -164,13 +166,19 @@ def polar_results(out_dir):
         k[3].metric("Cm near zero lift", f"{z['Cm']:+.4f}")
         bad = sum(not str(r["status"]).startswith("converged") for r in res)
         k[4].metric("points not converged", f"{bad} of {len(res)}")
-    t1, t2, t3, t4 = st.tabs(["Polar", "Pressure and friction", "Flow field", "Table and files"])
+    ass = polar_trust(out, d)
+    bands = {f"{float(p['alpha']):g}": (p["cl_band"], p["cd_band"]) for p in ass["points"]}
+    t1, t2, t3, t4, t5 = st.tabs(["Polar", "Pressure and friction", "Flow field", "Confidence and grid check",
+                                  "Table and files"])
     with t1:
         series = [("CFD", res)]
         for lab, xd in (d.get("xfoil") or {}).items():
             series.append((lab.split(",")[0], [{"alpha": float(k), "Cl": v[0], "Cd": v[1],
                                                 "Cm": v[2]} for k, v in xd.items()]))
-        figs = C.polar_figures(series)
+        show_bands = st.toggle("Show expected uncertainty", True, key=f"band{out}",
+                               help="Bars: the error found on the nearest validated case, widened for the "
+                                    "distance from it, the mesh level, stall and convergence (trust layer)")
+        figs = C.polar_figures(series, bands if show_bands else None)
         c1, c2 = st.columns(2)
         ui.plot(figs["cl"], container=c1, key=f"pc{out}")
         ui.plot(figs["polar"], container=c2, key=f"pp{out}")
@@ -227,14 +235,156 @@ def polar_results(out_dir):
             fig, _ = C.field_image(fo, field, *lim, cmap="RdBu_r" if field == "vorticity" else "turbo")
             st.pyplot(fig)
     with t4:
+        trust_details(out, d, ass)
+    with t5:
         cols = ["alpha", "Cl", "Cd", "Cd_p", "Cd_v", "Cm", "x_tr_upper", "x_tr_lower", "status",
                 "iterations", "time_s", "M_max"]
-        df = pd.DataFrame([{k: r.get(k) for k in cols} for r in res])
+        lv = {p["alpha"]: p["level"] for p in ass["points"]}
+        df = pd.DataFrame([{**{k: r.get(k) for k in cols}, "confidence": ui.TRUST.get(lv.get(r["alpha"]), ("", ""))[1]}
+                           for r in res])
         st.dataframe(df, hide_index=True, width="stretch", column_config=_num_cols())
         downloads(out, ("polar.csv", "report.txt", "polar.json"), "dl")
         for fn in ("polar.png", "distributions.png", "geometry.png"):
             if (out / fn).exists():
                 st.image(str(out / fn), caption=fn)
+
+
+def polar_trust(out, d):
+    """confidence line under the polar's headline numbers; returns the assessment"""
+    import trust as T
+    ass = T.assess_polar(d, T.load_grid_study(out))
+    c = ass["counts"]
+    parts = " ".join(ui.trust_md(l, f"{c[l]} {ui.TRUST[l][1]}") for l in T.LEVELS if c[l])
+    ctx = ass["context"]
+    st.markdown(f"**Confidence** {parts}  "
+                f"<span style='color:{ui.GRAPHITE};font-size:0.85rem'>against {len(T.CASES)} validated cases; "
+                f"see the *Confidence and grid check* tab for the reasons at each angle.</span>",
+                unsafe_allow_html=True)
+    return ass
+
+
+def trust_details(out, d, ass):
+    """per-angle reasons + grid convergence study (levels 0.7 / 1 / 1.4)"""
+    import trust as T
+    out = Path(out)
+    pts = ass["points"]
+    if not pts:
+        st.info("This polar doesn't record its Reynolds number, so it can't be assessed.")
+        return
+    rows = [{"α (deg)": p["alpha"], "confidence": ui.TRUST[p["level"]][1],
+             "Cl ±": p["cl_band"], "Cd ±": p["cd_band"], "nearest validated case": p["case_title"],
+             "distance": p["distance"],
+             "main reason": next((t for l, t in p["reasons"] if l == p["level"]), p["reasons"][0][1])}
+            for p in pts]
+    pc = st.column_config.NumberColumn
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch",
+                 column_config={"Cl ±": pc(format="percent"), "Cd ±": pc(format="percent"),
+                                "distance": pc(help="0 = inside the case's range of Re, Mach and α; "
+                                                    "1 ≈ a factor 1.8 in Re, 0.05 in Mach or 2° away",
+                                               format="%.2f"),
+                                "main reason": st.column_config.TextColumn(width="large")})
+    a = st.selectbox("All reasons at", [p["alpha"] for p in pts], key=f"tra{out}",
+                     format_func=lambda x: f"α {x:g}°")
+    p = next(p for p in pts if p["alpha"] == a)
+    for l, t in p["reasons"]:
+        st.markdown(f"{ui.trust_md(l, ui.TRUST[l][1])} {t}")
+
+    st.markdown("#### Grid convergence")
+    g = T.load_grid_study(out)
+    gfile = out / "_grid" / "grid_study.json"
+    jid = st.session_state.get(f"grid{out}")
+    if jid:
+        live_job(jid, "grid_study")
+    if g:
+        rr = []
+        for ak, e in sorted(g.items(), key=lambda kv: float(kv[0])):
+            for q in ("Cl", "Cd", "Cm"):
+                if q in e:
+                    x = e[q]
+                    rr.append({"α (deg)": float(ak), "quantity": q, "coarse": x["phi"][2], "medium": x["phi"][1],
+                               "fine": x["phi"][0], "order p": x["p"], "p for GCI": x.get("p_gci", x["p"]),
+                               "extrapolated": x["phi_ext"],
+                               "GCI fine": x["gci_fine"], "± absolute": x.get("gci_abs"), "convergence": "oscillatory" if x.get("oscillatory")
+                               else "converged" if x.get("converged") else "monotonic"})
+        st.dataframe(pd.DataFrame(rr), hide_index=True, width="stretch",
+                     column_config={"GCI fine": pc(format="percent"), "order p": pc(format="%.2f"),
+                                    "p for GCI": pc(format="%.2f", help="min(apparent order, 2): the scheme is "
+                                                                         "second order, a higher apparent order "
+                                                                         "is not trusted (Roache)"),
+                                    "± absolute": pc(format="%.2g", help="GCI as an absolute error: use it for "
+                                                                          "coefficients near zero (Cm of a "
+                                                                          "symmetric section), where the "
+                                                                          "relative value is meaningless"),
+                                    **{k: pc(format="%.5g") for k in ("coarse", "medium", "fine", "extrapolated")}})
+        st.caption("Celik et al. (2008) procedure: apparent order from three meshes, Richardson extrapolation, "
+                   "GCI with safety factor 1.25 and the order capped at 2. Cells from the runs (h = N^-1/2). The GCI also tightens the "
+                   "Cd band of these angles.")
+    else:
+        st.caption("No grid study yet. It reruns the chosen angles on the coarse (0.7) and fine (1.4) meshes "
+                   "and gives the discretisation error of every coefficient.")
+    s = d.get("settings") or {}
+    if not s.get("airfoil"):
+        st.caption("This polar was computed before runs recorded their settings: rerun it to enable the grid check.")
+        return
+    ok = [r["alpha"] for r in d["results"] if r.get("Cl") is not None and np.isfinite(r["Cl"])]
+    c1, c2, c3 = st.columns([3, 1, 2], vertical_alignment="bottom")
+    pick = c1.multiselect("Angles to check", ok, default=ok[len(ok) // 2: len(ok) // 2 + 1], key=f"gsa{out}",
+                          format_func=lambda x: f"{x:g}°")
+    jobs = c2.number_input("Processes", 1, 16, 2, key=f"gsj{out}")
+    n = len(pick)
+    if c3.button(f"Run grid check ({2 * n} runs)", disabled=not n, key=f"gsb{out}", width="stretch"):
+        if gfile.exists():
+            gfile.unlink()
+        jid = C.start_job("grid_study", f"Grid check: {C.display_name(d.get('info', {}).get('name', out.name))} "
+                                        f"α {', '.join(f'{x:g}' for x in pick)}",
+                          ["trust.py", "grid-study", out, "--alpha", ",".join(f"{x:g}" for x in pick),
+                           "--jobs", jobs], out / "_grid")
+        st.session_state[f"grid{out}"] = jid
+        st.rerun()
+
+
+PF_LEVEL = {"ok": ("green", "ok"), "info": ("gray", "note"), "warn": ("orange", "check"), "error": ("red", "error")}
+PF_HEAD = {"ok": ("green", "all clear"), "info": ("green", "all clear"),
+           "warn": ("orange", "warnings to read"), "error": ("red", "blocked, fix the errors")}
+
+
+@st.cache_data(show_spinner=False, max_entries=64)
+def _prerun_polar(spec, re, angles, mach, transition, xtr, level, jobs, pg, regime, ncrit, deep):
+    import preflight as PF
+    return PF.check_polar(spec, re, angles, mach, transition, ncrit, xtr, level, jobs, pg, regime, deep)
+
+
+def prerun_items(items, expanded=False, title=None, level=None):
+    import preflight as PF
+    lev = level or PF.worst(items)
+    color, head = PF_HEAD[lev]
+    with st.expander(f"{title or 'Pre-run check'}: {head}", expanded=expanded or lev in ("warn", "error"),
+                     icon=":material/checklist:"):
+        for i in items:
+            c, lab = PF_LEVEL[i["level"]]
+            st.markdown(f":{c}-badge[{lab}] **{i['check']}** — {i['detail']}")
+
+
+def prerun_polar(spec, re, angles, mach, transition, xtr, level, jobs, pg, regime, ncrit):
+    """pre-run checks of an airfoil polar, shown above the Run button; returns the result"""
+    key = f"pfdeep{spec}{re}{level}"
+    deep = st.session_state.get(key, False)
+    try:
+        r = _prerun_polar(str(spec), float(re), str(angles), float(mach), transition, xtr, float(level), int(jobs),
+                          bool(pg), regime, float(ncrit), deep)
+    except Exception as e:                                         # noqa: BLE001
+        st.caption(f"Pre-run check unavailable: {e}")
+        return None
+    prerun_items(r["items"])
+    if not deep and st.button("Check the mesh too (builds it, a few seconds)", key=key + "b"):
+        st.session_state[key] = True
+        st.rerun()
+    return r
+
+
+def trust_notes(tool, title="Confidence", **ctx):
+    import trust as T
+    ui.trust_notes(T.tool_notes(tool, **ctx), title)
 
 
 def wing_results(out_dir):
@@ -257,6 +407,7 @@ def wing_results(out_dir):
     k[3].metric("Area", f"{w['area']:.3g} m²")
     k[4].metric("Mean aerodynamic chord", f"{w['mac']:.3g} m")
     fl = d.get("flight") or {}
+    trust_notes("wing", aspect_ratio=w["aspect_ratio"], mach=fl.get("mach"))
     if fl.get("speed_m_s") and fl.get("rho"):
         q = 0.5 * fl["rho"] * fl["speed_m_s"] ** 2
         st.caption(f"Flight condition {fl['speed_m_s']:g} m/s at {fl.get('altitude_m', 0):g} m: "

@@ -48,7 +48,7 @@ def P(file, title, default=False):
 
 
 nav = st.navigation({
-    "": [P("Home.py", "Overview", default=True)],
+    "": [P("Home.py", "Overview", default=True), P("tools/23_Projects.py", "Projects")],
     "Analysis": [P("tools/1_Airfoil_analysis.py", "Airfoil polar"),
                  P("tools/2_Multi_element.py", "Multi-element airfoil"),
                  P("tools/3_Wing.py", "Wing")],
@@ -70,6 +70,7 @@ nav = st.navigation({
     "Data": [P("tools/4_Geometry_preview.py", "Geometry check"),
              P("tools/9_Polar_library.py", "Polar library"),
              P("tools/10_Jobs_and_results.py", "Runs"),
-             P("tools/11_Validation.py", "Validation")],
+             P("tools/11_Validation.py", "Validation"),
+             P("tools/24_Confidence.py", "Confidence")],
 })
 nav.run()
