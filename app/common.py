@@ -147,6 +147,14 @@ def fmt_re(re):
     return f"{re / 10 ** e:.3g}e{e}"
 
 
+def fmt_duration(s):
+    if s < 90:
+        return f"{s:.0f} s"
+    if s < 5400:
+        return f"{s / 60:.0f} min"
+    return f"{s / 3600:.1f} h"
+
+
 def display_name(name):
     """'naca2412' / 'NACA 2412' -> 'NACA 2412'; anything else unchanged"""
     s = str(name)
