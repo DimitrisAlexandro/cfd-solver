@@ -116,6 +116,18 @@ with out:
                     f"at V_D: {100 * rv['effectiveness_at_VD']:.0f} % roll power"
                     if rv.get("effectiveness_at_VD") is not None else "", delta_color="off", delta_arrow="off")
     k[3].metric("Bending / torsion frequency", f"{fl['f_bending_hz']:.1f} / {fl['f_torsion_hz']:.1f} Hz")
+    saved = bool(getattr(ac, "structure", None))
+    cs1, cs2 = st.columns([1, 2], vertical_alignment="center")
+    if cs1.button("Save structure with the aircraft", type="primary", width="stretch"):
+        a2 = A.Aircraft.from_dict(ac.to_dict())
+        a2.structure = WS.to_aircraft(s_, (ac.structure or {}).get("aileron_dynamics"))
+        a2.save(path)
+        st.session_state["ws_saved"] = str(path)
+    if st.session_state.get("ws_saved") == str(path):
+        cs2.success("Saved. Open **Aeroelasticity**, or use *Flexible wing* on Flight loads.")
+    else:
+        cs2.caption(("A structure is already saved with this aircraft; saving replaces it. " if saved else "")
+                    + "Needed by the Aeroelasticity page and the flexible-wing option of Flight loads.")
     if fl["V_flutter"] < 1.2 * VD:
         st.error("The flutter estimate is below 1.2 V_D: stiffen the box in torsion (thicker skins), move mass "
                  "forward (section c.g.), or check with a proper flutter analysis.")
@@ -210,15 +222,6 @@ with tabs[4]:
                          "shear_centre_x_over_c": s_["x_shear_centre"]})
     c3.download_button("Beam properties for FEM (CSV)", beam.to_csv(index=False), file_name="wing_beam.csv",
                        width="stretch")
-    st.markdown("##### Save with the aircraft")
-    st.caption("Stores EI, GJ and the mass along the span in the aircraft file. The Aeroelasticity page (3D "
-               "flutter, divergence, reversal, aileron flutter) and the flexible-wing option of Flight loads use it.")
-    if st.button("Save structure with the aircraft", type="primary"):
-        a2 = A.Aircraft.from_dict(ac.to_dict())
-        old_ail = (ac.structure or {}).get("aileron_dynamics")
-        a2.structure = WS.to_aircraft(s_, old_ail)
-        a2.save(path)
-        st.success(f"Saved to {path.name}. Open the Aeroelasticity page next.")
 with tabs[5]:
     st.markdown(
         "- **Loads**: every case of the selected Flight loads run × the factor of safety. Torsion moved to the "
