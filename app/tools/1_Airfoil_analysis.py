@@ -97,11 +97,21 @@ with setup:
         else:
             angles = f"{a0:g}:{a1:g}:{da:g}"
             n = max(int(math.floor((a1 - a0) / da + 1e-9)) + 1, 0)
-        est = n * (0.6 if level <= 0.7 else 1.2 if level <= 1 else 3.0) * \
-            (3 if mach >= 0.5 else 1) / max(jobs, 1)
+        pf = None
+        if spec is not None:
+            pf = views.prerun_polar(spec, re, angles, mach, "fixed" if tr.startswith("fixed") else
+                                    "off" if tr.startswith("fully") else "free",
+                                    f"{xu:g},{xl:g}" if tr.startswith("fixed") else None, level, jobs,
+                                    mach > 0 and comp_model.startswith("Prandtl"), regime, ncrit)
+        blocked = bool(pf) and pf["level"] == "error"
+        override = blocked and st.checkbox("Run anyway", False, help="The checks found an error. Run only if "
+                                                                      "you know why it doesn't apply.")
         c1, c2 = st.columns([1, 1], vertical_alignment="center")
-        go_ = c1.button("Run polar", type="primary", disabled=spec is None or n < 1, width="stretch")
-        c2.caption(f"{n} angles, about {est:.0f}–{3 * est:.0f} min")
+        go_ = c1.button("Run polar", type="primary", width="stretch",
+                        disabled=spec is None or n < 1 or (blocked and not override))
+        rt = (pf or {}).get("runtime")
+        c2.caption(f"{n} angles, about {C.fmt_duration(rt['expected_s'])} "
+                   f"({C.fmt_duration(rt['low_s'])}–{C.fmt_duration(rt['high_s'])})" if rt else f"{n} angles")
 
 with preview:
     if spec is not None:

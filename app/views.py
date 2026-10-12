@@ -343,6 +343,45 @@ def trust_details(out, d, ass):
         st.rerun()
 
 
+PF_LEVEL = {"ok": ("green", "ok"), "info": ("gray", "note"), "warn": ("orange", "check"), "error": ("red", "error")}
+PF_HEAD = {"ok": ("green", "Ready to run"), "info": ("green", "Ready to run"),
+           "warn": ("orange", "Ready, with warnings"), "error": ("red", "Blocked: fix the errors")}
+
+
+@st.cache_data(show_spinner=False, max_entries=64)
+def _prerun_polar(spec, re, angles, mach, transition, xtr, level, jobs, pg, regime, ncrit, deep):
+    import preflight as PF
+    return PF.check_polar(spec, re, angles, mach, transition, ncrit, xtr, level, jobs, pg, regime, deep)
+
+
+def prerun_items(items, expanded=False, title=None, level=None):
+    import preflight as PF
+    lev = level or PF.worst(items)
+    color, head = PF_HEAD[lev]
+    with st.expander(f"{title or 'Pre-run check'}: {head}", expanded=expanded or lev in ("warn", "error"),
+                     icon=":material/checklist:"):
+        for i in items:
+            c, lab = PF_LEVEL[i["level"]]
+            st.markdown(f":{c}-badge[{lab}] **{i['check']}** — {i['detail']}")
+
+
+def prerun_polar(spec, re, angles, mach, transition, xtr, level, jobs, pg, regime, ncrit):
+    """pre-run checks of an airfoil polar, shown above the Run button; returns the result"""
+    key = f"pfdeep{spec}{re}{level}"
+    deep = st.session_state.get(key, False)
+    try:
+        r = _prerun_polar(str(spec), float(re), str(angles), float(mach), transition, xtr, float(level), int(jobs),
+                          bool(pg), regime, float(ncrit), deep)
+    except Exception as e:                                         # noqa: BLE001
+        st.caption(f"Pre-run check unavailable: {e}")
+        return None
+    prerun_items(r["items"])
+    if not deep and st.button("Check the mesh too (builds it, a few seconds)", key=key + "b"):
+        st.session_state[key] = True
+        st.rerun()
+    return r
+
+
 def trust_notes(tool, title="Confidence", **ctx):
     import trust as T
     ui.trust_notes(T.tool_notes(tool, **ctx), title)
