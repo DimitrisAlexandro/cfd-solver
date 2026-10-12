@@ -116,3 +116,16 @@ cd src
 python airfoil.py polar ../validation/reference/e387.dat --re 2e5 --alpha -2:10:2 --xfoil
 python validate_lowre.py            # Eppler 387 at Re 1e5, 2e5, 3e5 vs NASA Langley LTPT and XFOIL (~1.5 h)
 ```
+
+## Wing structure (first pass)
+
+Aircraft → **Wing structure** (`src/wing_structure.py`) sizes the wing box for every case of a Flight
+loads run: spar caps, webs, skins and ribs (aluminium 2024-T3 / 7075-T6, CFRP or GFRP), the wing mass
+against Raymer's Class II estimate, EI and GJ, deflection and twist, divergence and aileron-reversal
+speeds and a flutter estimate (typical section with Theodorsen aerodynamics) against CS-23.629's 1.2 V_D.
+
+```bash
+cd src
+python loads.py ../cases/aircraft/demo_trainer.json --vc 60 --out ../cases/loads_demo
+python wing_structure.py ../cases/aircraft/demo_trainer.json ../cases/loads_demo/loads.json --out ../cases/struct_demo
+```

@@ -39,6 +39,9 @@ TOOLS = {
         ("tools/15_Loads.py", "Flight loads",
          "V–n diagram, load cases, shear, bending and torsion along the span, Nastran export.",
          "about 30 s"),
+        ("tools/21_Wing_structure.py", "Wing structure",
+         "Wing box from the flight loads: caps, webs, skins, mass, stiffness, deflection, divergence, "
+         "aileron reversal and a flutter estimate.", "instant"),
         ("tools/16_Performance.py", "Performance",
          "Speeds, climb, ceilings, range, endurance, glide, takeoff and landing distances.", "about 1 min"),
     ],
