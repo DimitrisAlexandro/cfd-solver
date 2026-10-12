@@ -13,8 +13,8 @@ ui.header("AeroLab", "Airfoil and wing aerodynamics with your own mesher and RAN
 TOOLS = {
     "Analysis": [
         ("tools/1_Airfoil_analysis.py", "Airfoil polar",
-         "Cl, Cd, Cm against α; Cp, Cf and flow fields. Free or fixed transition, compressible "
-         "with shocks.", "10–30 min"),
+         "Cl, Cd, Cm against α; Cp, Cf and flow fields. Free or fixed transition, laminar separation "
+         "bubbles at low Re (UAV / model scale), compressible with shocks.", "10–30 min"),
         ("tools/2_Multi_element.py", "Multi-element airfoil",
          "Slat, main and flap on one mesh; forces per element.", "5–10 min per angle"),
         ("tools/3_Wing.py", "Wing",

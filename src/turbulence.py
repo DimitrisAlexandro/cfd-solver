@@ -74,6 +74,11 @@ class SpalartAllmaras:
         # intermittency: 1 = turbulent (default), 0 = laminar region (eddy
         # viscosity and production off) - set by transition.Transition
         self.gamma = None
+        # separation-induced transition (transition.Transition): cells of the
+        # separated shear layer just behind the transition point, where nuT is
+        # held at least at a turbulent level - a trip, as SA's own trip term
+        # (ft1) does; None = off
+        self.seed = None
 
     # ------------------------------------------------------------------
     def fv1(self, nuT=None):
@@ -196,6 +201,18 @@ class SpalartAllmaras:
         # under-relaxation
         diag_r = diag / self.alpha
         src = src + (1 - self.alpha) * diag_r * nuT
+        if self.seed is not None:
+            # trip: nuT >= the seed level, imposed implicitly (penalty) so that the
+            # residual measures the converged state (a floor applied after the
+            # solve kept the residual from falling: every low-Re point ran to
+            # the iteration limit)
+            idx, val = self.seed
+            tgt = np.maximum(nuT[idx], val)
+            pen = 1e6 * diag_r[idx]
+            diag_r = diag_r.copy()
+            diag_r[idx] += pen
+            src = src.copy()
+            src[idx] += pen * tgt
         pat = getattr(s, "_pattern", None)
         if pat is not None:                     # fixed CSR pattern (kernels)
             A = pat.matrix(diag_r, a_on, a_no)
