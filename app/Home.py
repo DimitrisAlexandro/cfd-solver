@@ -13,8 +13,8 @@ ui.header("AeroLab", "Airfoil and wing aerodynamics with your own mesher and RAN
 TOOLS = {
     "Analysis": [
         ("tools/1_Airfoil_analysis.py", "Airfoil polar",
-         "Cl, Cd, Cm against α; Cp, Cf and flow fields. Free or fixed transition, compressible "
-         "with shocks.", "10–30 min"),
+         "Cl, Cd, Cm against α; Cp, Cf and flow fields. Free or fixed transition, laminar separation "
+         "bubbles at low Re (UAV / model scale), compressible with shocks.", "10–30 min"),
         ("tools/2_Multi_element.py", "Multi-element airfoil",
          "Slat, main and flap on one mesh; forces per element.", "5–10 min per angle"),
         ("tools/3_Wing.py", "Wing",
@@ -24,6 +24,13 @@ TOOLS = {
     "Aircraft": [
         ("tools/12_Aircraft_model.py", "Aircraft model",
          "Wing, tails, fin, control surfaces, fuselage, mass and c.g., in 3D.", "instant"),
+        ("tools/18_Weight_balance.py", "Weight and balance",
+         "Component masses, loading diagram, scissor plot for tail sizing, landing-gear checks.", "seconds"),
+        ("tools/19_Drag_buildup.py", "Drag buildup",
+         "CD0 component by component: friction, form factors, gear, cooling, leakage.", "instant"),
+        ("tools/20_Propeller.py", "Propeller and engine",
+         "Minimum-induced-loss blade design, BEMT maps, fixed pitch or constant speed; piston, "
+         "turboprop or electric.", "seconds"),
         ("tools/13_Stability.py", "Stability and control",
          "Trim, neutral point, all derivatives, hinge moments, flight modes and responses.", "seconds"),
         ("tools/14_Aero_database.py", "Aero database",
@@ -32,10 +39,19 @@ TOOLS = {
         ("tools/15_Loads.py", "Flight loads",
          "V–n diagram, load cases, shear, bending and torsion along the span, Nastran export.",
          "about 30 s"),
+        ("tools/21_Wing_structure.py", "Wing structure",
+         "Wing box from the flight loads: caps, webs, skins, mass, stiffness, deflection, divergence, "
+         "aileron reversal and a flutter estimate.", "instant"),
+        ("tools/22_Aeroelasticity.py", "Aeroelasticity",
+         "Wing modes, 3D unsteady aerodynamics, p-k flutter with aileron flutter and mass balance, "
+         "divergence, reversal, flexible loads.", "seconds"),
         ("tools/16_Performance.py", "Performance",
          "Speeds, climb, ceilings, range, endurance, glide, takeoff and landing distances.", "about 1 min"),
     ],
     "Design": [
+        ("tools/17_Conceptual_sizing.py", "Conceptual sizing",
+         "Requirements in, aircraft out: constraint diagram, mission fuel or battery, Class I/II weights, "
+         "geometry, gear and propulsion, verified with the performance tool.", "seconds"),
         ("tools/5_Inverse_design.py", "Inverse design",
          "Pressure distribution in, airfoil shape out.", "seconds"),
         ("tools/6_Optimizer.py", "Shape optimizer",

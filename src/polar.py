@@ -16,9 +16,12 @@ Cd_p, Cd_v, Cm (about c/4, nose-up positive), wall Cp/Cf.
     steady RANS cannot settle) is reported with the mean and the amplitude of
     the coefficients over the last iterations and flagged "unsteady"
 
-Regimes: Re >= 1e5 -> Spalart-Allmaras, y+ < 1 mesh (validate_naca0012_sa),
-with free transition (e^N envelope, transition.py) by default;
-Re < 1e5 -> laminar (validate_airfoil settings).
+Regimes: Re >= 2e4 -> Spalart-Allmaras, y+ < 1 mesh (validate_naca0012_sa),
+with free transition (e^N envelope, transition.py) by default; from 2e4 to
+~5e5 this is the low-Re mode: laminar separation bubbles with
+separation-induced transition (validate_lowre.py, Eppler 387);
+Re < 2e4 -> laminar (validate_airfoil settings). regime="laminar" / "rans"
+forces either.
 """
 
 import math
@@ -34,7 +37,20 @@ from fvmesh import FVMesh
 from postproc import wall_data
 from simple_solver import SimpleSolver
 
-LAMINAR_RE = 1e5
+LAMINAR_RE = 1e5          # multi-element airfoils need Re >= this (Spalart-Allmaras)
+RANS_RE_MIN = 2e4         # low-Re mode: single airfoils use RANS + e^N transition down to here
+
+
+def uses_rans(re, regime="auto"):
+    """flow model of a single airfoil: "rans" (Spalart-Allmaras + transition),
+    "laminar" (no turbulence model) or "auto": RANS from Re 2e4 (low-Re mode,
+    laminar separation bubbles with separation-induced transition), laminar
+    below. Before the low-Re mode the switch was at 1e5."""
+    if regime == "laminar":
+        return False
+    if regime == "rans":
+        return True
+    return re >= RANS_RE_MIN
 
 
 def resolve_solver(solver, re):
@@ -64,11 +80,11 @@ def coefficients(solver, walls, U):
     return tot, per
 
 
-def make_case(spec, re, alpha, level=1.0, farfield=None):
+def make_case(spec, re, alpha, level=1.0, farfield=None, regime="auto"):
     """Airfoil spec -> (FVMesh, mesh dict, patches, bcs, U_inf, turbulence, info).
     info["walls"]: the wall patch names (["wall"], or wall_<element> for a
     multi-element airfoil, see multi_element.py)."""
-    turb = re >= LAMINAR_RE
+    turb = uses_rans(re, regime) if not me.is_multi(spec) else re >= LAMINAR_RE
     r = level
     U = (math.cos(math.radians(alpha)), math.sin(math.radians(alpha)))
     if me.is_multi(spec):
@@ -114,7 +130,7 @@ def _single_mesh(loop, info, re, alpha, level, farfield, turb):
 
 def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
               force_tol=2e-5, window=200, farfield=None, out=None, transition="free",
-              ncrit=9.0, sequencing=False, solver="auto", mach=0.0):
+              ncrit=9.0, sequencing=False, solver="auto", mach=0.0, regime="auto"):
     """One angle of attack. init: dict(xc, U, p, nuT, x_tr) from a neighbouring
     angle (warm start). transition (turbulent Re only): "free" (e^N, N_crit
     = ncrit), "off" (fully turbulent) or {"upper": x, "lower": x} (fixed trip).
@@ -148,16 +164,16 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
     k_it = 0.1 if solver == "coupled" else 1.0
     if window == 200:
         window = int(round(200 * k_it))
-    if sequencing and init is None and re >= LAMINAR_RE and level >= 0.85:
+    if sequencing and init is None and uses_rans(re, regime) and level >= 0.85:
         try:
             _, init = run_point(spec, re, alpha, level=0.7 * level, tol=1e-5,
                                 max_iter=max_iter, farfield=farfield, transition="off",
                                 sequencing=False, force_tol=force_tol, window=window,
-                                solver=solver if not compressible else "auto", mach=mach)
+                                solver=solver if not compressible else "auto", mach=mach, regime=regime)
             init["sequencing"] = True
         except (ValueError, FloatingPointError, np.linalg.LinAlgError):
             init = None                       # coarse start failed: cold start
-    fvm, mesh, patches, bcs, U, turb, info = make_case(spec, re, alpha, level, farfield)
+    fvm, mesh, patches, bcs, U, turb, info = make_case(spec, re, alpha, level, farfield, regime)
     multi = info.get("multi", False)
     # multi-element: the convection limiter acts on ALL cells during the
     # start (the thinned/redistributed quads in the coves and slots grew
@@ -312,6 +328,12 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
            "x_tr_lower": None if tr is None else round(tr.x_tr["lower"], 4),
            "transition_converged": None if tr is None else bool(tr.converged),
            "transition_converged_by": None if tr is None else tr.converged_by}
+    if tr is not None and tr.mode == "free" and tr.history:
+        # last estimates (how transition was found: N_crit, laminar separation + bubble, ...)
+        res["transition_estimates"] = [
+            {sd: {k: (round(v, 4) if isinstance(v, float) else v)
+                  for k, v in (e.get(sd) or {}).items() if k in ("x_est", "how", "x_sep", "N_end")}
+             for sd in ("upper", "lower")} for e in tr.history[-3:]]
     if (osc["flag"] or not s.converged) and len(hist) >= 20:   # mean + amplitude of the tail
         h = np.array(hist[-50:] if osc["flag"] else hist[len(hist) // 2:])
         for k, q in zip(("Cl", "Cd", "Cm"), (1, 2, 3)):
@@ -373,9 +395,18 @@ def _chain(args):
     i0 = int(np.argmin(np.abs(alphas)))
     out = []
     start_state = None
+    # low-Re mode: every angle from a cold start. A laminar separation bubble
+    # carried over from the previous angle tipped the next one into bursting
+    # (Eppler 387, Re 1e5: alpha 4 warm-started from alpha 2 Cd 0.049, cold
+    # 0.019), so results depended on the sweep order.
+    import transition as T
+    cold = (kw.get("transition", "free") == "free" and not me.is_multi(spec) and not kw.get("mach")
+            and uses_rans(re, kw.get("regime", "auto")) and re < T.LOWRE_MAX)
     for seq in (alphas[i0:], alphas[:i0][::-1]):
         state = start_state
         for a in seq:
+            if cold:
+                state = None
             try:
                 r, st = run_point(spec, re, a, level, init=state, **kw)
             except (ValueError, FloatingPointError, np.linalg.LinAlgError, ZeroDivisionError) as err:
