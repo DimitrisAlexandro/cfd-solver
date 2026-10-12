@@ -59,6 +59,14 @@ def check_environment():
                          f"  pip install -r {ROOT / 'requirements.txt'}")
 
 
+def polar_cache_signature():
+    """the section-polar library the aircraft tools read: adding or recomputing a polar
+    changes every aircraft analysis, so it is part of the aircraft node's fingerprint"""
+    if not POLAR_DIR.exists():
+        return ""
+    return _h(sorted((f.name, f.stat().st_size) for f in POLAR_DIR.glob("*.json")))[:16]
+
+
 def _h(obj):
     return hashlib.sha256(json.dumps(obj, sort_keys=True, default=str).encode()).hexdigest()
 
@@ -95,6 +103,19 @@ def _args_polar(p, inp, out):
     return a
 
 
+def _args_performance(p, inp, out):
+    a = ["performance.py", _ac(inp), "--power", p["power"], "--fuel", p["fuel"], "--alt", p["alt"],
+         "--prop-diameter", p.get("prop_diameter", 1.8), "--v-design", p.get("v_design", 60.0),
+         "--polar-dir", POLAR_DIR, "--out", out]
+    if p.get("propulsion") == "aircraft" and float(p["power"]) > 0:
+        prop = json.loads(Path(_ac(inp)).read_text()).get("propulsion")
+        if prop:
+            Path(out).mkdir(parents=True, exist_ok=True)
+            (Path(out) / "propulsion.json").write_text(json.dumps(prop, indent=1))
+            a += ["--propulsion", Path(out) / "propulsion.json"]
+    return a
+
+
 KINDS = {
     "aircraft": {
         "title": "Aircraft model", "script": "aircraft.py", "inputs": [], "output": "aircraft.json",
@@ -109,9 +130,10 @@ KINDS = {
                                      "--polar-dir", POLAR_DIR, "--out", out / "stability.json"]},
     "drag": {
         "title": "Drag buildup", "script": "drag_buildup.py", "inputs": ["aircraft"], "output": "drag_buildup.json",
-        "params": {"speed": 60.0, "alt": 0.0, "gear": "fixed_faired", "power": 0.0},
+        "params": {"speed": 60.0, "alt": 0.0, "gear": "fixed_faired", "power": 0.0, "engine": "piston"},
         "args": lambda p, inp, out: ["drag_buildup.py", _ac(inp), "--speed", p["speed"], "--alt", p["alt"],
-                                     "--gear", p["gear"], "--power", p["power"], "--out", out]},
+                                     "--gear", p["gear"], "--power", p["power"],
+                                     "--engine", p.get("engine", "piston"), "--out", out]},
     "weight_balance": {
         "title": "Weight and balance", "script": "weight_balance.py", "inputs": ["aircraft"],
         "output": "weight_balance.json", "params": {"sm_min": 0.05},
@@ -125,7 +147,13 @@ KINDS = {
                                      "--out", out]},
     "structure": {
         "title": "Wing structure", "script": "wing_structure.py", "inputs": ["aircraft", "loads"],
-        "output": "structure.json", "params": {"material": "aluminium 2024-T3", "spars": "0.15,0.65"},
+        "output": "structure.json", "params": {"material": "aluminium 2024-T3", "spars": "0.15,0.65",
+                                               "aileron_mass_per_area": 4.0, "aileron_cg_aft_hinge": 0.30,
+                                               "aileron_freq_hz": 15.0},
+        "help": {"aileron_cg_aft_hinge": "aileron c.g. behind its hinge, fraction of the aileron chord "
+                                         "(0 = mass balanced, < 0 = overbalanced)",
+                 "aileron_mass_per_area": "kg/m² of aileron", "aileron_freq_hz": "aileron rotation frequency "
+                                                                                 "(control-circuit stiffness)"},
         "args": lambda p, inp, out: ["wing_structure.py", _ac(inp), str(inp["loads"] / "loads.json"),
                                      "--material", p["material"], "--spars", p["spars"], "--out", out]},
     "aeroelastic": {
@@ -135,9 +163,11 @@ KINDS = {
                                      "--out", out]},
     "performance": {
         "title": "Performance", "script": "performance.py", "inputs": ["aircraft"], "output": "performance.json",
-        "params": {"power": 75.0, "fuel": 60.0, "alt": 0.0},
-        "args": lambda p, inp, out: ["performance.py", _ac(inp), "--power", p["power"], "--fuel", p["fuel"],
-                                     "--alt", p["alt"], "--polar-dir", POLAR_DIR, "--out", out]},
+        "params": {"power": 75.0, "fuel": 60.0, "alt": 0.0, "propulsion": "simple", "prop_diameter": 1.8,
+                   "v_design": 60.0},
+        "help": {"power": "kW at sea level; 0 = glider (glide polar only)",
+                 "propulsion": "simple (power × η) or aircraft (the model's saved engine + BEMT propeller)"},
+        "args": lambda p, inp, out: _args_performance(p, inp, out)},
     "polar": {
         "title": "Section polar (CFD)", "script": "airfoil.py", "inputs": [], "output": "polar.json",
         "params": {"airfoil": "naca2412", "re": 3e6, "mach": 0.0, "alpha": "-4:16:2", "transition": "free",
@@ -174,6 +204,8 @@ METRICS = {
                     ("V_div3d", "Divergence (3D), EAS", "m/s", "higher", lambda d: d["divergence"]["V_eas"]),
                     ("f1", "First mode", "Hz", "higher", lambda d: d["frequencies_hz"][0])],
     "performance": [("V_stall", "Stall speed", "m/s", "lower", lambda d: d["V_stall"]),
+                    ("glide", "Best glide ratio", "", "higher", lambda d: d["glide"]["best_ratio"]),
+                    ("min_sink", "Minimum sink", "m/s", "lower", lambda d: d["glide"]["min_sink"]),
                     ("V_max", "Maximum speed", "m/s", "higher", lambda d: d["V_max"]),
                     ("roc", "Best rate of climb", "m/s", "higher", lambda d: d["best_rate"]["roc"]),
                     ("ceiling", "Service ceiling", "m", "higher", lambda d: d["ceiling_service"]),
@@ -245,13 +277,20 @@ def build_aircraft(params, out):
     ac.save(Path(out) / "aircraft.json")
 
 
-def structured_aircraft(inp, out):
+def structured_aircraft(inp, out, params=None):
     """after wing_structure.py: the aircraft with the sizing attached (input of aeroelasticity)"""
     import aircraft as A
     import wing_structure as WS
     ac = A.Aircraft.load(_ac(inp))
     s = json.loads((Path(out) / "structure.json").read_text())["structure"]
-    ac.structure = WS.to_aircraft(s, (ac.structure or {}).get("aileron_dynamics"))
+    prm = params or {}
+    ail = dict((ac.structure or {}).get("aileron_dynamics") or
+               {"freq_hz": 15.0, "mass_per_area": 4.0, "cg_aft_hinge": 0.30, "gyration": 0.30})
+    for k_p, k_a in (("aileron_mass_per_area", "mass_per_area"), ("aileron_cg_aft_hinge", "cg_aft_hinge"),
+                     ("aileron_freq_hz", "freq_hz")):
+        if prm.get(k_p) is not None:
+            ail[k_a] = float(prm[k_p])
+    ac.structure = WS.to_aircraft(s, ail)
     ac.save(Path(out) / "aircraft_structured.json")
 
 
@@ -476,6 +515,8 @@ class Project:
         files = {k: file_hash(n["params"].get(k)) for k in kind.get("files", [])
                  if n["params"].get(k) not in (None, "", "demo") and not str(n["params"].get(k)).lower()
                  .startswith(("naca", "tmr"))}
+        if n["kind"] == "aircraft":
+            files["section_polars"] = polar_cache_signature()
         fp = _h({"kind": n["kind"], "params": n["params"], "files": files,
                  "inputs": {r: self.fingerprint(variant, s, memo) for r, s in sorted(n["inputs"].items())}})
         memo[nid] = fp
@@ -560,6 +601,8 @@ class Project:
                     for role, src in n["inputs"].items():
                         if rec.get("inputs", {}).get(role) != memo.get(src):
                             reasons.append(f"input changed: {nodes[src]['label']}")
+                    if not reasons and n["kind"] == "aircraft" and rec.get("cache") not in (None, polar_cache_signature()):
+                        reasons.append("section polar library changed (new or recomputed CFD polars)")
                     if not reasons:
                         reasons.append("an input file changed")
                     od = self.run_dir(n["kind"], rec["fp"])
@@ -622,7 +665,7 @@ class Project:
                     if rc != 0:
                         err = f"exit code {rc}: " + _tail(out / "run.log")
                     elif n["kind"] == "structure":
-                        structured_aircraft(inp, out)
+                        structured_aircraft(inp, out, n["params"])
                 if err is None and not (out / kind["output"]).exists():
                     err = f"no {kind['output']} written: " + _tail(out / "run.log")
             except Exception as ex:                          # noqa: BLE001
@@ -631,6 +674,7 @@ class Project:
                         elapsed=round(time.time() - t0, 1))
             (out / "meta.json").write_text(json.dumps(meta, indent=1))
             self._save_record(variant, nid, {"fp": fp, "params": n["params"], "time": time.time(),
+                                             "cache": polar_cache_signature() if n["kind"] == "aircraft" else None,
                                              "inputs": {r: self.fingerprint(variant, s, memo)
                                                         for r, s in n["inputs"].items()}})
             result[nid] = "failed" if err else "ok"

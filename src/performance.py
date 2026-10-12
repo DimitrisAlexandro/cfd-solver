@@ -352,10 +352,57 @@ def plots(res, out):
     fig.tight_layout(); fig.savefig(Path(out) / "performance.png", dpi=110); plt.close(fig)
 
 
+def run_glider(ac, altitude=0.0, polar_dir=None, ld_flap=0.0, log=print):
+    """unpowered aircraft (sailplane): trimmed polar, stall, glide ratio and sink polar"""
+    g = A.G0
+    Wt = ac.mass * g
+    log("[performance] glider: trimmed drag polar")
+    pol = trimmed_polar(ac, altitude, polar_dir)
+    if len(pol) < 4:
+        raise RuntimeError("trim failed for most lift coefficients: check the elevator and the c.g.")
+    CL = np.array([p["CL"] for p in pol])
+    CD = np.array([p["CD"] for p in pol])
+    CLmax = float(CL.max())
+    k2, k1, k0 = np.polyfit(CL[CL < 0.8 * CLmax], CD[CL < 0.8 * CLmax], 2)
+    rho = W.isa(altitude)[0]
+    Vs = math.sqrt(2 * Wt / (rho * ac.S * CLmax))
+    V = np.linspace(1.02 * Vs, 4.0 * Vs, 300)
+    cl = 2 * Wt / (rho * V**2 * ac.S)
+    lo = cl < CL[0]
+    cd = np.where(lo, k0 + k1 * cl + k2 * cl**2, np.interp(cl, CL, CD))
+    LD = cl / cd
+    sink = V * cd / cl
+    ig, iS = int(np.nanargmax(LD)), int(np.nanargmin(sink))
+    return {"aircraft": ac.name, "mode": "glider", "altitude": altitude, "mass": ac.mass,
+            "propulsion": {"model": "none"}, "polar": pol,
+            "polar_fit": {"CD0": k0, "k1": k1, "k2": k2, "e_oswald": 1 / (math.pi * ac.b**2 / ac.S * k2)},
+            "CLmax_trimmed": CLmax, "V_stall": Vs,
+            "glide": {"best_ratio": float(LD[ig]), "V_best_glide": float(V[ig]),
+                      "min_sink": float(sink[iS]), "V_min_sink": float(V[iS])},
+            "curves": {"V": V.tolist(), "sink": sink.tolist(), "L_D": LD.tolist()}}
+
+
+def glider_plots(res, out):
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    c = res["curves"]
+    fig, ax = plt.subplots(1, 2, figsize=(10, 3.8))
+    ax[0].plot(c["V"], [-s for s in c["sink"]])
+    ax[0].set_xlabel("V (m/s)"); ax[0].set_ylabel("vertical speed (m/s)"); ax[0].set_title("Sink polar")
+    ax[1].plot(c["V"], c["L_D"])
+    ax[1].set_xlabel("V (m/s)"); ax[1].set_ylabel("L/D"); ax[1].set_title("Glide ratio")
+    for a in ax:
+        a.grid(alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(Path(out) / "performance.png", dpi=110)
+    plt.close(fig)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("aircraft")
-    ap.add_argument("--power", type=float, default=75.0, help="engine power at sea level (kW)")
+    ap.add_argument("--power", type=float, default=75.0, help="engine power at sea level (kW); 0 = glider")
     ap.add_argument("--eta", type=float, default=0.80)
     ap.add_argument("--prop-diameter", type=float, default=1.8)
     ap.add_argument("--bsfc", type=float, default=300.0, help="g/kWh")
@@ -373,6 +420,16 @@ def main(argv=None):
     ap.add_argument("--out", required=True)
     a = ap.parse_args(argv)
     ac = A.Aircraft.load(a.aircraft)
+    if a.power <= 0 and not a.propulsion:                 # glider
+        res = run_glider(ac, a.alt, a.polar_dir)
+        out = Path(a.out)
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "performance.json").write_text(json.dumps(A._jsonable(res), indent=1))
+        glider_plots(res, out)
+        g_ = res["glide"]
+        print(f"V_stall {res['V_stall']:.1f} m/s, best glide {g_['best_ratio']:.1f} at {g_['V_best_glide']:.1f} m/s, "
+              f"min sink {g_['min_sink']:.2f} m/s at {g_['V_min_sink']:.1f} m/s")
+        return
     if a.propulsion:
         import propeller as PR
         prop = PR.make_propulsion(json.loads(Path(a.propulsion).read_text()), a.polar_dir)
