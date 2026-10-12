@@ -11,3 +11,5 @@ streamlit>=1.50
 plotly
 pandas
 openpyxl
+python-docx      # Word reports
+reportlab        # PDF reports

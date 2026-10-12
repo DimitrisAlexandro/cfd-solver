@@ -57,7 +57,7 @@ and the NACA 0012 (`data/wing_polars`), so the aircraft tools use CFD sections f
 | Analysis | Airfoil polar (incl. plain flaps, compressible), Multi-element, Wing | `src/airfoil.py`, `src/wing.py` |
 | Aircraft | Aircraft model (3D), Weight and balance, Drag buildup, Propeller and engine, Stability and control, Aero database, Flight loads, Performance | `src/aircraft.py`, `src/weight_balance.py`, `src/drag_buildup.py`, `src/propeller.py`, `src/aero_database.py`, `src/loads.py`, `src/performance.py` |
 | Design | Conceptual sizing, Inverse design, Shape optimizer, Wing sizing, Drag rise | `src/sizing.py`, `src/design_*.py` |
-| Workspace | Projects (dependency graph, stale tracking, variants, comparison) | `src/project.py` |
+| Workspace | Projects (templates, pre-run checks, dependency graph, variants, comparison, reports) | `src/project.py`, `src/templates.py`, `src/preflight.py`, `src/report.py` |
 | Data | Geometry check, Polar library, Runs, Validation, Confidence | `src/trust.py` |
 
 Examples:
@@ -109,6 +109,42 @@ python project.py variant ../cases/projects/trainer-study cfrp --set "structure.
 python project.py status ../cases/projects/trainer-study                # what is stale, and why
 python project.py run ../cases/projects/trainer-study --variant cfrp    # 2 analyses, the rest shared
 python project.py compare ../cases/projects/trainer-study
+```
+
+## Pre-run checks, templates and reports
+
+**Pre-run checks** (`src/preflight.py`) run before anything is started, in about a second:
+
+- airfoil polar: geometry (file, thickness, trailing edge, flap angle), Reynolds and Mach sanity, angle
+  range, the expected y+ at the suction peak (fitted to 22 converged runs, within 5 %), optional mesh
+  quality (builds the mesh, ~3 s: cells, non-orthogonality, size jumps), the expected confidence of every
+  angle and the runtime, calibrated on the runs already on this machine;
+- project variant: aircraft file and changes, section data at each surface's flight Reynolds number (with
+  a one-click "compute section polars" action), speeds against the stall speed, propulsion and battery,
+  structure inputs, and the runtime of everything that will run.
+
+Errors block the Run button (with a "Run anyway" override); warnings explain what to change.
+
+**Templates** (`src/templates.py`): a ready-to-run project for each class — two-seat trainer,
+motor-glider (electric self-launch), 15 m sailplane (glide polar), 15 kg fixed-wing UAV, eVTOL lift +
+cruise (wing-borne flight) — with the geometry, masses, propulsion, flight conditions, loads category and
+aileron balance of that class. Trainer, motor-glider and eVTOL are sized from requirements; sailplane and
+UAV use typical mass fractions (Raymer's statistics don't hold there). Each template states its limits.
+
+**Reports** (`src/report.py`): one button turns a variant into a design report, or several variants into
+a trade study, as PDF or Word: results with inputs and confidence, figures, key findings (better / worse
+against the reference), evidence and limits of every tool, validated cases, and a traceability table
+(result id = fingerprint of the inputs).
+
+```bash
+cd src
+python templates.py list
+python templates.py new glider "My sailplane"
+python preflight.py polar naca2412 --re 3e6 --alpha=-4:16:2 --deep
+python preflight.py project ../cases/projects/my-sailplane
+python project.py run ../cases/projects/my-sailplane
+python report.py design ../cases/projects/my-sailplane --format pdf
+python report.py trade ../cases/projects/trainer-study --variants baseline,heavy,cfrp --format docx
 ```
 
 ## Confidence of every result (trust layer)

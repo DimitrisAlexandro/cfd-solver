@@ -240,10 +240,10 @@ def check_polar(spec, re, alpha, mach=0.0, transition="free", ncrit=9.0, xtr=Non
                 ue.append(math.sqrt(max(1.0 - cp.min(), 0.0)))
             ue_max = max(ue)
             yp = YPLUS_FIT[0] * ue_max ** YPLUS_FIT[1] / refine
-            lev = "ok" if yp <= 1.6 else "warn"
+            lev = "ok" if yp <= 1.7 else "warn"
             items.append(item(lev, "Wall resolution (y+)",
                               f"expected y+ max ≈ {yp:.2f} at the suction peak (U_e/U ≈ {ue_max:.2f})"
-                              + (": SA without wall functions is fine up to ~1.5" if lev == "ok" else
+                              + (": fine (the validated NASA TMR runs reach 1.6 at 16°)" if lev == "ok" else
                                  ": wall cells too thick at the leading edge; mesh level 1.4 lowers it by 1.4×")))
         except Exception as e:                                     # noqa: BLE001
             items.append(item("info", "Wall resolution (y+)", f"not estimated ({e})"))

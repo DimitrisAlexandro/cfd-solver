@@ -601,8 +601,11 @@ class Project:
                     for role, src in n["inputs"].items():
                         if rec.get("inputs", {}).get(role) != memo.get(src):
                             reasons.append(f"input changed: {nodes[src]['label']}")
-                    if not reasons and n["kind"] == "aircraft" and rec.get("cache") not in (None, polar_cache_signature()):
-                        reasons.append("section polar library changed (new or recomputed CFD polars)")
+                    if not reasons and n["kind"] == "aircraft":
+                        if "cache" not in rec:
+                            reasons.append("the section polar library is now tracked: one-time recompute")
+                        elif rec["cache"] != polar_cache_signature():
+                            reasons.append("section polar library changed (new or recomputed CFD polars)")
                     if not reasons:
                         reasons.append("an input file changed")
                     od = self.run_dir(n["kind"], rec["fp"])

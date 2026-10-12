@@ -41,22 +41,68 @@ def aircraft_files():
     return ["demo"] + [str(p) for p in sorted(C.AIRCRAFT.glob("*.json"))]
 
 
+def prerun(path, variant):
+    """pre-run checks of the variant: per analysis, with 'compute section polars' actions"""
+    import preflight as PF
+    try:
+        pre = PF.check_project(PR.Project.load(path), variant)
+    except Exception as e:                                     # noqa: BLE001
+        st.caption(f"Pre-run check unavailable: {e}")
+        return None
+    items = list(pre["items"])
+    for nid, v in pre["nodes"].items():
+        for i in v["items"]:
+            if i["level"] in ("warn", "error") or (i["check"] == "Section data" and v["will_run"]):
+                items.append({**i, "check": f"{v['label']}: {i['check']}"})
+    views.prerun_items(items, title="Checks before running" if pre["plan"] else "Checks of the current setup",
+                       level=pre["level"])
+    need = {}
+    for v in pre["nodes"].values():
+        for i in v["items"]:
+            if i["check"] == "Section data" and i["level"] == "warn" and "Re " in i["detail"]:
+                af = i["detail"].split("(")[1].split(")")[0]
+                re_ = float(i["detail"].rsplit("Re ", 1)[1].rstrip(".").split()[0])
+                need[af] = max(need.get(af, 0.0), re_)
+    if need:
+        st.caption("Section polars at the flight Reynolds number make stall and drag quotable. Each takes "
+                   "about 15–40 min once; afterwards every aircraft analysis uses them and the project marks "
+                   "its results out of date.")
+        cols = st.columns(len(need))
+        for c, (af, re_) in zip(cols, need.items()):
+            if c.button(f"Compute {C.display_name(af)} at Re {C.fmt_re(re_)}", key=f"secpol{af}{re_}",
+                        width="stretch"):
+                out = C.CASES / f"sections_{af}_{int(time.time())}"
+                C.start_job("aero_db", f"Section polars {C.display_name(af)} Re {C.fmt_re(re_)}",
+                            ["aero_database.py", "sections", "--airfoil", af, "--re", f"{re_:.3g}",
+                             "--mach", "0.0", "--alpha=-6:22:2", "--polar-dir", C.POLAR_CACHE, "--out", out], out)
+                st.success("Started: follow it on the Runs page.")
+    return pre
+
+
 # ----------------------------------------------------------------------
 # project picker
 # ----------------------------------------------------------------------
 projects = PR.Project.list()
 top1, top2 = st.columns([4, 1], vertical_alignment="bottom")
 with top2.popover("New project", width="stretch"):
+    import templates as TP
     nm = st.text_input("Name", placeholder="Trainer study")
-    tpl = st.radio("Start from", ["aircraft", "section", "empty"], horizontal=False,
-                   format_func={"aircraft": "Aircraft analysis chain (stability, drag, weight and balance, loads, "
-                                            "structure, aeroelasticity, performance)",
-                                "section": "Section polar study (CFD)", "empty": "Empty"}.get)
-    src = st.selectbox("Aircraft", aircraft_files(), disabled=tpl != "aircraft",
+    kinds = TP.ORDER + ["custom", "section", "empty"]
+    tpl = st.radio("Start from", kinds, horizontal=False,
+                   format_func=lambda k: TP.TEMPLATES[k]["title"] if k in TP.TEMPLATES else
+                   {"custom": "My own aircraft model (analysis chain)", "section": "Section polar study (CFD)",
+                    "empty": "Empty"}[k])
+    if tpl in TP.TEMPLATES:
+        st.caption(TP.TEMPLATES[tpl]["description"])
+    src = st.selectbox("Aircraft", aircraft_files(), disabled=tpl != "custom",
                        format_func=lambda s: "Demo trainer (750 kg)" if s == "demo" else Path(s).stem)
     desc = st.text_input("Description", "")
     if st.button("Create", type="primary", disabled=not nm.strip()):
-        p = PR.Project.create(nm.strip(), tpl, src, description=desc)
+        with st.spinner("Building the project"):
+            if tpl in TP.TEMPLATES:
+                p = TP.create_project(tpl, nm.strip(), description=desc or None)
+            else:
+                p = PR.Project.create(nm.strip(), "aircraft" if tpl == "custom" else tpl, src, description=desc)
         st.session_state["proj"] = str(p.dir)
         st.rerun()
 
@@ -75,6 +121,10 @@ st.session_state["proj"] = sel
 p = PR.Project.load(sel)
 if p.data.get("description"):
     st.caption(p.data["description"])
+if p.data.get("template", {}).get("notes"):
+    with st.expander(f"About this template: {p.data['template']['title']}"):
+        for n_ in p.data["template"]["notes"]:
+            st.markdown(f"- {n_}")
 
 vnames = list(p.variants)
 vkey = f"var{sel}"
@@ -89,7 +139,8 @@ status = p.status(variant)
 plan = p.plan(variant)
 jk = f"pjob{sel}{variant}"
 
-tab_g, tab_e, tab_v, tab_c = st.tabs(["Graph and status", "Edit", "Variants", "Compare variants"])
+tab_g, tab_e, tab_v, tab_c, tab_r = st.tabs(["Graph and status", "Edit", "Variants", "Compare variants",
+                                              "Reports"])
 
 # ----------------------------------------------------------------------
 with tab_g:
@@ -102,9 +153,14 @@ with tab_g:
         counts = {s: sum(v["state"] == s for v in status.values()) for s in STATE}
         st.markdown(" ".join(f":{STATE[s]}-badge[{n} {s}]" for s, n in counts.items() if n))
     with right:
+        pre = prerun(sel, variant)
+        blocked = pre is not None and pre["level"] == "error" and bool(plan)
+        override = blocked and st.checkbox("Run anyway", False, key=f"ovr{sel}{variant}",
+                                           help="The checks found an error. Run only if you know why it doesn't apply.")
         c1, c2 = st.columns(2)
         running = jk in st.session_state and C.get_job(st.session_state[jk])["status"] == "running"
-        if c1.button(f"Run what's out of date ({len(plan)})", type="primary", disabled=not plan or running,
+        if c1.button(f"Run what's out of date ({len(plan)})", type="primary",
+                     disabled=not plan or running or (blocked and not override),
                      width="stretch", help="Runs the stale and never-run analyses in dependency order"):
             jdir = p.dir / "_jobs" / time.strftime("%Y%m%d-%H%M%S")
             st.session_state[jk] = C.start_job("project", f"Project {p.name} / {variant}: {len(plan)} analyses",
@@ -358,3 +414,48 @@ with tab_c:
                                for n_, k_, a_, b_ in p.diff(vs[0], v)]
                     st.dataframe(pd.DataFrame(dd) if dd else pd.DataFrame([{"": "no parameter differences"}]),
                                  hide_index=True, width="stretch")
+
+# ----------------------------------------------------------------------
+with tab_r:
+    import report as RP
+    st.markdown("A report collects the results with their inputs, confidence levels, the evidence and limits "
+                "of every tool and the validation references. Stale results are marked as such.")
+    c1, c2 = st.columns(2, gap="large")
+    with c1:
+        with st.container(border=True):
+            ui.step("Design report: one variant", first=True)
+            rv = st.selectbox("Variant", vnames, index=vnames.index(variant), key="rpv")
+            rf = st.segmented_control("Format", ["pdf", "docx"], default="pdf", key="rpf",
+                                      format_func={"pdf": "PDF", "docx": "Word"}.get) or "pdf"
+            if st.button("Build design report", type="primary", width="stretch"):
+                with st.spinner("Writing the report"):
+                    out = p.dir / "reports" / f"design_{PR.slugify(rv)}_{time.strftime('%Y%m%d-%H%M')}.{rf}"
+                    RP.write(RP.design_report(p, rv), out, rf)
+                st.session_state[f"rep{sel}"] = str(out)
+    with c2:
+        with st.container(border=True):
+            ui.step("Trade study: several variants", first=True)
+            order = [p.baseline] + [v for v in vnames if v != p.baseline]
+            tv = st.multiselect("Variants (first = reference)", order, default=order[:3], key="rtv")
+            tf = st.segmented_control("Format", ["pdf", "docx"], default="pdf", key="rtf",
+                                      format_func={"pdf": "PDF", "docx": "Word"}.get) or "pdf"
+            if st.button("Build trade study", type="primary", width="stretch", disabled=len(tv) < 2):
+                with st.spinner("Writing the report"):
+                    out = p.dir / "reports" / f"trade_{time.strftime('%Y%m%d-%H%M')}.{tf}"
+                    RP.write(RP.trade_report(p, tv), out, tf)
+                st.session_state[f"rep{sel}"] = str(out)
+            if len(tv) < 2:
+                st.caption("Pick at least two variants.")
+    made = st.session_state.get(f"rep{sel}")
+    if made and Path(made).exists():
+        mime = "application/pdf" if made.endswith(".pdf") else \
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        st.download_button(f"Download {Path(made).name}", Path(made).read_bytes(), file_name=Path(made).name,
+                           mime=mime, type="primary")
+    old_reps = sorted((p.dir / "reports").glob("*.*"), key=lambda f: -f.stat().st_mtime) \
+        if (p.dir / "reports").exists() else []
+    old_reps = [f for f in old_reps if f.suffix in (".pdf", ".docx")]
+    if old_reps:
+        st.markdown("#### Earlier reports")
+        for f in old_reps[:10]:
+            st.download_button(f.name, f.read_bytes(), file_name=f.name, key=f"dl{f.name}")
