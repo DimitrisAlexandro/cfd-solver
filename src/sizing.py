@@ -471,30 +471,8 @@ def size(req=None, tol=0.5, max_it=40, log=print):
     # final consistent model: masses, positions, wing placement, tail volumes, gear
     S = W0 * G0 / dp["ws"]
     ac = rescale(ac, req, W0, S)
-    comps = components_from(req, ac, m2, ms["fuel"], ms["battery"])
-    for _ in range(3):
-        ac, comps = WB.place_wing(ac, comps, req["cg_target"])
-        ac = resize_tails(ac, req)
-        m2 = class_ii(req, ac, W0, ms["fuel"], p_kw, ms["L_D_cruise"], ms["battery"])
-        for c in comps:
-            if c["group"] == "empty" and c["name"] in m2:
-                c["mass"] = m2[c["name"]]
-        comps = WB.place([{k: v for k, v in c.items() if k not in ("x", "z") or c["name"] not in
-                           (ac.surfaces[1].name, ac.surfaces[2].name)} for c in comps], ac)
-    ld = WB.loading(ac, comps)
-    prop_d = prop_diameter(p_kw / req.get("engines", 1), req)
-    ac.gear = WB.suggest_gear(ac, ld, prop_diameter=prop_d)
-    comps = WB.place([{k: v for k, v in c.items() if k not in ("x", "z") or c["name"] not in
-                       ("main gear", "nose gear")} for c in comps], ac)
-    ld = WB.loading(ac, comps)
-    ac.components = comps
-    ac.mass = W0
-    _, xcg, zcg = WB.cg_of([c | {"mass": c.get("max", c["mass"])} if c["group"] != "empty" else c for c in comps])
-    ac.cg = (ld["cases"]["crew + payload + full fuel"]["x"], 0.0, ld["cases"]["crew + payload + full fuel"]["z"])
-    db = drag(req, ac, p_kw)
-    ac.cd_extra = DB.cd_extra_for_model(db)
-    ac.propulsion = propulsion_spec(req, p_kw, prop_d)
-    gc = WB.gear_checks(ac, ld, prop_diameter=prop_d)
+    ac, comps, ld, prop_d, gc, db, m2 = finalize(req, ac, W0, m2, ms["fuel"], ms["battery"], p_kw,
+                                                 ms["L_D_cruise"])
     m_e = sum(c["mass"] for c in comps if c["group"] == "empty")
     con = constraints(req, db["CD0"], 1 / (math.pi * req["aspect_ratio"] * e))
     res = {"requirements": req, "converged": converged, "iterations": hist,
@@ -509,6 +487,38 @@ def size(req=None, tol=0.5, max_it=40, log=print):
            "drag": DB.table(db), "loading": {k: v for k, v in ld.items() if k != "components"},
            "gear": gc, "prop_diameter": prop_d, "aircraft": ac.to_dict()}
     return res, ac
+
+
+def finalize(req, ac, W0, m2, fuel, battery, p_kw, L_D=12.0, class_ii_masses=True):
+    """masses and positions, wing placed for the c.g. target, tails from the volume
+    coefficients, landing gear, extra drag and propulsion of a sized geometry.
+    class_ii_masses=False keeps the given empty masses (templates outside Raymer's
+    statistics: sailplanes, small UAVs). p_kw = 0: no propulsion (glider)."""
+    comps = components_from(req, ac, m2, fuel, battery)
+    for _ in range(3):
+        ac, comps = WB.place_wing(ac, comps, req["cg_target"])
+        ac = resize_tails(ac, req)
+        if class_ii_masses:
+            m2 = class_ii(req, ac, W0, fuel, p_kw, L_D, battery)
+            for c in comps:
+                if c["group"] == "empty" and c["name"] in m2:
+                    c["mass"] = m2[c["name"]]
+        comps = WB.place([{k: v for k, v in c.items() if k not in ("x", "z") or c["name"] not in
+                           (ac.surfaces[1].name, ac.surfaces[2].name)} for c in comps], ac)
+    ld = WB.loading(ac, comps)
+    prop_d = prop_diameter(p_kw / req.get("engines", 1), req) if p_kw > 0 else 0.0
+    ac.gear = WB.suggest_gear(ac, ld, prop_diameter=prop_d)
+    comps = WB.place([{k: v for k, v in c.items() if k not in ("x", "z") or c["name"] not in
+                       ("main gear", "nose gear")} for c in comps], ac)
+    ld = WB.loading(ac, comps)
+    ac.components = comps
+    ac.mass = W0
+    ac.cg = (ld["cases"]["crew + payload + full fuel"]["x"], 0.0, ld["cases"]["crew + payload + full fuel"]["z"])
+    db = drag(req, ac, p_kw)
+    ac.cd_extra = DB.cd_extra_for_model(db)
+    ac.propulsion = propulsion_spec(req, p_kw, prop_d) if p_kw > 0 else {}
+    gc = WB.gear_checks(ac, ld, prop_diameter=prop_d)
+    return ac, comps, ld, prop_d, gc, db, m2
 
 
 def rescale(ac, req, W0, S):

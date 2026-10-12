@@ -108,6 +108,7 @@ def show(out):
     TO, LD = r["takeoff"], r["landing"]
     k[4].metric("Takeoff to 15 m", f"{TO['total']:.0f} m" if TO.get("total") else "not possible")
     k[5].metric("Landing from 15 m", f"{LD['total']:.0f} m")
+    views.trust_notes("performance", flap_source=str(LD.get("flap_source", "")))
     c = r["curves"]
     V = np.array(c["V"])
     pr = r.get("propulsion", {})
