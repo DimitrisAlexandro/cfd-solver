@@ -119,3 +119,23 @@ def test_aircraft_file_content_is_tracked(tmp_path):
     f.write_text(json.dumps(d))                                  # edited outside the project
     st = p.status("baseline")["aircraft"]
     assert st["state"] == "stale" and st["reasons"] == ["an input file changed"]
+
+
+def test_skip_propagates_through_the_chain(tmp_path):
+    """a failed node skips its children *and* grandchildren (aeroelastic after a skipped structure)"""
+    p = PR.Project.create("Chain", "empty", root=tmp_path)
+    p.add_node("baseline", "aircraft", "aircraft", params={"source": str(tmp_path / "missing.json")})
+    p.add_node("baseline", "loads", "loads")
+    p.add_node("baseline", "structure", "structure")
+    p.add_node("baseline", "aeroelastic", "aeroelastic")
+    res = p.run("baseline", log=lambda *_: None)
+    assert res == {"aircraft": "failed", "loads": "skipped", "structure": "skipped", "aeroelastic": "skipped"}
+    # a relative project path still works when the runs execute from src/
+    import os
+    cwd = os.getcwd()
+    try:
+        os.chdir(tmp_path)
+        q = PR.Project.load("chain")
+        assert q.dir.is_absolute()
+    finally:
+        os.chdir(cwd)
