@@ -11,6 +11,14 @@ ui.header("AeroLab", "Airfoil and wing aerodynamics with your own mesher and RAN
                      "Each analysis runs in the background; results stay in cases/.")
 
 TOOLS = {
+    "Workspace": [
+        ("tools/23_Projects.py", "Projects",
+         "A design as a dependency graph: change an input, see what is out of date and why, recompute only "
+         "that, and compare variants side by side.", "about 1 min per variant"),
+        ("tools/24_Confidence.py", "Confidence",
+         "Every result is rated against the validated envelope: expected uncertainty, reasons, grid "
+         "convergence index.", "instant"),
+    ],
     "Analysis": [
         ("tools/1_Airfoil_analysis.py", "Airfoil polar",
          "Cl, Cd, Cm against α; Cp, Cf and flow fields. Free or fixed transition, laminar separation "

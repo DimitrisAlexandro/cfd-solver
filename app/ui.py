@@ -112,6 +112,29 @@ def status_md(status):
     return f":{color}-badge[{status}]"
 
 
+TRUST = {"green": ("green", "validated range"), "amber": ("orange", "use with care"),
+         "red": ("red", "low confidence"), "info": ("gray", "note")}
+
+
+def trust_md(level, text=None):
+    """inline confidence badge (green / amber / red)"""
+    color, label = TRUST.get(level, ("gray", str(level)))
+    return f":{color}-badge[{text or label}]"
+
+
+def trust_notes(notes, title="Confidence", expanded=False, container=None):
+    """[(level, text)] -> one badge line (the worst level) + the reasons in an expander"""
+    import trust as T
+    if not notes:
+        return
+    lev = T.worst(*(l for l, _ in notes))
+    c = container or st
+    with c.expander(f"{title}: {TRUST[lev][1]}", expanded=expanded, icon=":material/verified:"
+                    if lev == "green" else ":material/warning:"):
+        for l, t in notes:
+            st.markdown(f"{trust_md(l, TRUST[l][1])} {t}")
+
+
 def plot(fig, key=None, height=None, container=None):
     """plotly figure with the AeroLab template (Streamlit's own theme off)"""
     _plotly_template()

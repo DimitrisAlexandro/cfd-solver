@@ -11,6 +11,7 @@ import streamlit as st
 import aircraft_views as AV
 import common as C
 import ui
+import views
 
 import aircraft as A
 import wing_structure as WS
@@ -116,6 +117,7 @@ with out:
                     f"at V_D: {100 * rv['effectiveness_at_VD']:.0f} % roll power"
                     if rv.get("effectiveness_at_VD") is not None else "", delta_color="off", delta_arrow="off")
     k[3].metric("Bending / torsion frequency", f"{fl['f_bending_hz']:.1f} / {fl['f_torsion_hz']:.1f} Hz")
+    views.trust_notes("structure", flutter_margin=fl["V_flutter"] / (1.2 * VD))
     saved = bool(getattr(ac, "structure", None))
     cs1, cs2 = st.columns([1, 2], vertical_alignment="center")
     if cs1.button("Save structure with the aircraft", type="primary", width="stretch"):
