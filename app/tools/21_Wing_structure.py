@@ -177,6 +177,8 @@ with tabs[2]:
     g.update_layout(title="Frequency", xaxis_title="V (m/s)", yaxis_title="Hz", height=360)
     ui.plot(f, container=c1, key="wsvg")
     ui.plot(g, container=c2, key="wsvf")
+    st.caption("Quick 2-D estimate. The Aeroelasticity page does the full analysis: wing modes, 3D unsteady "
+               "aerodynamics, p-k flutter, aileron flutter. ")
     st.caption(f"Typical section at {100 * fl['station']:.0f} % semi-span: mass ratio μ {fl['mu']:.1f}, elastic axis "
                f"a = {fl['a']:+.2f}, c.g. offset x_α = {fl['x_alpha']:+.2f}, r_α² = {fl['r2']:.3f}, ω_h/ω_α = "
                f"{fl['sigma']:.3f}; Theodorsen aerodynamics, sea-level density. Flutter where g crosses zero. "
@@ -208,6 +210,15 @@ with tabs[4]:
                          "shear_centre_x_over_c": s_["x_shear_centre"]})
     c3.download_button("Beam properties for FEM (CSV)", beam.to_csv(index=False), file_name="wing_beam.csv",
                        width="stretch")
+    st.markdown("##### Save with the aircraft")
+    st.caption("Stores EI, GJ and the mass along the span in the aircraft file. The Aeroelasticity page (3D "
+               "flutter, divergence, reversal, aileron flutter) and the flexible-wing option of Flight loads use it.")
+    if st.button("Save structure with the aircraft", type="primary"):
+        a2 = A.Aircraft.from_dict(ac.to_dict())
+        old_ail = (ac.structure or {}).get("aileron_dynamics")
+        a2.structure = WS.to_aircraft(s_, old_ail)
+        a2.save(path)
+        st.success(f"Saved to {path.name}. Open the Aeroelasticity page next.")
 with tabs[5]:
     st.markdown(
         "- **Loads**: every case of the selected Flight loads run × the factor of safety. Torsion moved to the "

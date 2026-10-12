@@ -218,6 +218,7 @@ class Aircraft:
     components: list = field(default_factory=list)   # {name, group, mass, x, z, max}
     gear: dict = field(default_factory=dict)         # x_main, x_nose, track, z_ground
     propulsion: dict = field(default_factory=dict)   # propeller.make_propulsion spec
+    structure: dict = field(default_factory=dict)    # wing_structure sizing (EI, GJ, mass along the span)
 
     # reference values default to the main wing (first surface)
     @property
