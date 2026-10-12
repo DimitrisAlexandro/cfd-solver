@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -14,6 +15,25 @@ rows = C.scan_polars()
 if not rows:
     st.info("No polars yet. Run an airfoil polar and it appears here.")
     st.stop()
+import trust as T  # noqa: E402
+
+
+@st.cache_data(show_spinner=False)
+def _confidence(path, mtime, re, mach, transition):
+    try:
+        d = json.loads(Path(path).read_text())
+        a = T.assess_polar(d, re=re, mach=mach, transition=transition or None) if isinstance(d, list) \
+            else T.assess_polar(d)
+        c = a["counts"]
+        return ui.TRUST[a["level"]][1] if sum(c.values()) else "", \
+            f"{c['green']} / {c['amber']} / {c['red']}" if sum(c.values()) else ""
+    except Exception:                                   # noqa: BLE001
+        return "", ""
+
+
+for r in rows:
+    r["confidence"], r["angles g/a/r"] = _confidence(r["path"], Path(r["path"]).stat().st_mtime, r["Re"],
+                                                     r["Mach"], r["transition"])
 df = pd.DataFrame(rows)
 c1, c2 = st.columns([2, 1])
 q = c1.text_input("Filter by section name", "", placeholder="naca2412")
@@ -27,7 +47,11 @@ ed = st.data_editor(view.drop(columns=["path"]), hide_index=True, width="stretch
                     column_config={"plot": st.column_config.CheckboxColumn("Plot", width="small"),
                                    "name": "Section", "Re": "Re",
                                    "Mach": st.column_config.NumberColumn("Mach", format="%.2f"),
-                                   "transition": "Transition", "angles": "Angles", "source": "Source"})
+                                   "transition": "Transition", "angles": "Angles", "source": "Source",
+                                   "confidence": st.column_config.TextColumn(
+                                       "Confidence", help="Worst level over the angles (trust layer)"),
+                                   "angles g/a/r": st.column_config.TextColumn(
+                                       "Angles: validated / care / low", help="Number of angles at each level")})
 sel = view[ed["plot"].values]
 if len(sel):
     series = []
