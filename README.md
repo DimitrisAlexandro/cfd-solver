@@ -129,3 +129,19 @@ cd src
 python loads.py ../cases/aircraft/demo_trainer.json --vc 60 --out ../cases/loads_demo
 python wing_structure.py ../cases/aircraft/demo_trainer.json ../cases/loads_demo/loads.json --out ../cases/struct_demo
 ```
+
+## Aeroelasticity
+
+Aircraft → **Aeroelasticity** (`src/aeroelastic.py`), after saving the wing structure with the aircraft:
+wing modes (beam finite elements, with the aileron as a rigid surface on a hinge spring), 3D unsteady
+aerodynamics (frequency-domain vortex-ring lattice), **p-k flutter** for symmetric and antisymmetric
+modes including **aileron flutter** and a mass-balance sweep, and static aeroelasticity on the same
+lattice (divergence, aileron reversal, elastic lift). Flight loads has a **flexible wing** option that
+trims every case with the elastic twist and bending.
+
+```bash
+cd src
+python aeroelastic.py ../cases/aircraft/my_aircraft.json --out ../cases/aeroelastic
+python loads.py ../cases/aircraft/my_aircraft.json --vc 60 --flexible --out ../cases/loads_flex
+python validate_aeroelastic.py      # Theodorsen limit, Goland wing (137 m/s), aileron mass balance (~4 min)
+```

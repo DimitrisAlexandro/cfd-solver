@@ -60,6 +60,7 @@ nav = st.navigation({
                  P("tools/14_Aero_database.py", "Aero database"),
                  P("tools/15_Loads.py", "Flight loads"),
                  P("tools/21_Wing_structure.py", "Wing structure"),
+                 P("tools/22_Aeroelasticity.py", "Aeroelasticity"),
                  P("tools/16_Performance.py", "Performance")],
     "Design": [P("tools/17_Conceptual_sizing.py", "Conceptual sizing"),
                P("tools/5_Inverse_design.py", "Inverse design"),
