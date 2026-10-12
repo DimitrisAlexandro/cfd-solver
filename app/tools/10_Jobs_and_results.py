@@ -24,11 +24,17 @@ with tab1:
                 views.live_job(j["id"], j["kind"])
             else:
                 c1, c2, _ = st.columns([1, 1, 4])
-                show = c1.button("Open results", key="show" + j["id"], disabled=j["status"] != "finished")
+                if j["kind"] == "project":
+                    c1.page_link("tools/23_Projects.py", label="Open the project")
+                    show = False
+                else:
+                    show = c1.button("Open results", key="show" + j["id"],
+                                     disabled=j["status"] != "finished" or j["kind"] not in ("polar", "wing", "grid_study"))
                 if c2.button("Show log", key="log" + j["id"]):
                     st.code(C.job_log(j["id"], tail=200), language=None)
                 if show:
-                    st.session_state["open_result"] = (j["kind"], j["out"])
+                    st.session_state["open_result"] = ("polar", str(Path(j["out"]).parent)) if j["kind"] == "grid_study" \
+                        else (j["kind"], j["out"])
                 st.caption(j["out"])
 with tab2:
     folders = sorted([p for p in C.CASES.iterdir() if p.is_dir() and not p.name.startswith("_")

@@ -9,6 +9,7 @@ import streamlit as st
 import aircraft_views as AV
 import common as C
 import ui
+import views
 
 import aircraft as A
 
@@ -51,6 +52,7 @@ with summary:
     if sm is not None and sm < 0.05:
         st.warning("Static margin under 5 % MAC: the aircraft is close to neutrally stable or unstable "
                    "in pitch. Move the c.g. forward or enlarge the tail.")
+    views.trust_notes("stability")
     src = ", ".join(f"{k_}: {v}" for k_, v in rep["polar_source"].items())
     st.caption(f"M {rep['mach']:.3f}, q {rep['qbar']:.0f} Pa. Section data: {src}. "
                f"Fuselage: Cm_α {rep['fuselage']['Cm_a']:+.3f}, Cn_β {rep['fuselage']['Cn_b']:+.4f}, "
