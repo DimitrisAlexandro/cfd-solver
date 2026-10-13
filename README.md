@@ -77,6 +77,31 @@ Exports for other tools: JSBSim `<aerodynamics>` XML, AVL geometry + mass
 files, XFOIL-format polars (XFLR5), Excel/CSV/JSON tables, Nastran
 FORCE/MOMENT load sets, VTK flow fields (ParaView).
 
+## 3D RANS solver (in house, no OpenFOAM)
+
+`src/fv3d/` is a 3D finite-volume RANS solver with the same discretisation as the
+validated 2D one: cell-centred on polyhedral meshes (OpenFOAM-style faces / owner /
+neighbour), collocated SIMPLEC with Rhie-Chow, Spalart-Allmaras, least-squares and
+Green-Gauss gradients exact for linear fields on any cell shape (skewed, tapered,
+warped faces), and the heavy loops in C++ (assembly, limiter, Gauss-Seidel, multigrid
+preconditioned CG, SA source) - built automatically with `g++` on first use
+(`sudo apt install build-essential` on WSL/Ubuntu; without a compiler it falls back to
+numpy, slower).
+
+```bash
+cd src
+python -m fv3d.wing3d --semi-span 3 --taper 0.5 --sweep 20 --twist -2 --re 3e6 \
+       --alpha 0,4,8 --level 0.4 --out ../cases/wing3d_demo      # half wing, SA
+python -m fv3d.validate_core3d     # 3D-1: cavity / airfoil consistency with 2D, duct, sphere
+python -m fv3d.validate_wing3d     # 3D-2: wings against the vortex lattice
+```
+
+The wing mesher sweeps the validated 2D hybrid airfoil mesh (y+ < 1 boundary
+layer) through spanwise stations with taper, sweep, twist and dihedral, closes the
+tip with a flat cap and relaxes the wall layers beyond the tip. Outputs: CL, CD
+(pressure/friction), Cm, span loading c_l c(eta). Results and limits:
+`validation/wing3d_report.md`, `validation/core3d_report.md`.
+
 ## Validation
 
 `validation/` holds every comparison with experiments and reference codes
