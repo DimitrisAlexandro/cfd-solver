@@ -1,0 +1,62 @@
+{
+ "native": {
+  "native": true,
+  "threads": 2,
+  "note": null
+ },
+ "cases": {
+  "cavity": {
+   "cells": 1024,
+   "iterations_3d": 218,
+   "iterations_2d": 218,
+   "time_3d_s": 0.9,
+   "max_dU_3d_vs_2d": 8.99202934334653e-12,
+   "max_Uz": 0.0,
+   "pass": true,
+   "wall_time_s": 2.1
+  },
+  "airfoil": {
+   "cells": 15004,
+   "Cl_3d": 1.0904003442147743,
+   "Cd_3d": 0.012969548624727116,
+   "Cl_2d": 1.0903927379712581,
+   "Cd_2d": 0.012968849487383277,
+   "Cl_CFL3D": 1.0909,
+   "Cd_CFL3D": 0.01231,
+   "iterations_3d": 670,
+   "time_3d_s": 46.8,
+   "pass": true,
+   "wall_time_s": 73.9
+  },
+  "duct": {
+   "cells": 15680,
+   "iterations": 133,
+   "time_s": 4.1,
+   "umax_over_umean": 2.040153502022919,
+   "ref_umax_over_umean": 2.0962,
+   "fRe": 56.126109380520994,
+   "ref_fRe": 56.91,
+   "pass": true,
+   "wall_time_s": 4.3
+  },
+  "sphere": {
+   "cells": 61440,
+   "iterations": 68,
+   "time_s": 8.3,
+   "Cd": 1.0988433671697768,
+   "Cd_pressure": 0.5213334436954253,
+   "Cd_friction": 0.5775099234743515,
+   "ref_Cd": [
+    1.087,
+    1.09
+   ],
+   "Ls_over_D": 0.875,
+   "ref_Ls_over_D": [
+    0.87,
+    0.88
+   ],
+   "pass": true,
+   "wall_time_s": 9.5
+  }
+ }
+}
