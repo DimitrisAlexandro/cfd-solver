@@ -12,3 +12,4 @@ __pycache__/
 *.png
 *.msh
 .env
+src/fv3d/native/build/
