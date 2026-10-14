@@ -8,6 +8,7 @@ report.txt. Coefficients on the half-wing planform area (= full-wing coefficient
 import argparse
 import json
 import math
+import os
 import time
 from pathlib import Path
 
@@ -92,6 +93,20 @@ def section_start(info, alpha, re, max_iter=1500, log=print):
     return U, p, nuT
 
 
+def converged(hist, force_tol):
+    """forces settled: the mean CL and CD of the last 200 iterations differ from those
+    of the 200 before by less than force_tol (relative, floors 0.3 and 0.01). Means,
+    not the min-max band: a steady RANS solution often ends in a tiny limit cycle
+    (here +-0.0001 in CL) that a band test never accepts."""
+    w = 8                                                  # samples every 25 iterations
+    a, b = hist[-2 * w:-w], hist[-w:]
+    m = lambda h, k: sum(x[k] for x in h) / len(h)
+    band = max(x["CL"] for x in b) - min(x["CL"] for x in b)
+    return (abs(m(b, "CL") - m(a, "CL")) < force_tol * max(abs(m(b, "CL")), 0.3)
+            and abs(m(b, "CD") - m(a, "CD")) < force_tol * max(abs(m(b, "CD")), 0.01)
+            and band < 0.02 * max(abs(m(b, "CL")), 0.3))
+
+
 def run(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedral=0.0, twist=0.0, re=3e6,
         alphas=(0.0, 4.0, 8.0), level=0.5, farfield=12.0, max_iter=3000, tol=1e-6, force_tol=1e-3,
         out=None, log=print, start_2d=True):
@@ -127,12 +142,8 @@ def run(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedral=0.0
                     h = hist[-1]
                     log(f"  alpha {a:g}: it {it}  CL {h['CL']:.5f}  CD {h['CD']:.5f}  cont {r['cont']:.1e}  "
                         f"nuT {r.get('nuT', 0):.1e}  ({time.time() - t1:.0f}s)")
-                if len(hist) >= 9:                           # forces flat over 200 iterations
-                    cl = [x["CL"] for x in hist[-9:]]
-                    cd = [x["CD"] for x in hist[-9:]]
-                    if max(cl) - min(cl) < force_tol * max(abs(cl[-1]), 0.3) and \
-                            max(cd) - min(cd) < 3 * force_tol * max(abs(cd[-1]), 0.01) and r["cont"] < 1e-3:
-                        return True
+                if len(hist) >= 16 and r["cont"] < 1e-3 and converged(hist, force_tol):
+                    return True
             return False
         it = s.solve(tol=tol, max_iter=max_iter, verbose=False, callback=cb)
         c = coefficients(s, info, a)
@@ -173,7 +184,20 @@ def main(argv=None):
     ap.add_argument("--farfield", type=float, default=12.0)
     ap.add_argument("--max-iter", type=int, default=3000)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--threads", type=int, default=0,
+                    help="solver threads (default: half the logical cores, i.e. the physical ones on most PCs)")
     a = ap.parse_args(argv)
+    # one thread team only: the C++ kernels use OpenMP; BLAS / MKL thread pools that
+    # also spin up (numpy, pypardiso) would oversubscribe the cores (WSL: ~2x slower)
+    if a.threads:
+        os.environ["AEROLAB_THREADS"] = str(a.threads)
+    elif "AEROLAB_THREADS" not in os.environ:
+        os.environ["AEROLAB_THREADS"] = str(max(1, (os.cpu_count() or 2) // 2))
+    try:
+        from threadpoolctl import threadpool_limits
+        threadpool_limits(1)
+    except ImportError:
+        pass
     run(a.airfoil, a.semi_span, a.taper, a.sweep, a.dihedral, a.twist, a.re,
         [float(x) for x in a.alpha.split(",")], a.level, a.farfield, a.max_iter, out=a.out)
 
