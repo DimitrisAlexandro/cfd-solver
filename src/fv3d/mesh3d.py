@@ -69,6 +69,14 @@ class FVMesh3D:
         self.points, self.ncells = P, n
 
         S, xf, R = face_geometry(P, F, warp=True)
+        fc = pm.get("face_centres")
+        if fc is not None:                     # generator-supplied face centres (see extrude)
+            fc = np.asarray(fc, float)
+            use = np.isfinite(fc).all(1)
+            if pm.get("face_centre_exact", True):
+                # keep the face integral exact for linear fields: R about the new centre
+                R[use] += np.einsum("fi,fj->fij", S[use], xf[use] - fc[use])
+            xf = np.where(use[:, None], fc, xf)
         # approximate cell centres (mean of their face centres) to orient faces
         cnt = np.bincount(own, minlength=n) + np.bincount(nei[nei >= 0], minlength=n)
         if (cnt < 4).any():

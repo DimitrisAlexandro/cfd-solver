@@ -27,11 +27,14 @@ import numpy as np
 from . import meshgen3d as G
 
 
-def _spacing_to(L, first, dmax, q):
-    """node coordinates on [0, L], finest (first) at L, growing by q up to dmax toward 0"""
+def _spacing_to(L, first, dmax, q, band=0.0, dband=None):
+    """node coordinates on [0, L], finest (first) at L, growing by q up to dmax toward 0.
+    Within `band` of L the spacing stays at most dband (the tip vortex)."""
     steps = []
     s, tot = first, 0.0
     while tot + s < L and s < dmax:
+        if dband and tot < band and s > dband:
+            s = dband
         steps.append(s)
         tot += s
         s *= q
@@ -44,11 +47,14 @@ def _spacing_to(L, first, dmax, q):
     return np.sort(z)
 
 
-def _spacing_from(z0, L, first, dmax, q):
-    """node coordinates from z0 to z0 + L, finest (first) at z0, growing by q to dmax"""
+def _spacing_from(z0, L, first, dmax, q, band=0.0, dband=None):
+    """node coordinates from z0 to z0 + L, finest (first) at z0, growing by q to dmax.
+    Within `band` of z0 the spacing stays at most dband (the tip vortex)."""
     steps = []
     s, tot = first, 0.0
     while tot + s < L:
+        if dband and tot < band and s > dband:
+            s = dband
         steps.append(s)
         tot += s
         s = min(s * q, dmax)
@@ -159,7 +165,7 @@ def relax_map(P2, cells, n_bl, M, wall_edges, match=0.6):
 
 def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedral=0.0, twist=0.0,
               tip_airfoil=None, re=3e6, level=0.5, farfield=12.0, tip_first=0.01, growth=1.3,
-              blend=(0.5, None), tip_relax=2, verbose=False):
+              blend=(0.5, None), tip_relax=2, verbose=False, wake_alphas=(0.0, 8.0), vortex_band=0.3, tip_smooth=0.5):
     """polymesh dict of a half wing + info dict (reference area, MAC, span stations).
     twist: tip incidence relative to the root (deg, nose up +, linear); sweep_c4 and
     dihedral in degrees. tip_airfoil: not yet (same section along the span)."""
@@ -168,7 +174,9 @@ def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedr
     import airfoil_geom as ag
     import validate_naca0012_sa as v
     wall, _ = ag.load_airfoil(airfoil, n_side=int(round(160 * level)))
-    m2 = v.airfoil_mesh(level, 0.0, wall=wall, re=re, farfield=farfield)
+    # the section mesh carries a wake band covering the run's angles (one mesh for all)
+    m2 = v.airfoil_mesh(level, 0.0, wall=wall, re=re, farfield=farfield, wake_alphas=list(wake_alphas),
+                        wake_growth=0.012)
     P2 = np.asarray(m2["points"], float)
     cells = [list(c) for c in m2["cells"]]
     nouter = len(cells)
@@ -185,8 +193,10 @@ def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedr
     # spanwise levels
     ct = taper
     dmax_in = max(semi_span / max(int(round(16 * level / 0.5)), 4), 3 * tip_first)
-    z_in = _spacing_to(semi_span, tip_first * ct, dmax_in, growth)
-    z_out = _spacing_from(semi_span, farfield, tip_first * ct, max(farfield / 8, dmax_in), growth)
+    # the tip vortex lives within ~0.15 tip chords of the tip: no coarse layers near it
+    vb, dvb = vortex_band * ct, 0.02 / level * ct
+    z_in = _spacing_to(semi_span, tip_first * ct, dmax_in, growth, vb, dvb)
+    z_out = _spacing_from(semi_span, farfield, tip_first * ct, max(farfield / 8, dmax_in), growth, vb, dvb)
     z = np.r_[z_in, z_out[1:]]
     itip = len(z_in) - 1                                   # level index of the tip plane
     K = len(z) - 1
@@ -214,7 +224,15 @@ def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedr
 
     def xyz(l):
         zl = z[l]
-        eta = min(zl / semi_span, 1.0)
+        if zl <= semi_span or not tip_smooth:
+            eta = min(zl / semi_span, 1.0)
+        else:
+            # beyond the tip the planform change (taper, sweep, twist) eases off over
+            # tip_smooth tip chords instead of stopping dead at the tip plane: a kink in
+            # the shear of the thin tip-plane layers kept a mode alive there (continuity
+            # stalled at ~5e-3 on tapered and swept wings)
+            L = tip_smooth * ct
+            eta = 1.0 + (L / semi_span) * (1.0 - math.exp(-(zl - semi_span) / L))
         c, xq, yq, th = section(eta)
         Q = tipQ(min(max(l - itip, 0) / tip_relax, 1.0), P2)
         dx, dy = Q[:, 0] - 0.25, Q[:, 1]

@@ -98,9 +98,19 @@ python -m fv3d.validate_wing3d     # 3D-2: wings against the vortex lattice
 
 The wing mesher sweeps the validated 2D hybrid airfoil mesh (y+ < 1 boundary
 layer) through spanwise stations with taper, sweep, twist and dihedral, closes the
-tip with a flat cap and relaxes the wall layers beyond the tip. Outputs: CL, CD
-(pressure/friction), Cm, span loading c_l c(eta). Results and limits:
-`validation/wing3d_report.md`, `validation/core3d_report.md`.
+tip with a flat cap and relaxes the wall layers beyond the tip. A graded wake band
+10 chords long follows the free stream at the run's angles, and the spanwise spacing
+is capped around the tip vortex. Outputs: CL, CD (pressure/friction), Cm, span
+loading c_l c(eta).
+
+Rectangular, tapered, swept and twisted wings converge. Against the vortex lattice, CL
+is within 2 %:
+
+- taper 0.5, sweep 20°, twist −2°, AR 8: α 4 CL 0.2561 vs 0.2574;
+- span loading within about 1 % from root to tip.
+
+Results and limits: `validation/solver3d.md`, `validation/wing3d_report.md`,
+`validation/core3d_report.md`.
 
 With `--out`, every angle also saves its full flow field (`fields_a<alpha>.npz`).
 

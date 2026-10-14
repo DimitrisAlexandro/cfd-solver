@@ -136,8 +136,10 @@ def run(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedral=0.0
         alphas=(0.0, 4.0, 8.0), level=0.5, farfield=12.0, max_iter=3000, tol=1e-6, force_tol=1e-3,
         out=None, log=print, start_2d=True):
     t0 = time.time()
+    # the wake band covers the run's angles (the wake leaves along each free stream)
+    wa = (min(min(alphas), 0.0), max(max(alphas), 0.0))
     pm, info = wing_mesh(airfoil, semi_span, taper, sweep_c4, dihedral, twist, re=re, level=level,
-                         farfield=farfield)
+                         farfield=farfield, wake_alphas=wa)
     m = FVMesh3D(pm)
     q = m.quality()
     log(f"[wing3d] mesh {m.ncells} cells ({info['layers']} spanwise layers), {time.time() - t0:.1f}s; "
