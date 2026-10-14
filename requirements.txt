@@ -13,3 +13,4 @@ pandas
 openpyxl          # Excel export (aero database)
 python-docx      # Word reports
 reportlab        # PDF reports
+scikit-image     # results viewer: wake isosurfaces
