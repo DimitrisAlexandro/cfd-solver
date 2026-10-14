@@ -162,3 +162,32 @@ def test_wing_runs_a_few_stable_iterations():
         r = s.iterate()
     assert all(np.isfinite(v) for v in r.values())
     assert np.linalg.norm(s.U, axis=1).max() < 5.0
+
+
+def test_lateral_face_centres_are_level_with_cell_centres():
+    """tapered extrusion of a thin boundary-layer-like strip: the lateral faces are
+    trapezoids. Their centres must lie at the layer's mid height (as the cell centres),
+    not at the area centroid: otherwise the skewness vector and the wall-face distance
+    pick up a spanwise offset of dz dc/(12 c), many first-cell heights in a y+ ~ 1 layer,
+    and the wall-normal gradient times that offset drove tapered wings to diverge."""
+    h = 1e-5                                               # first-cell height
+    P2 = np.array([[0, 0], [1, 0], [1, h], [0, h], [1, 3 * h], [0, 3 * h]], float)
+    cells = [[0, 1, 2, 3], [3, 2, 4, 5]]
+    ep = {(0, 1): "wall", (1, 2): "side", (2, 4): "side", (4, 5): "top", (3, 5): "side", (0, 3): "side"}
+    zl = [0.0, 0.14, 0.3]
+
+    def xyz(l):
+        c = 1.0 - 0.3 * zl[l]                              # taper about x = 0.25
+        Q = (P2 - [0.25, 0.0]) * c + [0.25, 0.0]
+        return np.c_[Q, np.full(len(P2), zl[l])]
+    m = FVMesh3D(G.extrude(P2, cells, ep, 3, xyz=xyz))
+    lateral = np.abs(m.Sf[:, 2]) < 0.5 * np.linalg.norm(m.Sf, axis=1)
+    assert lateral.any()
+    assert np.abs(m.rskew[lateral]).max() < 1e-3 * h
+    wall = m.patch_faces["wall"]
+    nb = m.bSf[wall] / np.linalg.norm(m.bSf[wall], axis=1)[:, None]
+    tang = m.db[wall] - np.einsum("ij,ij->i", m.db[wall], nb)[:, None] * nb
+    assert np.linalg.norm(tang, axis=1).max() < 1e-3 * h
+    phi, phib = lin(m.xc), lin(m.bxf)                       # still exact for linear fields
+    g = m.grad_gg(phi, phib, grad_skew=np.tile(LIN, (m.ncells, 1)))
+    assert np.abs(g - LIN).max() < 1e-6

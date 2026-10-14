@@ -91,7 +91,11 @@ def test_polar_point_compressible():
     """polar tool: mach > 0 runs the compressible solver (RANS, warm start)"""
     import polar as pl
     r, st = pl.run_point("naca0012", 3e6, 2.0, level=0.7, mach=0.7, transition="off")
-    assert r["solver"] == "compressible" and r["status"] == "converged"
+    # the 10-chord wake band resolves the weak shedding of the blunt trailing edge: the
+    # polar tool then reports the mean of a small oscillation (its documented status),
+    # which must stay small
+    assert r["solver"] == "compressible" and r["status"].startswith("converged")
+    assert r.get("Cl_amp", 0.0) < 0.005 * abs(r["Cl"])
     assert r["M_max"] > 1.0                                  # supersonic pocket
     assert 0.30 < r["Cl"] < 0.38 and 0.009 < r["Cd"] < 0.014
     assert st["T"] is not None and st["mach"] == 0.7
