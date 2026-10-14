@@ -66,3 +66,53 @@ def test_3d_fields_round_trip_and_render(wing_fields):
     V.xcut_figure(c, 1.2, "vorticity_x", zr=(0.5, 1.4), yr=(-0.3, 0.3))
     Z, Y, val, W, Vv, solid = c.x_cut(0.3, "U_mag", zr=(0.0, 0.5), yr=(-0.2, 0.2), nz=40, ny=30)
     assert solid.any() and np.isfinite(val[~solid]).all()
+
+
+@pytest.mark.skipif(not (FOIL / "results.vtu").exists(), reason="no saved 2D case")
+def test_2d_wake_survey_recovers_the_surface_drag():
+    import wakeview as W
+    c = V.Case2D(FOIL)
+    wk = W.Wake2D(c)
+    rows = wk.survey((0.1, 1.0))
+    for r in rows:
+        assert abs(r["Cd_wake"] / wk.Cd_surface - 1) < 0.08
+    r = wk.rake(0.5)
+    assert r["u"].min() < 0.9 and abs(r["u"][0] - 1) < 0.1
+    assert "u_deficit" in c.fields()
+
+
+def test_3d_wake_tools(wing_fields):
+    import wakeview as W
+    c = V.Case3D(wing_fields)
+    wk = W.Wake3D(c)
+    f = wk.plane(0.5, nt=61, nz=81)
+    # the shed circulation equals the circulation around the plane's edge (Stokes)
+    t, z = f["t"][:, 0], f["z"][0]
+    line = (np.trapezoid(f["w"][-1], z) - np.trapezoid(f["v"][:, -1], t)
+            - np.trapezoid(f["w"][0], z) + np.trapezoid(f["v"][:, 0], t))
+    assert abs(np.sum(f["xi_p"] * f["dA"]) - line) < 0.05 * abs(line) + 1e-4
+    rows = wk.survey((0.5, 1.0))
+    for r in rows:
+        assert all(np.isfinite(r[k]) for k in ("CD", "CDp", "CDi", "Gamma", "core_z"))
+        assert r["CDi"] >= 0
+    W.plan_figure(wk, "loss", 3.0)
+    W.plan_figure(wk, "xi", 3.0, mode="slice")
+    W.planes_figure(wk, (0.5, 1.5), "xi")
+
+
+def test_maskell_matches_a_vortex_pair():
+    """induced drag of a vortex pair with cores: 1/2 int psi xi equals the analytic
+    kinetic energy of two Lamb-Oseen vortices mirrored in z = 0"""
+    import wakeview as W
+    G, b, rc = 1.0, 1.0, 0.1
+    t = np.linspace(-1.5, 1.5, 241)
+    z = np.linspace(0.0, 3.0, 241)
+    T, Z = np.meshgrid(t, z, indexing="ij")
+    r2 = T ** 2 + (Z - b) ** 2
+    xi = -G / (np.pi * rc ** 2) * np.exp(-r2 / rc ** 2)        # the +z tip vortex of a lifting wing
+    dA = np.outer(np.gradient(t), np.gradient(z))
+    Di = W.Wake3D._maskell(T, Z, xi, dA)
+    # kinetic energy per unit length of a Lamb-Oseen pair (separation 2b) is
+    # G^2/(2 pi) (ln(2b/rc) + (gamma - ln 2)/2); the half plane holds half of it
+    E_half = G ** 2 / (4 * np.pi) * (np.log(2 * b / rc) + 0.5 * (np.euler_gamma - np.log(2)))
+    assert abs(Di / E_half - 1) < 0.02
