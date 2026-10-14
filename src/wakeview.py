@@ -217,6 +217,8 @@ class Wake3D:
             ri2 = dt ** 2 + (z[sl, None] + z[None, :]) ** 2
             k = np.arange(s0, min(s0 + 1500, n))
             r2[k - s0, k] = r_self[k] ** 2
+            r2 = np.maximum(r2, (r_self[None, :] ** 2))          # coincident samples
+            ri2 = np.maximum(ri2, (r_self[None, :] ** 2))
             psi[sl] = -(1 / (4 * math.pi)) * ((np.log(r2) - np.log(ri2)) * g[None, :]).sum(1)
         return 0.5 * float(np.sum(psi * g))
 
@@ -305,20 +307,27 @@ def _plt():
     return plt
 
 
-def planform(case, nb=40):
-    """leading/trailing edge lines (x vs z) from the wall points"""
+def planform(case, nb=None):
+    """leading/trailing edge lines (x vs z) from the wall points: per spanwise layer of
+    the mesh, the most forward and most aft wall point, placed at that point's own z
+    (bins at fixed z saw-tooth on a swept edge)"""
     w = case.d["wall_centres"].astype(float)
-    zb = np.linspace(0, w[:, 2].max(), nb + 1)
-    z, le, te = [], [], []
-    for a, b in zip(zb[:-1], zb[1:]):
-        m = (w[:, 2] >= a) & (w[:, 2] <= b)
-        if m.any():
-            z.append(0.5 * (a + b))
-            le.append(w[m, 0].min())
-            te.append(w[m, 0].max())
-    z = np.array(z)
-    z[0], z[-1] = 0.0, zb[-1]                   # the outline runs from the root to the tip
-    return z, np.array(le), np.array(te)
+    zl = np.asarray(case.z, float)
+    s = float(case.info["semi_span"])
+    zl = zl[zl <= s + 1e-9]
+    zs, le, te, zt = [], [], [], []
+    for a, b in zip(zl[:-1], zl[1:]):
+        m = np.where((w[:, 2] >= a) & (w[:, 2] < b))[0]
+        if len(m) == 0:
+            continue
+        i, j = m[np.argmin(w[m, 0])], m[np.argmax(w[m, 0])]
+        zs.append(w[i, 2]); le.append(w[i, 0]); zt.append(w[j, 2]); te.append(w[j, 0])
+    zs, le, zt, te = map(np.asarray, (zs, le, zt, te))
+    # common z: from the root to the tip, both edges interpolated
+    z = np.unique(np.r_[0.0, zs, zt, s])
+    le_z = np.interp(z, zs, le)
+    te_z = np.interp(z, zt, te)
+    return z, le_z, te_z
 
 
 def plan_figure(wk, field="loss", x1=6.0, offset=0.0, mode="max"):

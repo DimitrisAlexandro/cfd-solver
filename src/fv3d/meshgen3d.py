@@ -149,9 +149,21 @@ def extrude(P2, cells2, edge_patch, nlev, xyz=None, active=None, cap_lower="zmin
         centres[cid[l][act[l]]] = centroids(mid)[act[l]]
     Wf = max(f.shape[1] for f in faces)
     faces = [np.pad(f, ((0, 0), (0, Wf - f.shape[1])), constant_values=-1) for f in faces]
-    return {"points": pts, "faces": np.vstack(faces), "owner": np.concatenate(own),
+    F = np.vstack(faces)
+    # face centres of the lateral (spanwise) faces: their mid-section point, the mean of
+    # the four nodes, level with the cell centres. On a tapered or swept extrusion these
+    # faces are trapezoids whose area centroid sits off the mid-section by ~dz dc/(12c):
+    # tens of first-cell heights in a y+ ~ 1 boundary layer, so the skewness and wall
+    # non-orthogonal corrections multiply the wall-normal gradient by a spanwise offset
+    # (tapered and swept wings diverged at the leading edge). Caps: NaN (area centroid).
+    lat = (F[:, 3] >= 0) & (F[:, 4:] < 0).all(1) if F.shape[1] > 4 else (F[:, 3] >= 0)
+    lev = F[:, :4] // n2
+    lat &= (lev.min(1) != lev.max(1))
+    fc = np.full((len(F), 3), np.nan)
+    fc[lat] = pts[F[lat, :4]].mean(1)
+    return {"points": pts, "faces": F, "owner": np.concatenate(own),
             "neighbour": np.concatenate(nei), "patch": np.concatenate(pat), "ncells": ncells,
-            "oriented": True, "centres": centres}
+            "oriented": True, "centres": centres, "face_centres": fc}
 
 
 def agglomerate(pm, group):
