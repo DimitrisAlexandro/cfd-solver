@@ -102,6 +102,23 @@ tip with a flat cap and relaxes the wall layers beyond the tip. Outputs: CL, CD
 (pressure/friction), Cm, span loading c_l c(eta). Results and limits:
 `validation/wing3d_report.md`, `validation/core3d_report.md`.
 
+With `--out`, every angle also saves its full flow field (`fields_a<alpha>.npz`).
+
+## Results viewer
+
+The app's **Data → Results viewer** page opens every result under `cases/`, newest first:
+
+- **2D** runs (single cases and each angle of a polar): any field (p, U, ν_t, vorticity,
+  mesh quality) with view presets (full, near, leading edge, trailing edge, wake) or a
+  custom window, cell edges, streamlines; the mesh alone; wall Cp / Cf / y+;
+  convergence; case details.
+- **3D** wings: rotatable surface coloured by Cp or Cf, with surface and symmetry-plane
+  mesh; a span cut through any layer (field or mesh); a crossflow plane x = const
+  (tip vortex: streamwise vorticity with in-plane velocity arrows); span loading and
+  CL history.
+
+The readers (`src/postview.py`) need numpy, scipy and matplotlib only.
+
 ## Validation
 
 `validation/` holds every comparison with experiments and reference codes

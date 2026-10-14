@@ -70,6 +70,7 @@ nav = st.navigation({
     "Data": [P("tools/4_Geometry_preview.py", "Geometry check"),
              P("tools/9_Polar_library.py", "Polar library"),
              P("tools/10_Jobs_and_results.py", "Runs"),
+             P("tools/25_Results_viewer.py", "Results viewer"),
              P("tools/11_Validation.py", "Validation"),
              P("tools/24_Confidence.py", "Confidence")],
 })

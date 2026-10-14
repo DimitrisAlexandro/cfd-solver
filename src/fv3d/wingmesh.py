@@ -240,6 +240,7 @@ def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedr
                              "airfoil": np.asarray(m2["patches"]["airfoil"]),
                              "farfield": np.asarray(m2["patches"]["farfield"])},
             "cell_layer": cell_l, "cell_2d": cell_c2, "n_section_cells": nouter,
+            "cells2": cells, "n2": len(P2),
             "z_cell": 0.5 * (z[cell_l] + z[cell_l + 1])}
     if verbose:
         print(f"[wing mesh] 2D {nouter} + {len(fill)} fill cells, {K} layers ({itip} to the tip), "
