@@ -53,6 +53,12 @@ def _survey3d(path, mtime, ds):
     return _wake3d(path, mtime).survey(ds)
 
 
+@st.cache_resource(max_entries=2, show_spinner="Sampling the wake volume…")
+def _volume3d(path, mtime, x_end, res):
+    wk = _wake3d(path, mtime)
+    return W.wake_volume(wk, x_end, res), W.streamlines(wk, x_end)
+
+
 res = _results()
 if not res:
     st.info("No results in cases/ yet. Run an airfoil polar, or a 3D wing: "
@@ -127,6 +133,7 @@ if sel["kind"] == "2d":
                              format_func=lambda k: {"u_deficit": "velocity deficit 1 − u/U∞"}.get(k, k), key="fw2")
             Lw = b.slider("Wake length shown (chords)", 1.0, 10.0, 4.0, 0.5, key="lw2")
             rk = cc.toggle("Rake lines", value=True, key="rk2")
+            ed2 = cc.toggle("Cell edges", key="ew2")
             st_d = st.multiselect("Rake stations, chords behind the trailing edge",
                                   [0.02, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 4.0, 6.0, 8.0],
                                   default=[0.1, 0.5, 1.0, 2.0, 4.0], key="ds2")
@@ -135,7 +142,7 @@ if sel["kind"] == "2d":
                    wk.te[1] + h + 0.5 * Lw * c * wk.es[1])
             clim = (0.0, 0.25) if fw == "u_deficit" else None
             fig = V.figure_2d(case, fw, box=box, cmap="magma_r" if fw == "u_deficit" else "turbo",
-                              clim=clim, figsize=(12, 4.2))
+                              clim=clim, edges=ed2, figsize=(12, 4.2))
             rakes = [wk.rake(d) for d in sorted(st_d)]
             if rk:
                 ax = fig.axes[0]
@@ -316,6 +323,30 @@ else:
         else:
             wk = _wake3d(sel["path"], mt)
             xmax = round(float(wk.te[0]) + 0.7 * float(info.get("farfield", 12.0)), 1)
+            st.markdown("**The whole wake in 3D**")
+            a, b, c = st.columns([5, 2, 1.4])
+            lay = a.multiselect("Show", W.LAYERS, default=[W.LAYERS[0], W.LAYERS[2], W.LAYERS[3], W.LAYERS[4]],
+                                key="lay3")
+            xe = b.slider("Downstream to x/c", 2.0, min(xmax, 12.0), min(6.0, xmax), 0.5, key="xe3")
+            res = c.selectbox("Detail", list(W.RES), index=1, key="res3")
+            with st.expander("Levels"):
+                q = st.columns(2)
+                lv = {"loss": q[0].slider("Wake sheet: total-pressure loss", 0.01, 0.3, 0.04, 0.01, key="lvl"),
+                      "Q": q[1].slider("Tip vortex: Q as a fraction of its peak", 0.005, 0.3, 0.03, 0.005,
+                                       key="lvq")}
+            vol, lines = _volume3d(sel["path"], mt, float(xe), res)
+            ui.plot(W.wake_scene(wk, vol, lay, float(xe), levels=lv, lines=lines), key="scene3", height=720)
+            st.caption(
+                "Drag to rotate; click a legend entry to hide it. **Turbulence**: nested shells of the eddy "
+                "viscosity ν_t/ν from the Spalart–Allmaras model: the turbulent boundary layers leave the "
+                "trailing edge, merge into the wake and spread downstream. A RANS solution is the time-averaged "
+                "flow, so the turbulence appears as this modelled eddy viscosity, not as individual eddies "
+                "(those need LES/DES). **Turbulence intensity** is estimated from ν_t and the strain rate "
+                "(Bradshaw: −u′v′ = 0.3 k), since SA carries no k. **Tip vortex**: Q-criterion (rotation "
+                "stronger than strain). **Mesh on the wake**: the cells the wake passes through, on the surface "
+                "along the free stream from the trailing edge; where the cells grow, the vortex and the wake "
+                "smear out.")
+
             st.markdown("**The wake seen from above**")
             a, b, c, d = st.columns([2, 2, 2, 2])
             pf = a.selectbox("Field", list(W.LABELS), format_func=lambda k: W.LABELS[k], key="pf3")
