@@ -111,10 +111,14 @@ class Case2D:
     def fields(self):
         """scalar fields to colour by (vectors as magnitude), flow fields first"""
         first = ["Cp", "U_mag", "p", "vorticity", "nut_ratio", "Mach", "continuity_error"]
-        names = [k for k in self.data if k != "U"]
+        names = [k for k in self.data if k != "U"] + (["u_deficit"] if "U" in self.data else [])
         return [k for k in first if k in names] + [k for k in names if k not in first]
 
     def values(self, field):
+        if field == "u_deficit":                     # 1 - u/U_inf along the free stream: the wake
+            Ui = np.asarray(self.meta.get("U_inf") or [1.0, 0.0], float)[:2]
+            q = float(np.hypot(*Ui))
+            return 1.0 - self.data["U"][:, :2] @ (Ui / q) / q
         v = self.data[field]
         return np.linalg.norm(v[:, :2], axis=1) if v.ndim > 1 else v
 
@@ -147,7 +151,8 @@ class Case2D:
 
 
 VIEWS = {"Full": None, "Near": (-0.4, 1.6, -0.5, 0.5), "Leading edge": (-0.06, 0.14, -0.08, 0.08),
-         "Trailing edge": (0.9, 1.1, -0.06, 0.06), "Wake": (0.8, 3.0, -0.6, 0.6)}
+         "Trailing edge": (0.9, 1.1, -0.06, 0.06), "Wake": (0.8, 3.0, -0.6, 0.6),
+         "Far wake": (0.8, 9.0, -1.6, 1.6)}
 
 
 def view_box(case, view):
@@ -191,7 +196,7 @@ def field_figure(P, cells, values, box, field="", cmap="turbo", edges=False, mes
         v = values[sel]
         lo, hi = clim or _clim(field, v)
         pc = PolyCollection(polys, array=v, cmap=cmap, edgecolors="#20242a" if edges else "face",
-                            linewidths=0.15 if edges else 0.05)
+                            linewidths=0.15 if edges else 0.4)
         pc.set_clim(lo, hi)
         ax.add_collection(pc)
         fig.colorbar(pc, ax=ax, label=field, shrink=0.85, pad=0.015)
@@ -361,7 +366,9 @@ def surface_figure(case, field="Cp", edges=False, height=620, sym_mesh=False):
     """plotly 3D view of the wing surface coloured by Cp / Cf"""
     import plotly.graph_objects as go
     tris, v = case.surface(field)
-    P = case.P
+    used, tris = np.unique(tris, return_inverse=True)       # only the wall's own points
+    tris = tris.reshape(-1, 3)
+    P = case.P[used]
     lo, hi = np.nanpercentile(v, [1, 99])
     if field == "Cp":
         lo, hi = max(lo, -3.0), min(hi, 1.0)
@@ -374,7 +381,7 @@ def surface_figure(case, field="Cp", edges=False, height=620, sym_mesh=False):
         xs, ys, zs = [], [], []
         for f in F:
             f = f[f >= 0]
-            q = P[np.r_[f, f[:1]]]
+            q = case.P[np.r_[f, f[:1]]]
             xs += list(q[:, 0]) + [None]
             ys += list(q[:, 2]) + [None]
             zs += list(q[:, 1]) + [None]

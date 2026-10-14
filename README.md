@@ -116,8 +116,20 @@ The app's **Data → Results viewer** page opens every result under `cases/`, ne
   mesh; a span cut through any layer (field or mesh); a crossflow plane x = const
   (tip vortex: streamwise vorticity with in-plane velocity arrows); span loading and
   CL history.
+- **Wake** (2D and 3D): the flow behind the body.
+  - 2D: the velocity-deficit field with virtual rake lines, u/U∞ and total-pressure-loss
+    profiles at each station, and the drag recovered from the wake (Betz wake-rake
+    formula) against the surface-force drag.
+  - 3D: the wake seen from above (sheet and tip vortex), planes behind the wing in 3D,
+    and a Betz / Maskell wake survey: profile drag (total-pressure loss) + induced drag
+    (½∫ψξ, crossflow kinetic energy) against the surface CD and CL²/(πAR), shed
+    circulation against the root circulation, spanwise profile drag, and the tip-vortex
+    path, peak vorticity and core radius downstream.
+  - On the AR 6 wing at α 4: wake CD 0.0140 vs surface 0.0149, induced 0.0045 vs vortex
+    lattice 0.0048 just behind the wing, shed circulation 0.179 vs root 0.174; further
+    downstream numerical diffusion of the coarser wake mesh lowers the induced drag.
 
-The readers (`src/postview.py`) need numpy, scipy and matplotlib only.
+The readers (`src/postview.py`, `src/wakeview.py`) need numpy, scipy and matplotlib only.
 
 ## Validation
 
