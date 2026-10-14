@@ -116,3 +116,18 @@ def test_maskell_matches_a_vortex_pair():
     # G^2/(2 pi) (ln(2b/rc) + (gamma - ln 2)/2); the half plane holds half of it
     E_half = G ** 2 / (4 * np.pi) * (np.log(2 * b / rc) + 0.5 * (np.euler_gamma - np.log(2)))
     assert abs(Di / E_half - 1) < 0.02
+
+
+def test_whole_wake_scene(wing_fields):
+    import wakeview as W
+    wk = W.Wake3D(V.Case3D(wing_fields))
+    vol = W.wake_volume(wk, 3.0, "Coarse")
+    for f in ("loss", "nut_ratio", "Q", "Tu"):
+        assert vol[f].shape == vol["X"].shape and np.isfinite(vol[f]).all()
+    assert vol["nut_ratio"].max() > 1.0
+    lines = W.streamlines(wk, 3.0)
+    assert lines.shape[2] == 3 and np.isfinite(lines).all() and (lines[:, -1, 0] > 2.5).all()
+    xs, ys, zs = W.wake_mesh_lines(wk, 3.0)
+    assert len(xs) > 10
+    fig = W.wake_scene(wk, vol, W.LAYERS, 3.0, lines=lines)
+    assert len(fig.data) >= 4

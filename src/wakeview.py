@@ -369,3 +369,233 @@ def planes_figure(wk, ds=(0.5, 1.5, 3.0, 5.0), field="loss", height=640, cut=0.0
                         hovertemplate=f"x {p['xyz'][0, 0, 0]:.2f}<br>{field} %{{surfacecolor:.3g}}<extra></extra>")
     fig.update_layout(title=f"Wake planes behind the wing: {LABELS.get(field, field)}")
     return fig
+
+
+# ======================================================================
+# the whole wake in one 3D scene
+# ======================================================================
+RES = {"Coarse": (90, 34, 44), "Medium": (130, 48, 62), "Fine": (180, 64, 84)}
+
+
+def wake_volume(wk, x_end=6.0, res="Medium", ybox=None):
+    """the flow on a box around the wing and its wake (axis aligned, for plotly volume /
+    isosurface): total-pressure loss, eddy viscosity, Q-criterion, an estimated
+    turbulence intensity, and the solid mask"""
+    nx, ny, nz = RES[res]
+    w = wk.case.d["wall_centres"]
+    x0 = float(w[:, 0].min()) - 0.3
+    rise = (x_end - wk.te[0]) * math.tan(math.radians(wk.alpha))
+    y0, y1 = ybox or (min(-0.45, rise - 0.6), max(0.45, rise + 0.6))
+    x = np.linspace(x0, x_end, nx)
+    y = np.linspace(y0, y1, ny)
+    z = np.linspace(0.0, 1.35 * wk.s, nz)
+    X, Y, Z = np.meshgrid(x, y, z, indexing="ij")
+    q = np.c_[X.ravel(), Y.ravel(), Z.ravel()]
+    dist, j = wk.tree.query(q, k=4)
+    ww = 1.0 / np.maximum(dist, 1e-9)
+    ww /= ww.sum(1, keepdims=True)
+    U = (wk.case.U[j] * ww[..., None]).sum(1).reshape(X.shape + (3,))
+    p = (wk.case.p[j] * ww).sum(1).reshape(X.shape)
+    nut = (wk.case.nut[j] * ww).sum(1).reshape(X.shape)
+    solid = wk.case._solid_mask(q).reshape(X.shape)
+    # velocity gradient on the box: Q = 1/2 (|Omega|^2 - |S|^2)  (> 0 in a vortex core)
+    g = np.empty(X.shape + (3, 3))
+    for i in range(3):
+        g[..., i, 0], g[..., i, 1], g[..., i, 2] = np.gradient(U[..., i], x, y, z)
+    S = 0.5 * (g + np.swapaxes(g, -1, -2))
+    O = 0.5 * (g - np.swapaxes(g, -1, -2))
+    S2 = (S ** 2).sum((-1, -2))
+    Q = 0.5 * ((O ** 2).sum((-1, -2)) - S2)
+    # SA carries no turbulent kinetic energy; Bradshaw's relation -uv = 0.3 k gives an
+    # estimate k = nu_t |S| / 0.3, Tu = sqrt(2k/3) / U_inf
+    k = nut * np.sqrt(2 * S2) / 0.3
+    out = {"X": X, "Y": Y, "Z": Z, "loss": 1.0 - (2 * p + (U ** 2).sum(-1)), "nut_ratio": nut / wk.case.nu,
+           "Q": Q, "Tu": np.sqrt(2.0 * k / 3.0), "U": U, "solid": solid, "x": x, "y": y, "z": z}
+    for f in ("loss", "nut_ratio", "Q", "Tu"):
+        out[f] = np.where(solid, 0.0, out[f])
+    # next to the wall the box straddles the surface and its gradients are not the flow's:
+    # no vortex criterion within a thin layer round the wing
+    from scipy.spatial import cKDTree
+    dw, _ = cKDTree(w).query(q, k=1)
+    h = max(x[1] - x[0], y[1] - y[0], z[1] - z[0])
+    out["Q"] = np.where(dw.reshape(X.shape) < 2.0 * h, 0.0, out["Q"])
+    # over the wing, inboard of the tip, there is no streamwise vortex to show (the
+    # tip vortex starts forming over the tip itself)
+    zp, le, te = planform(wk.case)
+    over = (Z < wk.s - 0.15) & (X > np.interp(Z, zp, le) - 0.05) & (X < np.interp(Z, zp, te))
+    out["Q"] = np.where(over, 0.0, out["Q"])
+    return out
+
+
+def streamlines(wk, x_end=6.0, n=28, r=(0.04, 0.22), step=0.025):
+    """streamlines released on rings around the tip-vortex core just behind the
+    trailing edge (they wind round the vortex), RK2 through the sampled field"""
+    f = wk.plane(0.15, nt=121, nz=161)
+    c = wk.core(f)
+    o = f["xyz"][0, 0] - f["t"][0, 0] * wk.en
+    ctr = o + c["core_t"] * wk.en + np.array([0, 0, c["core_z"]])
+    th = np.linspace(0, 2 * math.pi, n // 2, endpoint=False)
+    seeds = []
+    for rr in r:
+        for a in th:
+            seeds.append(ctr + rr * (math.cos(a) * wk.en + math.sin(a) * np.array([0, 0, 1.0])))
+    # and a few released along the span just behind the trailing edge (the sheet)
+    for zz in np.linspace(0.15, 0.9, 6) * wk.s:
+        seeds.append(wk.te + 0.03 * wk.es + np.array([0, 0, zz]) - 0.01 * wk.en)
+    P = np.array(seeds)
+    paths = [P.copy()]
+    alive = np.ones(len(P), bool)
+    for _ in range(int(3 * (x_end - wk.te[0]) / step)):
+        U1 = wk.sample(P)
+        v1 = np.c_[U1["u"], U1["v"], U1["w"]] @ np.vstack([wk.es, wk.en, [0, 0, 1.0]])
+        Pm = P + 0.5 * step * v1 / np.linalg.norm(v1, axis=1, keepdims=True)
+        U2 = wk.sample(Pm)
+        v2 = np.c_[U2["u"], U2["v"], U2["w"]] @ np.vstack([wk.es, wk.en, [0, 0, 1.0]])
+        P = np.where(alive[:, None], P + step * v2 / np.linalg.norm(v2, axis=1, keepdims=True), P)
+        alive &= P[:, 0] < x_end
+        paths.append(P.copy())
+        if not alive.any():
+            break
+    return np.array(paths).transpose(1, 0, 2)          # (seed, step, xyz)
+
+
+def wake_mesh_lines(wk, x_end=6.0, zmax=None):
+    """the mesh as the wake sees it, on the surface through the trailing edge along the
+    free stream: where each 2D mesh edge crosses that line (per spanwise level, so the
+    lines follow the extrusion), and the spanwise levels"""
+    case = wk.case
+    zmax = zmax or 1.35 * wk.s
+    cells = case.cells2
+    e = []
+    for c in cells:
+        c = c[c >= 0]
+        e.append(np.c_[c, np.roll(c, -1)])
+    e = np.unique(np.sort(np.vstack(e), 1), axis=0)
+    nl = len(case.z)
+    zp, _, tep = planform(case)
+    xs, ys, zs = [], [], []
+    S = np.full((len(e), nl), np.nan)
+    for l in range(nl):
+        Pl = case.P[l * case.n2:(l + 1) * case.n2]
+        zl = float(case.z[l])
+        te = wk.te.copy()
+        te[0] = float(np.interp(zl, zp, tep))
+        a, b = Pl[e[:, 0]] - te, Pl[e[:, 1]] - te
+        da, db = a @ wk.en, b @ wk.en
+        cross = (da * db < 0)
+        s = np.where(cross, (a @ wk.es) + (da / np.where(cross, da - db, 1.0)) * ((b - a) @ wk.es), np.nan)
+        S[:, l] = np.where((s > 0) & (te[0] + s * wk.es[0] < x_end), s, np.nan)
+    keep = np.isfinite(S[:, 0])
+    zl = case.z[:nl]
+    sel = zl <= zmax
+    for k in np.where(keep)[0]:                         # lines along the span
+        te_x = np.interp(zl[sel], zp, tep)
+        s = S[k, sel]
+        xs += list(te_x + s * wk.es[0]) + [None]
+        ys += list(wk.te[1] + s * wk.es[1]) + [None]
+        zs += list(zl[sel]) + [None]
+    smax = (x_end - wk.te[0]) / wk.es[0]
+    for zz in zl[sel]:                                  # the spanwise levels
+        tx = float(np.interp(zz, zp, tep))
+        xs += [tx, tx + smax * wk.es[0], None]
+        ys += [wk.te[1], wk.te[1] + smax * wk.es[1], None]
+        zs += [zz, zz, None]
+    return xs, ys, zs
+
+
+def symmetry_mesh_lines(wk, x_end=6.0, ybox=(-0.6, 1.0)):
+    """the 2D mesh on the symmetry plane z = 0 over the wing and wake"""
+    P = wk.case.P[:wk.case.n2]
+    e = []
+    for c in wk.case.cells2:
+        c = c[c >= 0]
+        e.append(np.c_[c, np.roll(c, -1)])
+    e = np.unique(np.sort(np.vstack(e), 1), axis=0)
+    m = ((P[e[:, 0], 0] > -0.4) & (P[e[:, 0], 0] < x_end) & (P[e[:, 0], 1] > ybox[0])
+         & (P[e[:, 0], 1] < ybox[1]))
+    q = P[e[m]]
+    nanc = np.full(len(q), np.nan)
+    return (np.c_[q[:, 0, 0], q[:, 1, 0], nanc].ravel(), np.c_[q[:, 0, 1], q[:, 1, 1], nanc].ravel())
+
+
+LAYERS = ["Turbulence (ν_t/ν cloud)", "Wake sheet (total-pressure loss)", "Tip vortex (Q-criterion)",
+          "Streamlines", "Mesh on the wake", "Mesh on the symmetry plane", "Turbulence intensity (estimated)"]
+
+
+def _iso(vol, field, level, color, opacity, name, smooth=0.8, show_legend=True):
+    """an isosurface as a triangle mesh (marching cubes on the box), so only the surface
+    goes to the browser; None if the level is not crossed"""
+    import plotly.graph_objects as go
+    from scipy.ndimage import gaussian_filter
+    v = vol[field]
+    v = gaussian_filter(v, smooth) if smooth else v
+    if not (v.min() < level < v.max()):
+        return None
+    x, y, z = vol["x"], vol["y"], vol["z"]
+    try:
+        from skimage.measure import marching_cubes
+    except ImportError:                                   # plotly computes it in the browser
+        X, Y, Z = (a.ravel().astype(np.float32) for a in (vol["X"], vol["Y"], vol["Z"]))
+        return go.Isosurface(x=X, y=Z, z=Y, value=v.ravel().astype(np.float32), isomin=level, isomax=level,
+                             surface_count=1, caps=dict(x_show=False, y_show=False, z_show=False),
+                             colorscale=[[0, color], [1, color]], showscale=False, opacity=opacity, name=name)
+    verts, faces, _, _ = marching_cubes(v, level, spacing=(x[1] - x[0], y[1] - y[0], z[1] - z[0]))
+    verts = (verts + np.array([x[0], y[0], z[0]])).astype(np.float32)
+    faces = faces.astype(np.int32)
+    return go.Mesh3d(x=verts[:, 0], y=verts[:, 2], z=verts[:, 1], i=faces[:, 0], j=faces[:, 1], k=faces[:, 2],
+                     color=color, opacity=opacity, name=name, showlegend=show_legend, flatshading=False,
+                     lighting=dict(ambient=0.55, diffuse=0.6, specular=0.15, roughness=0.8),
+                     hovertemplate=name + "<extra></extra>")
+
+
+def wake_scene(wk, vol, layers, x_end=6.0, height=720, levels=None, lines=None):
+    """the wing, the wake as isosurfaces (nested, translucent shells for a cloud),
+    streamlines and the mesh in one scene"""
+    import postview as V
+    levels = levels or {}
+    fig = V.surface_figure(wk.case, "Cp", height=height)
+    fig.data[0].update(showscale=False, colorscale="Greys", opacity=1.0, name="wing", showlegend=True)
+
+    def add(t):
+        if t is not None:
+            fig.add_trace(t)
+
+    def cloud(field, colors, label, unit_fmt):
+        v = vol[field]
+        hi = float(np.nanpercentile(v[np.isfinite(v)], 99.7))
+        fr = (0.12, 0.28, 0.5, 0.75)
+        for k, (f, c) in enumerate(zip(fr, colors)):
+            lev = f * hi
+            add(_iso(vol, field, lev, c, 0.10 + 0.08 * k, f"{label} {unit_fmt(lev)}", show_legend=True))
+
+    if LAYERS[0] in layers:
+        cloud("nut_ratio", ("#fde3a7", "#f9a65a", "#e8582c", "#a3171b"), "ν_t/ν =", lambda v: f"{v:.0f}")
+    if LAYERS[6] in layers:
+        cloud("Tu", ("#e6e0f3", "#b9a6dc", "#8a63c2", "#54278f"), "Tu =", lambda v: f"{100 * v:.1f} %")
+    if LAYERS[1] in layers:
+        add(_iso(vol, "loss", levels.get("loss", 0.04), "#e8873a", 0.45, "wake sheet (pt loss)"))
+    if LAYERS[2] in layers:
+        v = vol["Q"]
+        qmax = float(np.nanpercentile(v[v > 0], 99.9)) if (v > 0).any() else 1.0
+        add(_iso(vol, "Q", levels.get("Q", 0.03) * qmax, "#2f6fd6", 0.85, "tip vortex (Q-criterion)", smooth=0.6))
+    if LAYERS[3] in layers and lines is not None:
+        xs, ys, zs = [], [], []
+        for L in lines:
+            xs += list(L[:, 0]) + [None]
+            ys += list(L[:, 2]) + [None]
+            zs += list(L[:, 1]) + [None]
+        fig.add_scatter3d(x=xs, y=ys, z=zs, mode="lines", line=dict(color="#1d2733", width=2.5),
+                          name="streamlines", hoverinfo="skip")
+    if LAYERS[4] in layers:
+        xs, ys, zs = wake_mesh_lines(wk, x_end)
+        fig.add_scatter3d(x=xs, y=zs, z=ys, mode="lines", line=dict(color="rgba(30,40,55,0.55)", width=1),
+                          name="mesh on the wake", hoverinfo="skip")
+    if LAYERS[5] in layers:
+        xs, ys = symmetry_mesh_lines(wk, x_end, (float(vol["y"][0]), float(vol["y"][-1])))
+        fig.add_scatter3d(x=xs, y=np.zeros_like(xs), z=ys, mode="lines",
+                          line=dict(color="rgba(30,40,55,0.4)", width=1), name="symmetry-plane mesh",
+                          hoverinfo="skip")
+    fig.update_layout(title=f"The whole wake, α {wk.alpha:g}°", showlegend=True,
+                      legend=dict(x=0, y=1, bgcolor="rgba(255,255,255,0.7)", font=dict(size=11)),
+                      scene=dict(camera=dict(eye=dict(x=-1.0, y=-1.5, z=0.8))))
+    return fig

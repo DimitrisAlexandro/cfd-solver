@@ -120,6 +120,11 @@ The app's **Data → Results viewer** page opens every result under `cases/`, ne
   - 2D: the velocity-deficit field with virtual rake lines, u/U∞ and total-pressure-loss
     profiles at each station, and the drag recovered from the wake (Betz wake-rake
     formula) against the surface-force drag.
+  - 3D, the whole wake in one scene: the wing, the turbulence (nested shells of the SA eddy
+    viscosity ν_t/ν, or an estimated turbulence intensity), the wake sheet (total-pressure
+    loss), the tip vortex (Q-criterion), streamlines winding round it, and the mesh the wake
+    passes through (on the wake surface and the symmetry plane). Isosurfaces are computed
+    on the server (marching cubes, scikit-image), so only triangles reach the browser.
   - 3D: the wake seen from above (sheet and tip vortex), planes behind the wing in 3D,
     and a Betz / Maskell wake survey: profile drag (total-pressure loss) + induced drag
     (½∫ψξ, crossflow kinetic energy) against the surface CD and CL²/(πAR), shed
