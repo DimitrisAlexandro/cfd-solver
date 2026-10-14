@@ -93,6 +93,31 @@ def section_start(info, alpha, re, max_iter=1500, log=print):
     return U, p, nuT
 
 
+def save_fields(path, s, info, pm, alpha, coeffs):
+    """the solution for the results viewer (postview.Case3D): points, the extrusion map,
+    cell fields (float32) and the wing surface with Cp / Cf"""
+    m = s.m
+    c2 = info["cells2"]
+    W = max(len(c) for c in c2)
+    C2 = np.full((len(c2), W), -1, np.int32)
+    for i, c in enumerate(c2):
+        C2[i, :len(c)] = c
+    idx, pb, tau, S, Smag = s.wall_values("wing")
+    faces = m.bfaces[idx]
+    g = s.gU                                               # g[k][:, j] = d u_k / d x_j
+    vort = np.c_[g[2][:, 1] - g[1][:, 2], g[0][:, 2] - g[2][:, 0], g[1][:, 0] - g[0][:, 1]]
+    keep = {k: v for k, v in info.items() if isinstance(v, (int, float, str))}
+    meta = dict(keep, alpha=float(alpha), nu=float(s.nu), **{k: float(v) for k, v in coeffs.items()})
+    np.savez_compressed(
+        path, info=json.dumps(meta), points=np.asarray(pm["points"], np.float32), n2=info["n2"],
+        cells2=C2, cell_layer=info["cell_layer"].astype(np.int32), cell_2d=info["cell_2d"].astype(np.int32),
+        z_levels=np.asarray(info["z_levels"], np.float32), centres=m.xc.astype(np.float32),
+        U=s.U.astype(np.float32), p=s.p.astype(np.float32), vorticity=vort.astype(np.float32),
+        nut=(s.turb.nu_t() if s.turb is not None else np.zeros(m.ncells)).astype(np.float32),
+        wall_faces=faces.astype(np.int32), wall_centres=m.bxf[idx].astype(np.float32),
+        wall_Cp=(2.0 * pb).astype(np.float32), wall_Cf=(2.0 * np.linalg.norm(tau, axis=1)).astype(np.float32))
+
+
 def converged(hist, force_tol):
     """forces settled: the mean CL and CD of the last 200 iterations differ from those
     of the 200 before by less than force_tol (relative, floors 0.3 and 0.01). Means,
@@ -153,9 +178,12 @@ def run(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedral=0.0
                     "status": "converged" if ok else "not converged", "span": sl, "history": hist})
         log(f"[wing3d] alpha {a:g}: CL {c['CL']:.4f}  CD {c['CD']:.5f} (pressure {c['CDp']:.5f})  Cm {c['Cm']:+.4f}  "
             f"{it} it, {time.time() - t1:.0f}s, {'converged' if ok else 'NOT converged'}")
+        if out:
+            Path(out).mkdir(parents=True, exist_ok=True)
+            save_fields(Path(out) / f"fields_a{a:g}.npz", s, info, pm, a, c)
         init = (a, s.U.copy(), s.p.copy(), s.turb.nuT.copy())
     info_out = {k: v for k, v in info.items()
-                if k not in ("chord", "section", "z_levels", "section_mesh", "cell_layer", "cell_2d", "z_cell")}
+                if k not in ("chord", "section", "z_levels", "section_mesh", "cell_layer", "cell_2d", "z_cell", "cells2")}
     out_d = {"info": info_out, "mesh": q, "results": res}
     if out:
         o = Path(out)
