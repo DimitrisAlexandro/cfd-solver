@@ -27,6 +27,9 @@ Method
     Reynolds numbers (chord * speed / nu, ISA atmosphere), interpolated in
     log Re and linearly along the span; outside the computed angles the
     Viterna-Corrigan post-stall model. Polars are cached (--polar-dir).
+  * Transition on the swept wing (--transition-3d ALPHA): attachment-line
+    contamination / instability, crossflow and Tollmien-Schlichting along
+    the span (swept_transition.wing_transition).
 Limits: attached-flow vortex lattice (no vortex lift / leading-edge vortices
 on strongly swept or delta wings); post-stall is strip theory (trend only);
 no fuselage; steady, symmetric flight (no sideslip).
@@ -669,6 +672,12 @@ def main(argv=None):
     ap.add_argument("--jobs", type=int, default=2)
     ap.add_argument("--transition", choices=["free", "off"], default="free")
     ap.add_argument("--strips", type=int, default=40, help="strips per half span")
+    ap.add_argument("--transition-3d", type=float, metavar="ALPHA",
+                    help="swept-wing transition along the span at this wing angle: "
+                         "attachment line, crossflow, Tollmien-Schlichting (swept_transition.py)")
+    ap.add_argument("--tu", type=float, help="free-stream turbulence (%%) for --transition-3d")
+    ap.add_argument("--contaminated", action="store_true",
+                    help="--transition-3d: the root feeds turbulence onto the attachment line")
     ap.add_argument("--out")
     a = ap.parse_args(argv)
     wing = Wing(a.span, a.root_chord, a.tip_chord, a.sweep, a.dihedral, a.twist, a.incidence,
@@ -709,6 +718,17 @@ def main(argv=None):
              f"M {mach:.3f}, Re_MAC {flight['re_mac']:.3g}")
     txt = report(wing, res, out, title, flight)
     print(txt)
+    if a.transition_3d is not None:
+        import swept_transition as st
+        sol = solve(wing, a.transition_3d, polars, re_strip, mach)
+        t3 = st.wing_transition(wing, sol, re_strip, a.airfoil or "naca0012", a.tip_airfoil,
+                                a.tu, None, a.contaminated)
+        tab = st.wing_table(t3)
+        print(f"\nalpha {a.transition_3d:g}: " + tab)
+        Path(out).mkdir(parents=True, exist_ok=True)
+        (Path(out) / "transition_3d.json").write_text(json.dumps(t3, indent=1))
+        with open(Path(out) / "report.txt", "a") as f:
+            f.write(f"\nalpha {a.transition_3d:g}: " + tab + "\n")
     print(f"[wing] {len(res)} angles in {time.time() - t0:.1f} s -> {out}/ (wing.png, report.txt, "
           f"wing_polar.csv, wing.json)")
 

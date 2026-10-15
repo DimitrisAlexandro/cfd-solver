@@ -59,6 +59,11 @@ class FVMesh:
                 raise ValueError(f"edge {key} shared by {len(lst)} cells")
 
         self.own, self.nei = np.array(own), np.array(nei)
+        # topology (face vertices, cells): the adjoint (adjoint.py) rebuilds the
+        # geometry on moved points with it
+        self.cells = [list(c) for c in cells]
+        self.fa, self.fb = np.array(fa, int), np.array(fb, int)
+        self.ba, self.bb = np.array(ba, int), np.array(bb, int)
         t = P[fb] - P[fa]                        # owner traverses a -> b (CCW)
         self.Sf = np.c_[t[:, 1], -t[:, 0]]       # right of a->b = out of owner
         self.xf = 0.5 * (P[fa] + P[fb])

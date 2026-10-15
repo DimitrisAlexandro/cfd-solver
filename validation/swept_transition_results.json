@@ -1,0 +1,171 @@
+{
+ "sweep_study": [
+  {
+   "sweep": 0,
+   "Rbar": 0.0,
+   "x_up": 0.18152392950212762,
+   "m_up": "Tollmien-Schlichting (e^N)",
+   "x_lo": 0.4950532105535145,
+   "m_lo": "Tollmien-Schlichting (e^N)",
+   "chi_up": 0.0
+  },
+  {
+   "sweep": 10,
+   "Rbar": 65.24178471895421,
+   "x_up": 0.18067846514640215,
+   "m_up": "Tollmien-Schlichting (e^N)",
+   "x_lo": 0.4996201933932287,
+   "m_lo": "Tollmien-Schlichting (e^N)",
+   "chi_up": 362.4657134618878
+  },
+  {
+   "sweep": 20,
+   "Rbar": 131.60131988895682,
+   "x_up": 0.17793340946981098,
+   "m_up": "Tollmien-Schlichting (e^N)",
+   "x_lo": 0.4878873747260734,
+   "m_lo": "crossflow",
+   "chi_up": 699.635267891626
+  },
+  {
+   "sweep": 25,
+   "Rbar": 169.19860710216292,
+   "x_up": 0.1753629687942546,
+   "m_up": "Tollmien-Schlichting (e^N)",
+   "x_lo": 0.464199827622077,
+   "m_lo": "crossflow",
+   "chi_up": 860.4787582351025
+  },
+  {
+   "sweep": 30,
+   "Rbar": 204.9569244695829,
+   "x_up": 0.16650089290940104,
+   "m_up": "crossflow",
+   "x_lo": 0.4508348877524257,
+   "m_lo": "crossflow",
+   "chi_up": 983.5451755260239
+  },
+  {
+   "sweep": 35,
+   "Rbar": 242.01280632103948,
+   "x_up": 0.1471737572636606,
+   "m_up": "crossflow",
+   "x_lo": 0.4465131060637316,
+   "m_lo": "crossflow",
+   "chi_up": 1104.2058830307328
+  },
+  {
+   "sweep": 40,
+   "Rbar": 280.74686804233284,
+   "x_up": 0.12953468010686464,
+   "m_up": "crossflow",
+   "x_lo": 0.44741044104928196,
+   "m_lo": "crossflow",
+   "chi_up": 1192.1673487056387
+  },
+  {
+   "sweep": 45,
+   "Rbar": 330.2040034887733,
+   "x_up": 0.10926758297397873,
+   "m_up": "crossflow",
+   "x_lo": 0.45511949841446514,
+   "m_lo": "crossflow",
+   "chi_up": 1243.667484286843
+  },
+  {
+   "sweep": 50,
+   "Rbar": 376.0259607252983,
+   "x_up": 0.08451627876792762,
+   "m_up": "crossflow",
+   "x_lo": 0.4699015016016372,
+   "m_lo": "crossflow",
+   "chi_up": 1276.0422648830315
+  }
+ ],
+ "wing": {
+  "sweep_le": 32.91701183942531,
+  "stations": [
+   {
+    "eta": 0.019629907879534243,
+    "chord": 5.917554386905956,
+    "chord_normal": 4.967541638102451,
+    "sweep_le": 32.91701183942531,
+    "re": 13837261.935200244,
+    "alpha_eff": 2.055415027635121,
+    "Rbar": 244.12709647441548,
+    "attachment_line": "laminar",
+    "x_tr_upper": 0.1450537609592728,
+    "mech_upper": "crossflow",
+    "x_tr_lower": 0.4433171787843442,
+    "mech_lower": "crossflow",
+    "chi_max_upper": 1135.6191628104875,
+    "ncrit": 9.0
+   },
+   {
+    "eta": 0.40067158495125876,
+    "chord": 4.317179343204713,
+    "chord_normal": 3.6240931209655187,
+    "sweep_le": 32.91701183942531,
+    "re": 10095038.84330058,
+    "alpha_eff": 2.367238257038744,
+    "Rbar": 214.38729105275385,
+    "attachment_line": "laminar",
+    "x_tr_upper": 0.13927160952601247,
+    "mech_upper": "crossflow",
+    "x_tr_lower": 0.48655279059372564,
+    "mech_lower": "crossflow",
+    "chi_max_upper": 936.0897161897009,
+    "ncrit": 9.0
+   },
+   {
+    "eta": 0.7207146453111166,
+    "chord": 2.97299848969331,
+    "chord_normal": 2.4957090078033146,
+    "sweep_le": 32.91701183942531,
+    "re": 6951885.21222033,
+    "alpha_eff": 2.2850298026612865,
+    "Rbar": 177.74329070069194,
+    "attachment_line": "laminar",
+    "x_tr_upper": 0.16306004797949522,
+    "mech_upper": "crossflow",
+    "x_tr_lower": 0.5088763563435887,
+    "mech_lower": "crossflow",
+    "chi_max_upper": 783.5822084567568,
+    "ncrit": 9.0
+   },
+   {
+    "eta": 0.916011353168184,
+    "chord": 2.152752316693627,
+    "chord_normal": 1.8071463429824925,
+    "sweep_le": 32.91701183942531,
+    "re": 5033869.693468737,
+    "alpha_eff": 1.8817853576712258,
+    "Rbar": 146.99366277552014,
+    "attachment_line": "laminar",
+    "x_tr_upper": 0.20878466206422308,
+    "mech_upper": "crossflow",
+    "x_tr_lower": 0.4993790699615088,
+    "mech_lower": "crossflow",
+    "chi_max_upper": 696.0316163390049,
+    "ncrit": 9.0
+   },
+   {
+    "eta": 0.9996145181203615,
+    "chord": 1.8016190238944816,
+    "chord_normal": 1.512384497385704,
+    "sweep_le": 32.91701183942531,
+    "re": 4212800.206151095,
+    "alpha_eff": 0.27748493825756876,
+    "Rbar": 125.9701616589982,
+    "attachment_line": "laminar",
+    "x_tr_upper": 0.3509744939617532,
+    "mech_upper": "crossflow",
+    "x_tr_lower": 0.3905575984356223,
+    "mech_lower": "crossflow",
+    "chi_max_upper": 758.0120230111803,
+    "ncrit": 9.0
+   }
+  ],
+  "laminar_fraction": 0.3109073470379825
+ }
+}
