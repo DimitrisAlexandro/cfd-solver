@@ -96,17 +96,23 @@ def adjoint_report(out=None):
          "coefficients through a mesh deformation that turns the boundary-layer columns with "
          "the wall) for one complex residual evaluation each.", "",
          "## Gradients vs finite differences of complete flow solutions", "",
-         "| case | gradient | adjoint | finite differences | rel. difference |", "|---|---|---|---|---|"]
+         "| case | gradient | adjoint | finite differences (median of 3 steps) | FD spread | rel. difference |",
+         "|---|---|---|---|---|---|"]
     for name, key in (("NACA 0012, α 2°, fully turbulent", "fd_turbulent"),
                       ("NACA 2412, α 4°, transition fixed 0.25 / 0.6", "fd_transition")):
         for r in out[key]["rows"]:
             L.append(f"| {name} | d{r['objective']}/d{r['variable']} | {r['adjoint']:+.5e} | "
-                     f"{r['fd']:+.5e} | {r['rel_diff']:.1e} |")
-    L += ["", "Finite differences: central, re-converged to residuals ~1e-10 with the same "
-          "mesh topology (shape: the same deformation). The few 1e-3 differences are "
-          "finite-difference noise (the upwind / limiter switches of the discretisation; "
-          "smaller steps agree to 1e-5), not adjoint errors: the coloured Jacobian equals a "
-          "directional complex-step derivative to 1e-16 (tests/test_adjoint.py).", "",
+                     f"{r['fd']:+.5e} | {r['fd_spread']:.1e} | {r['rel_diff']:.1e} |")
+    L += ["", "Finite differences: central, at three step sizes (alpha 0.02 / 0.05 / 0.1 deg, "
+          "CST 1e-4 / 2e-4 / 4e-4), each flow re-converged to residuals ~1e-10 on the same mesh "
+          "topology (shape: the same deformation). The spread column is the scatter of the "
+          "three: the discretisation has discrete switches (upwind direction, limiter, nearest "
+          "wall face) that a perturbed solution may cross, which makes a single finite "
+          "difference uncertain by up to a few per cent for some variables. Where the "
+          "differences are clean, the adjoint agrees to 1e-5; where they scatter, the adjoint "
+          "lies within their range. The adjoint itself is exact for the discrete equations: "
+          "the coloured Jacobian equals a directional complex-step derivative to 1e-16 "
+          "(tests/test_adjoint.py).", "",
           "![adjoint vs FD](adjoint_fd_check.png)", "",
           f"Cost (NACA 0012, level 0.5: {sz['cells']} cells, {sz['unknowns']} unknowns, "
           f"{sz['jacobian_nnz']} Jacobian entries, {sz['colours']} colours): flow "
@@ -130,6 +136,13 @@ def adjoint_report(out=None):
               f"| optimised | {b['Cd']:.6f} ({100 * (b['Cd'] / sp['Cd'] - 1):+.1f} %) | "
               f"{ver.get('best', {}).get('Cd', float('nan')):.6f} "
               f"({100 * (ver.get('best', {}).get('Cd', 1) / ver.get('start', {}).get('Cd', 1) - 1):+.1f} %) |",
+              "", "The design converged after ~25 flow + adjoint solutions (see the history); "
+              "the trial steps marked x came afterwards, on the plateau: the optimiser sharpens "
+              "the nose (first CST coefficient: lower +0.025, upper -0.013) and on those shapes "
+              "the SIMPLEC solver at mesh level 0.5 no longer converges from warm or cold starts, "
+              "while the deformed mesh stays benign (near-wall lean < 0.7 deg, cell areas > 85 % "
+              "of the original). Going further needs a more robust flow solver on sharp noses "
+              "(or a nose-radius constraint), not a different gradient.",
               "", "Fully turbulent: the drag is mostly friction and the thickness is held "
               "(t/c >= 0.119), so the possible gain is small; half of the design-mesh gain "
               "survives re-meshing on the validated mesh. Re-meshing every design instead of "
@@ -139,7 +152,7 @@ def adjoint_report(out=None):
               "correction then diverged - the deformation now turns the columns with the wall.",
               "", "![design](adjoint_design_naca0012.png)", ""]
     a = out["awr"]
-    L += ["## Goal-oriented error estimate (adjoint_error.py): a negative result", "",
+    L += ["## Goal-oriented error estimate (adjoint_error.py): mostly a negative result", "",
           f"Adjoint-weighted residual on the nested fine mesh (every cell split in four, "
           f"{a['cells'][0]} -> {a['cells'][1]} cells), NACA 0012, α 4°:", "",
           "| | coarse | fine (solved) | estimate, raw | estimate, 30 smoothing iterations |",
@@ -148,16 +161,22 @@ def adjoint_report(out=None):
         s30, raw = a["smoothed_30"][k], a["raw"][k]
         L.append(f"| {k} | {s30['coarse']:.5f} | {s30.get('fine_solved', float('nan')):.5f} | "
                  f"{raw['estimate_fine']:.5f} | {s30['estimate_fine']:.5f} |")
-    L += ["", "The correction does not predict the fine-mesh value. Measured: even with the "
-          "exact fine-mesh adjoint (240 000 unknowns) the linearised correction moved Cl the "
-          "wrong way (0.442 -> 0.453 against a fine value of 0.434): the reconstructed state "
-          "is too far from the fine solution in the nonlinear sense (boundary-layer "
-          "residual jumps, limiter and SA switches), and the adjoint fields reach 1e5-1e7 at "
-          "the trailing-edge and wall singularities. This matches the experience that the "
-          "adjoint-weighted residual is far less reliable for second-order finite-volume "
-          "RANS than for DG discretisations. The cell-wise indicator |psi . R| is kept as "
-          "an adaptation indicator (adjoint_error.adapt; the mesher's triangle size field "
-          "takes a multiplier, hybrid_mesher.build_mesh(size_scale=...)).", ""]
+    eff = {k: a["smoothed_30"][k].get("effectivity") for k in ("Cl", "Cd", "Cm")}
+    L += ["", "Effectivity (estimated / actual error of the coarse value; 1 = exact): "
+          + ", ".join(f"{k} {v:.2f}" for k, v in eff.items() if v is not None) + ". "
+          "Without smoothing the correction is useless (the reconstruction leaves child-to-child "
+          "residual jumps in the boundary layer that the coarse adjoint weights arbitrarily). "
+          "After 30 fine-mesh iterations it gets the direction of the lift and moment errors "
+          "right but overshoots about twice, and it does not estimate the drag error. Even the "
+          "exact fine-mesh adjoint (240 000 unknowns) did not make the raw correction work "
+          "(Cl 0.442 -> 0.453 against a fine value of 0.434): the reconstructed state is too far "
+          "from the fine solution in the nonlinear sense (limiter and SA switches) and the "
+          "adjoint fields reach 1e5-1e7 at the trailing-edge and wall singularities. This is "
+          "in line with the experience that the adjoint-weighted residual works far less well "
+          "for second-order finite-volume RANS than for DG. The cell-wise |psi . R| is kept "
+          "as an adaptation indicator (adjoint_error.adapt; the mesher's triangle size field "
+          "takes a multiplier, hybrid_mesher.build_mesh(size_scale=...)), not as a corrected "
+          "value.", ""]
     (VAL / "adjoint_report.md").write_text("\n".join(L) + "\n")
 
 
@@ -372,9 +391,18 @@ def fiml_section(log=print):
     for f in sorted(d.glob("a*.npz")):
         z = np.load(f)
         h = json.loads(str(z["history"]))
+        b, xc = z["beta"], z["xc"]
+        dev = np.abs(b - 1) > 0.1
+        bands = {}
+        for lo, hi in ((0.0, 0.3), (0.3, 0.7), (0.7, 1.05)):
+            m = dev & (xc[:, 0] >= lo) & (xc[:, 0] < hi)
+            bands[f"{lo:g}-{hi:g}"] = float(b[m].mean()) if m.any() else None
         inv.append({"alpha": float(z["alpha"]), "Cl_target": float(z["cl_target"]),
                     "Cl_SA": h[0]["Cl"], "Cl_inverted": float(z["Cl"]), "iterations": len(h),
-                    "beta_min": float(z["beta"].min()), "beta_max": float(z["beta"].max())})
+                    "beta_min": float(b.min()), "beta_max": float(b.max()),
+                    "cells_corrected": int(dev.sum()), "cells": len(b),
+                    "upper_share": float((dev & (xc[:, 1] > 0)).sum() / max(dev.sum(), 1)),
+                    "mean_beta_x_bands": bands})
     pred = json.loads((d / "predictions.json").read_text()) if (d / "predictions.json").exists() else []
     out = {"inversions": inv, "predictions": pred}
     (VAL / "fiml_results.json").write_text(json.dumps(out, indent=1))
@@ -399,17 +427,34 @@ def fiml_section(log=print):
          "respect to every cell's beta), then learned as a function of six local flow "
          "features by a small neural network and used inside SA for cases not seen in "
          "training. NACA 0012, Re 3e6 (mesh level 0.5), lift of Gregory & O'Reilly.", "",
-         "## Inversions (training)", "", "| alpha | Cl SA | Cl target | Cl inverted | iterations | beta range |",
-         "|---|---|---|---|---|---|"]
+         "## Inversions (training)", "",
+         "| alpha | Cl SA | Cl target | Cl inverted | flow + adjoint solutions | beta range | cells with abs(beta - 1) > 0.1 |",
+         "|---|---|---|---|---|---|---|"]
     for i in inv:
         L.append(f"| {i['alpha']:g} | {i['Cl_SA']:.4f} | {i['Cl_target']:.4f} | {i['Cl_inverted']:.4f} | "
-                 f"{i['iterations']} | {i['beta_min']:.2f} - {i['beta_max']:.2f} |")
+                 f"{i['iterations']} | {i['beta_min']:.3f} - {i['beta_max']:.3f} | "
+                 f"{i['cells_corrected']} of {i['cells']} ({100 * i['upper_share']:.0f} % upper surface) |")
+    if inv:
+        bd = inv[0]["mean_beta_x_bands"]
+        L += ["", "Where the inversion acts (alpha " + f"{inv[0]['alpha']:g}): almost only in the "
+              "upper-surface boundary layer - mean beta of the corrected cells " +
+              ", ".join(f"x/c {k}: {v:.2f}" for k, v in bd.items() if v is not None) +
+              ". Less production near the nose, more over the mid and aft upper surface: "
+              "more mixing in the adverse pressure gradient, later trailing-edge separation, "
+              "more lift near stall - the known deficiency of SA there, found from the lift "
+              "data alone."]
     L += ["", "## Prediction with the learned model", "",
-          "| alpha | in training | Cl SA | Cl SA + learned beta | Cl experiment |", "|---|---|---|---|---|"]
+          "| alpha | in training | Cl SA | Cl SA + learned beta | Cl experiment | error SA | error learned |",
+          "|---|---|---|---|---|---|---|"]
     tr = {i["alpha"] for i in inv}
     for p in pred:
+        e0, e1 = p["Cl_SA"] / p["Cl_exp"] - 1, p["Cl_FIML"] / p["Cl_exp"] - 1
         L.append(f"| {p['alpha']:g} | {'yes' if p['alpha'] in tr else 'no'} | {p['Cl_SA']:.4f} | "
-                 f"{p['Cl_FIML']:.4f} | {p['Cl_exp']:.4f} |")
+                 f"{p['Cl_FIML']:.4f} | {p['Cl_exp']:.4f} | {100 * e0:+.1f} % | {100 * e1:+.1f} % |")
+    L += ["", "The model trained on 13° and 15° improves the lift at every angle, including the "
+          "unseen 10° and 14° and the 16° beyond the training range, where baseline SA stalls "
+          "early (-18 %) and the augmented model keeps the flow attached (-4 %). The training "
+          "angles are not reproduced exactly (the network is a smooth fit of two beta fields)."]
     L += ["", "![FIML](fiml_naca0012.png)", "",
           "Limits: two training angles of one airfoil at one Reynolds number, a coarse mesh "
           "(the inversion also absorbs discretisation error), lift only. It demonstrates the "

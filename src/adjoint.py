@@ -1072,6 +1072,11 @@ def solve_primal(spec, re, alpha, level=1.0, transition="off", ncrit=9.0, tol=1e
     if turb and transition != "off":
         import transition as T
         if isinstance(transition, dict):
+            # fully turbulent first: laminar regions imposed on a cold start
+            # diverged (NACA 2412, Re 3e6, alpha 4, x_tr 0.25 / 0.6)
+            if init is None:
+                s.solve(tol=1e-4, max_iter=min(1500, max_iter), verbose=False,
+                        callback=vf.update)
             tr = T.Transition(s, mesh, re, mode="fixed", x_tr=transition)
             s.solve(tol=1e-6, max_iter=max_iter, verbose=False, callback=vf.update)
         else:
@@ -1142,16 +1147,19 @@ def gradients(spec, re, alpha, level=1.0, transition="off", objectives=("Cl", "C
 # ----------------------------------------------------------------------
 # finite-difference check
 # ----------------------------------------------------------------------
-def fd_check(spec, re, alpha, level=0.5, transition="off", d_alpha=0.05, shape_vars=(2, 12),
-             order=8, eps_shape=2e-4, verbose=True):
+def fd_check(spec, re, alpha, level=0.5, transition="off", d_alpha=(0.02, 0.05, 0.1),
+             shape_vars=(2, 12), order=8, eps_shape=(1e-4, 2e-4, 4e-4), verbose=True):
     """Adjoint gradients against central finite differences of complete
     flow solutions (same mesh topology: the shape perturbation deforms the
-    mesh with the same IDW map, transition locations frozen)."""
+    mesh with the same map, transition locations frozen). Every finite
+    difference is taken at three step sizes: single-step differences scatter
+    by up to ~4 % (the discretisation has discrete switches - upwind
+    direction, limiter, nearest wall face - that a perturbed solution may
+    cross), so the reference is the median and its spread is reported."""
     log = print if verbose else (lambda *a, **k: None)
     tr_frozen = transition
     g = gradients(spec, re, alpha, level, transition, shape=True, order=order)
     pr = g["_primal"]
-    adj = g["_adjoint"]
     if isinstance(transition, str) and transition == "free":
         tr_frozen = dict(pr["transition"].x_tr)       # FD with the transition frozen
     state = {"xc": pr["fvm"].xc, "U": pr["solver"].U, "p": pr["solver"].p,
@@ -1159,33 +1167,54 @@ def fd_check(spec, re, alpha, level=0.5, transition="off", d_alpha=0.05, shape_v
     log(f"[check] {spec} Re {re:.3g} alpha {alpha}: Cl {g['Cl']:.6f} Cd {g['Cd']:.6f} "
         f"Cm {g['Cm']:+.6f}; residual check {g['residual_check']}")
     rows = []
+    import polar as pl
+
+    base = {"mesh": pr["mesh"], "info": pr["info"]}
 
     def coeffs(**kw):
-        p = solve_primal(spec, re, kw.get("alpha", alpha), level, tr_frozen, init=state,
-                         fvm_override=kw.get("points"))
-        import polar as pl
-        return pl.coefficients(p["solver"], p["walls"], p["U"])[0]
-    # angle of attack
-    cp_ = coeffs(alpha=alpha + d_alpha)
-    cm_ = coeffs(alpha=alpha - d_alpha)
+        """the perturbed flow on the SAME mesh (the adjoint's partial
+        derivatives are taken at fixed topology; re-meshing at alpha +- h
+        also mapped the warm start between different meshes, which a fixed
+        transition did not survive); warm start, cold start if it fails"""
+        for init in (state, None):
+            try:
+                p = solve_primal(spec, re, kw.get("alpha", alpha), level, tr_frozen, init=init,
+                                 fvm_override=kw.get("points"), base=base)
+                c = pl.coefficients(p["solver"], p["walls"], p["U"])[0]
+                if np.isfinite(c["Cl"]):
+                    return c
+            except (ValueError, FloatingPointError, np.linalg.LinAlgError):
+                pass
+        raise RuntimeError("finite-difference flow solution failed")
+
+    def central(fplus, fminus, steps):
+        d = {k: [] for k in ("Cl", "Cd", "Cm")}
+        for h in steps:
+            cp_, cm_ = fplus(h), fminus(h)
+            for k in d:
+                d[k].append((cp_[k] - cm_[k]) / (2 * h))
+        return d
+    dA = central(lambda h: coeffs(alpha=alpha + h), lambda h: coeffs(alpha=alpha - h), d_alpha)
     for k in ("Cl", "Cd", "Cm"):
-        fd = (cp_[k] - cm_[k]) / (2 * d_alpha)
-        rows.append({"variable": "alpha", "objective": k, "adjoint": g["d_dalpha"][k], "fd": fd})
-    # shape (CST coefficients)
+        rows.append({"variable": "alpha", "objective": k, "adjoint": g["d_dalpha"][k],
+                     "fd": float(np.median(dA[k])), "fd_all": dA[k]})
     defo = IDWDeformation(pr["solver"].m, pr["walls"])
     dP = cst_wall_velocities(defo, order)
+    P0 = np.asarray(pr["fvm"].points)
     for j in shape_vars:
-        P0 = np.asarray(pr["fvm"].points)
-        cp_ = coeffs(points=P0 + eps_shape * dP[j])
-        cm_ = coeffs(points=P0 - eps_shape * dP[j])
+        dS = central(lambda h: coeffs(points=P0 + h * dP[j]),
+                     lambda h: coeffs(points=P0 - h * dP[j]), eps_shape)
         for k in ("Cl", "Cd", "Cm"):
-            fd = (cp_[k] - cm_[k]) / (2 * eps_shape)
-            rows.append({"variable": f"cst[{j}]", "objective": k,
-                         "adjoint": g["d_dcst"][k][j], "fd": fd})
+            rows.append({"variable": f"cst[{j}]", "objective": k, "adjoint": g["d_dcst"][k][j],
+                         "fd": float(np.median(dS[k])), "fd_all": dS[k]})
     for r in rows:
-        r["rel_diff"] = abs(r["adjoint"] - r["fd"]) / max(abs(r["fd"]), 1e-12)
+        sc = max(abs(r["fd"]), 1e-12)
+        r["rel_diff"] = abs(r["adjoint"] - r["fd"]) / sc
+        r["fd_spread"] = (max(r["fd_all"]) - min(r["fd_all"])) / sc
+        r["within_fd_range"] = bool(min(r["fd_all"]) - 1e-3 * sc <= r["adjoint"] <=
+                                    max(r["fd_all"]) + 1e-3 * sc)
         log(f"  d{r['objective']}/d{r['variable']:8s} adjoint {r['adjoint']:+.6e}  "
-            f"FD {r['fd']:+.6e}  rel. diff {r['rel_diff']:.1e}")
+            f"FD {r['fd']:+.6e} (spread {r['fd_spread']:.1e})  rel. diff {r['rel_diff']:.1e}")
     return {"gradients": {k: v for k, v in g.items() if not k.startswith("_")}, "rows": rows}
 
 

@@ -350,7 +350,12 @@ def solve_augmented(spec, re, alpha, net, level=0.5, every=20, relax=0.5, max_it
     """SA with beta = net(q(x)) updated every `every` iterations"""
     pr = A.solve_primal(spec, re, alpha, level, init=init)          # baseline start
     s, vf = pr["solver"], pr["vortex"]
+    # the learned beta from the baseline flow, applied BEFORE solving (the
+    # baseline is converged below the tolerance: a solve that only set beta
+    # in its callback stopped at the first iteration with beta = 1)
     beta = np.ones(s.m.ncells)
+    beta = (1 - relax) * beta + relax * np.clip(net.predict(features(s)), 0.05, 5.0)
+    s.turb.beta = beta
     hist = []
 
     def cb(it, r):
@@ -365,6 +370,7 @@ def solve_augmented(spec, re, alpha, net, level=0.5, every=20, relax=0.5, max_it
             return True
         return None
     vf.every = 1
+    s.solve(tol=0.0, max_iter=min(1000, max_iter), verbose=False, callback=cb)   # beta settles
     s.solve(tol=1e-9, max_iter=max_iter, verbose=False, callback=cb)
     import polar as pl
     c = pl.coefficients(s, pr["walls"], pr["U"])[0]
