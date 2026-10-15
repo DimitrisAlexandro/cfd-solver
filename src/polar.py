@@ -80,14 +80,25 @@ def coefficients(solver, walls, U):
     return tot, per
 
 
-def make_case(spec, re, alpha, level=1.0, farfield=None, regime="auto"):
+def make_case(spec, re, alpha, level=1.0, farfield=None, regime="auto", size_scale=None,
+              base=None):
     """Airfoil spec -> (FVMesh, mesh dict, patches, bcs, U_inf, turbulence, info).
     info["walls"]: the wall patch names (["wall"], or wall_<element> for a
-    multi-element airfoil, see multi_element.py)."""
+    multi-element airfoil, see multi_element.py).
+    base: {"mesh", "info", "points"} of an earlier case: no meshing, that
+    mesh (cells, wall patches) with base["points"] (e.g. deformed by
+    adjoint.IDWDeformation); only the inlet / outlet split follows alpha."""
     turb = uses_rans(re, regime) if not me.is_multi(spec) else re >= LAMINAR_RE
     r = level
     U = (math.cos(math.radians(alpha)), math.sin(math.radians(alpha)))
-    if me.is_multi(spec):
+    if base is not None:
+        mesh = dict(base["mesh"])
+        mesh["points"] = np.asarray(base.get("points", mesh["points"]))
+        info = dict(base["info"])
+        walls = list(info["walls"])
+        patches = {w: (mesh["patches"]["airfoil"] if w == "wall" else mesh["patches"][w])
+                   for w in walls}
+    elif me.is_multi(spec):
         if not turb:
             raise ValueError("multi-element airfoils: Re >= 1e5 (Spalart-Allmaras) only")
         elements, info = me.load_multi(spec, level=level)
@@ -97,7 +108,7 @@ def make_case(spec, re, alpha, level=1.0, farfield=None, regime="auto"):
         patches = {w: mesh["patches"][w] for w in walls}
     else:
         loop, info = ag.load_airfoil(spec, n_side=int(round((160 if turb else 120) * r)))
-        mesh = _single_mesh(loop, info, re, alpha, level, farfield, turb)
+        mesh = _single_mesh(loop, info, re, alpha, level, farfield, turb, size_scale)
         walls = ["wall"]
         patches = {"wall": mesh["patches"]["airfoil"]}
     P = mesh["points"]
@@ -112,11 +123,12 @@ def make_case(spec, re, alpha, level=1.0, farfield=None, regime="auto"):
     return fvm, mesh, patches, bcs, U, ("sa" if turb else None), info
 
 
-def _single_mesh(loop, info, re, alpha, level, farfield, turb):
+def _single_mesh(loop, info, re, alpha, level, farfield, turb, size_scale=None):
     r = level
     if turb:
         import validate_naca0012_sa as v
-        mesh = v.airfoil_mesh(level, alpha, wall=loop, re=re, farfield=farfield or 100.0)
+        mesh = v.airfoil_mesh(level, alpha, wall=loop, re=re, farfield=farfield or 100.0,
+                              size_scale=size_scale)
     else:
         from validate_airfoil import laminar_h1
         mesh = hm.build_mesh(wall=loop, h1=laminar_h1(re) / r, growth=1.1 ** (1 / r),
@@ -124,7 +136,7 @@ def _single_mesh(loop, info, re, alpha, level, farfield, turb):
                              farfield_radius=farfield or 40.0, n_farfield=int(round(64 * r)),
                              h_near=0.02 / r, grad=0.12 / r, wake_length=5.0, wake_h=0.01 / r,
                              wake_grad=0.03 / r, alpha_deg=alpha, label=info["name"],
-                             verbose=False)
+                             verbose=False, size_scale=size_scale)
     return mesh
 
 
@@ -132,7 +144,8 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
               force_tol=2e-5, window=200, farfield=None, out=None, transition="free",
               ncrit=9.0, sequencing=False, solver="auto", mach=0.0, regime="auto"):
     """One angle of attack. init: dict(xc, U, p, nuT, x_tr) from a neighbouring
-    angle (warm start). transition (turbulent Re only): "free" (e^N, N_crit
+    angle (warm start). transition (turbulent Re only): "aft" (amplification-
+    factor transport, aft.py), "free" (e^N, N_crit
     = ncrit), "off" (fully turbulent) or {"upper": x, "lower": x} (fixed trip).
     sequencing (Phase 4): a cold start (no init) at Re >= 1e5 is first solved
     on a 0.7x mesh (fully turbulent, residuals 1e-5) and the result
@@ -291,7 +304,14 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
         return None
 
     tr = None
-    if turb and transition != "off":
+    aft_model = None
+    if turb and transition == "aft":
+        # local amplification-factor transport (aft.py) instead of the
+        # marching e^N analysis
+        import aft as AF
+        aft_model = AF.AFT(s, re, ncrit=ncrit, walls=walls)
+        it = AF.solve_with_aft(s, aft_model, tol=tol, max_iter=max_iter, callback=monitor)
+    elif turb and transition != "off":
         import transition as T
         if isinstance(transition, dict):
             tr = T.Transition(s, mesh, re, mode="fixed", x_tr=transition)
@@ -306,6 +326,13 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
                                      scale=k_it)
     else:
         it = s.solve(tol=tol, max_iter=max_iter, verbose=False, callback=monitor)
+    if aft_model is not None:
+        xt = aft_model.transition_points()
+
+        class _TR:                                   # the fields the report reads
+            mode, converged, converged_by, history = "aft", aft_model.converged, "aft", []
+            x_tr = xt
+        tr = _TR()
     c, per = coefficients(s, walls, U)
     ws = [wall_data(s, wn, U)[0] for wn in walls]
     w = {k: np.concatenate([x[k] for x in ws]) for k in ("x", "y", "side", "Cp", "Cf", "yplus")}
@@ -323,7 +350,8 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
            "solver": solver, "mach": float(mach),
            "sequenced": bool(init is not None and init.get("sequencing")),
            "transition": ("fully turbulent" if tr is None else
-                          (f"free, N_crit {ncrit:g}" if tr.mode == "free" else "fixed")),
+                          (f"free, N_crit {ncrit:g}" if tr.mode == "free" else
+                           f"AFT transport, N_crit {ncrit:g}" if tr.mode == "aft" else "fixed")),
            "x_tr_upper": None if tr is None else round(tr.x_tr["upper"], 4),
            "x_tr_lower": None if tr is None else round(tr.x_tr["lower"], 4),
            "transition_converged": None if tr is None else bool(tr.converged),
@@ -332,7 +360,8 @@ def run_point(spec, re, alpha, level=1.0, init=None, tol=1e-7, max_iter=6000,
         # last estimates (how transition was found: N_crit, laminar separation + bubble, ...)
         res["transition_estimates"] = [
             {sd: {k: (round(v, 4) if isinstance(v, float) else v)
-                  for k, v in (e.get(sd) or {}).items() if k in ("x_est", "how", "x_sep", "N_end")}
+                  for k, v in (e.get(sd) or {}).items()
+                  if k in ("x_est", "how", "x_sep", "N_end", "features")}
              for sd in ("upper", "lower")} for e in tr.history[-3:]]
     if (osc["flag"] or not s.converged) and len(hist) >= 20:   # mean + amplitude of the tail
         h = np.array(hist[-50:] if osc["flag"] else hist[len(hist) // 2:])
