@@ -1,0 +1,120 @@
+{
+ "n": 86,
+ "sources": [
+  "naca0012_Re2.5e06_M0.12_L1_free.json",
+  "naca2412@flap=25c10_Re2.2e06_M0.12_L1_free.json",
+  "naca2412@flap=25c20_Re2.2e06_M0.12_L1_free.json",
+  "naca2412_Re2.2e06_M0.12_L1_free.json",
+  "naca2412_Re4.4e06_M0.12_L1_free.json",
+  "cases/naca2412_Re3e06/polar.json",
+  "validation/transition_tr_n0012_re1e6.json",
+  "validation/transition_tr_n0012_re3e6.json",
+  "validation/transition_tr_n2412_re3e6.json"
+ ],
+ "loo": [
+  {
+   "polar": "naca0012 Re 1e+06 free",
+   "n": 4,
+   "rms_Cl": 0.013673953937373305,
+   "rms_Cl_prestall": 0.013673953937373305,
+   "rms_Cd_rel_prestall": 0.08183015377368616,
+   "alpha_max": 6.0,
+   "rms_Cd_rel": 0.08183015377368616,
+   "cover_Cl_2sd": 1.0,
+   "cover_Cd_2sd": 0.75
+  },
+  {
+   "polar": "naca0012 Re 2.5e+06 free",
+   "n": 13,
+   "rms_Cl": 0.029424477775246396,
+   "rms_Cl_prestall": 0.016557050599093813,
+   "rms_Cd_rel_prestall": 0.07459196774170425,
+   "alpha_max": 18.0,
+   "rms_Cd_rel": 0.09067533132172921,
+   "cover_Cl_2sd": 0.9230769230769231,
+   "cover_Cd_2sd": 0.6153846153846154
+  },
+  {
+   "polar": "naca0012 Re 3e+06 free",
+   "n": 7,
+   "rms_Cl": 0.013886650727527764,
+   "rms_Cl_prestall": 0.013886650727527764,
+   "rms_Cd_rel_prestall": 0.06272701955579561,
+   "alpha_max": 12.0,
+   "rms_Cd_rel": 0.06272701955579561,
+   "cover_Cl_2sd": 0.8571428571428571,
+   "cover_Cd_2sd": 0.7142857142857143
+  },
+  {
+   "polar": "naca2412 Re 2.2e+06 free",
+   "n": 14,
+   "rms_Cl": 0.15642199069886512,
+   "rms_Cl_prestall": 0.012596092645994823,
+   "rms_Cd_rel_prestall": 0.0479254041141331,
+   "alpha_max": 22.0,
+   "rms_Cd_rel": 0.19734200931773602,
+   "cover_Cl_2sd": 0.8571428571428571,
+   "cover_Cd_2sd": 0.7142857142857143
+  },
+  {
+   "polar": "naca2412 Re 3e+06 turbulent",
+   "n": 5,
+   "rms_Cl": 0.3963184756508545,
+   "rms_Cl_prestall": 0.3963184756508545,
+   "rms_Cd_rel_prestall": 0.1620960534785333,
+   "alpha_max": 8.0,
+   "rms_Cd_rel": 0.1620960534785333,
+   "cover_Cl_2sd": 1.0,
+   "cover_Cd_2sd": 1.0
+  },
+  {
+   "polar": "naca2412 Re 3e+06 free",
+   "n": 7,
+   "rms_Cl": 0.010984072571358364,
+   "rms_Cl_prestall": 0.010984072571358364,
+   "rms_Cd_rel_prestall": 0.03773805922563604,
+   "alpha_max": 10.0,
+   "rms_Cd_rel": 0.03773805922563604,
+   "cover_Cl_2sd": 0.7142857142857143,
+   "cover_Cd_2sd": 1.0
+  },
+  {
+   "polar": "naca2412 Re 4.4e+06 free",
+   "n": 13,
+   "rms_Cl": 0.06896873937612101,
+   "rms_Cl_prestall": 0.03352471356342644,
+   "rms_Cd_rel_prestall": 0.09147928561241606,
+   "alpha_max": 18.0,
+   "rms_Cd_rel": 0.20387262754402224,
+   "cover_Cl_2sd": 0.46153846153846156,
+   "cover_Cd_2sd": 0.7692307692307693
+  },
+  {
+   "polar": "naca2412@flap=25c10 Re 2.2e+06 free",
+   "n": 11,
+   "rms_Cl": 0.11406981193334909,
+   "rms_Cl_prestall": 0.1254542228189434,
+   "rms_Cd_rel_prestall": 0.2345948439705267,
+   "alpha_max": 16.0,
+   "rms_Cd_rel": 0.21450559954661222,
+   "cover_Cl_2sd": 0.36363636363636365,
+   "cover_Cd_2sd": 0.9090909090909091
+  },
+  {
+   "polar": "naca2412@flap=25c20 Re 2.2e+06 free",
+   "n": 12,
+   "rms_Cl": 0.1970870532953889,
+   "rms_Cl_prestall": 0.21511545087302936,
+   "rms_Cd_rel_prestall": 0.31832218508561017,
+   "alpha_max": 16.0,
+   "rms_Cd_rel": 0.29108250767781135,
+   "cover_Cl_2sd": 0.5,
+   "cover_Cd_2sd": 0.5
+  }
+ ],
+ "calibration": {
+  "Cl": 2.329707929169387,
+  "logCd": 1.8337930350088159,
+  "Cm": 1.3765624355703643
+ }
+}

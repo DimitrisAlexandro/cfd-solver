@@ -79,6 +79,16 @@ class SpalartAllmaras:
         # held at least at a turbulent level - a trip, as SA's own trip term
         # (ft1) does; None = off
         self.seed = None
+        # production multiplier field beta(x) (field inversion / learned
+        # corrections, fiml.py): S_prod -> beta S_prod; None = 1
+        self.beta = None
+
+    def _prod_factor(self):
+        """intermittency x beta (multiplies the production only)"""
+        g, b = getattr(self, "gamma", None), getattr(self, "beta", None)
+        if b is None:
+            return g
+        return b if g is None else np.asarray(g) * np.asarray(b)
 
     # ------------------------------------------------------------------
     def fv1(self, nuT=None):
@@ -125,7 +135,7 @@ class SpalartAllmaras:
         r = np.minimum(np.nan_to_num(r, nan=10.0, posinf=10.0), 10.0)
         gg = r + CW2 * (r**6 - r)
         fw = gg * ((1 + CW3**6) / (gg**6 + CW3**6)) ** (1.0 / 6.0)
-        g = getattr(self, "gamma", None)
+        g = self._prod_factor()
         prod = CB1 * St * nuT if g is None else CB1 * St * nuT * g
         return prod - CW1 * fw * nuT**2 / d2
 
@@ -148,7 +158,7 @@ class SpalartAllmaras:
         gu, gv = s.gU
         Omega = np.abs(gv[:, 0] - gu[:, 1])                      # |vorticity| (2D)
         if kernels.USE_NUMBA:
-            gam = getattr(self, "gamma", None)
+            gam = self._prod_factor()
             S0, J = kernels.sa_source(np.ascontiguousarray(nuT), np.ascontiguousarray(Omega),
                                       self.d, float(self.nu),
                                       np.ones(1) if gam is None else np.ascontiguousarray(gam, float),

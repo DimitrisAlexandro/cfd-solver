@@ -324,6 +324,10 @@ def _slug(spec):
 def cmd_polar(a):
     import polar as pl
     alphas = parse_alpha(a.alpha)
+    if getattr(a, "tu", None):
+        import transition as T
+        a.ncrit = T.ncrit_from_turbulence(a.tu)
+        print(f"[airfoil] Tu {a.tu:g} % -> N_crit {a.ncrit:.2f} (Mack)")
     out = Path(a.out or f"../cases/{_slug(a.airfoil)}_Re{a.re:.0e}".replace("+", ""))
     out.mkdir(parents=True, exist_ok=True)
     multi = me.is_multi(a.airfoil)
@@ -352,6 +356,8 @@ def cmd_polar(a):
         tr_label = f"transition fixed at x/c {xu:g} (upper), {xl:g} (lower)"
     elif a.transition == "off":
         trans, tr_label = "off", "fully turbulent"
+    elif a.transition == "aft":
+        trans, tr_label = "aft", f"free transition (AFT transport, N_crit {a.ncrit:g})"
     else:
         trans, tr_label = "free", f"free transition (e^N, N_crit {a.ncrit:g})"
     pg = a.mach > 0 and a.prandtl_glauert
@@ -460,6 +466,7 @@ def cmd_polar(a):
                 "refine": a.refine, "solver": a.solver, "alpha": a.alpha,
                 # everything needed to rerun this polar (grid checks, project graph, trust layer)
                 "airfoil": a.airfoil, "re": a.re, "ncrit": a.ncrit, "xtr": a.xtr,
+                "tu_percent": getattr(a, "tu", None),
                 "transition_mode": "fixed" if a.xtr else trans if isinstance(trans, str) else "fixed",
                 "regime": a.regime, "derotate": a.derotate, "max_iter": a.max_iter,
                 "multi": bool(multi), "low_re_mode": bool(low), "turbulent": bool(turb)}
@@ -488,13 +495,17 @@ def main(argv=None):
                    help="auto: RANS + e^N transition from Re 2e4 (low-Re mode below ~5e5), laminar below")
     p.add_argument("--no-fields", action="store_true", help="skip per-angle field files")
     p.add_argument("--derotate", action="store_true", help="put the chord line on the x axis")
-    p.add_argument("--transition", choices=["free", "off"], default="free",
-                   help="free: e^N transition prediction (default); off: fully turbulent")
+    p.add_argument("--transition", choices=["free", "aft", "off"], default="free",
+                   help="free: e^N transition prediction (default); aft: local amplification-"
+                        "factor transport (aft.py); off: fully turbulent")
     p.add_argument("--solver", choices=["auto", "simple", "coupled"], default="auto",
                    help="SIMPLEC (default) or the coupled u-v-p solver (needs pypardiso; "
                         "auto = $CFD_SOLVER or simple)")
     p.add_argument("--ncrit", type=float, default=9.0,
                    help="critical amplification factor (9 = quiet wind tunnel)")
+    p.add_argument("--tu", type=float,
+                   help="free-stream turbulence level in %% (sets N_crit by Mack's relation "
+                        "N_crit = -8.43 - 2.4 ln(Tu); overrides --ncrit)")
     p.add_argument("--xtr", help="fixed transition 'x_upper,x_lower' (e.g. trip strips)")
     p.add_argument("--mach", type=float, default=0.0,
                    help="free-stream Mach number: runs the compressible solver (shocks, "
