@@ -74,7 +74,7 @@ def tmr0012(n_side=160, te_blend=0.85, n_te=3, te_thick=TE_THICK):
 
 
 def airfoil_mesh(level=1.0, alpha=0.0, verbose=False, wall=None, naca=None, re=RE,
-                 farfield=FARFIELD, yplus=0.7, growth=1.15):
+                 farfield=FARFIELD, yplus=0.7, growth=1.15, size_scale=None):
     """Turbulent (y+ < 1) hybrid airfoil mesh, the settings validated here.
     Default body: the TMR NACA 0012; pass naca="2412" or wall=(M,2) for others."""
     r = level
@@ -92,7 +92,8 @@ def airfoil_mesh(level=1.0, alpha=0.0, verbose=False, wall=None, naca=None, re=R
                          farfield_radius=farfield, n_farfield=int(round(48 * r)),
                          h_near=0.03 / r, grad=0.15 / r, wake_length=3.0,
                          wake_h=0.015 / r, wake_grad=0.05 / r, alpha_deg=alpha,
-                         label=f"{label} (level {r:g})", verbose=verbose)
+                         label=f"{label} (level {r:g})", verbose=verbose,
+                         size_scale=size_scale)
 
 
 class VortexFarfield:

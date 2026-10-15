@@ -81,7 +81,8 @@ def job_status(job):
     done = {"polar": "polar.json", "wing": "wing.json", "drag_rise": "drag_rise.json",
             "optimize": "optimize.json", "inverse": "inverse.json", "sizing": "sizing.json",
             "aero_db": "database_done.json", "loads": "loads.json", "performance": "performance.json",
-            "grid_study": "grid_study.json", "project": "run.json"}
+            "grid_study": "grid_study.json", "project": "run.json", "adjoint": "adjoint.json",
+            "adjoint_design": "design.png"}
     f = Path(job["out"]) / done.get(job["kind"], "_none_")
     return "finished" if f.exists() else "failed"
 
