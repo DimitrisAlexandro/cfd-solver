@@ -59,6 +59,7 @@ and the NACA 0012 (`data/wing_polars`), so the aircraft tools use CFD sections f
 | Design | Conceptual sizing, Inverse design, Shape optimizer, Wing sizing, Drag rise | `src/sizing.py`, `src/design_*.py` |
 | Workspace | Projects (templates, pre-run checks, dependency graph, variants, comparison, reports) | `src/project.py`, `src/templates.py`, `src/preflight.py`, `src/report.py` |
 | Data | Geometry check, Polar library, Runs, Validation, Confidence | `src/trust.py` |
+| Research | Discrete adjoint and adjoint design, local transition transport, swept-wing transition, field inversion / ML, polar surrogate | `src/adjoint.py`, `src/design_adjoint.py`, `src/aft.py`, `src/swept_transition.py`, `src/fiml.py`, `src/bubble_ml.py`, `src/surrogate.py` |
 
 Examples:
 
@@ -228,4 +229,51 @@ cd src
 python aeroelastic.py ../cases/aircraft/my_aircraft.json --out ../cases/aeroelastic
 python loads.py ../cases/aircraft/my_aircraft.json --vc 60 --flexible --out ../cases/loads_flex
 python validate_aeroelastic.py      # Theodorsen limit, Goland wing (137 m/s), aileron mass balance (~4 min)
+```
+
+## Research tools: adjoint, transition physics, machine learning
+
+**Discrete adjoint** (`src/adjoint.py`): the exact gradient of Cl, Cd or Cm with respect to every
+design variable for one extra linear solve. The converged state is the root of a residual that
+mirrors the solver term by term (the quantities the solver lags between iterations — Rhie–Chow
+face fluxes, the skew-corrected pressure gradient, outlet fluxes, the far-field vortex — are
+unknowns of their own), the Jacobian comes from coloured complex-step differences (exact to
+round-off), and the transposed system is solved by sparse LU. Shape sensitivities move the mesh
+with a deformation that turns the boundary-layer columns with the wall. Gradients agree with
+finite differences of complete flow solutions to 1e-5–1e-3 (`validation/adjoint_report.md`).
+
+```bash
+cd src
+python adjoint.py gradient naca0012 --re 3e6 --alpha 4          # dCl, dCd, dCm / d(alpha, Re, 18 CST coefficients)
+python adjoint.py check naca0012 --re 3e6 --alpha 2              # against finite differences
+python design_adjoint.py --start naca0012 --re 3e6 --cl 0.5 --t-min 0.119   # 19-variable SLSQP design
+python adjoint_error.py estimate naca0012 --re 3e6 --alpha 4 --check        # adjoint-weighted residual
+```
+
+**Transition physics.** `--transition aft` runs a local amplification-factor transport model
+(`src/aft.py`): the e^N envelope as transport equations on the RANS mesh (no surface marching),
+with Thwaites' integral carried along for the boundary-layer history; within 0.01–0.05 c of XFOIL
+on NACA 0012. `--tu` sets N_crit from the free-stream turbulence (Mack). Swept wings
+(`src/swept_transition.py`, `wing.py --transition-3d ALPHA`): attachment-line contamination and
+instability (Poll), crossflow (Falkner–Skan–Cooke profiles, `src/fsc.py`) and Tollmien–Schlichting
+along the span.
+
+```bash
+python airfoil.py polar naca0012 --re 3e6 --alpha 0:6:2 --transition aft --tu 0.07
+python swept_transition.py naca0012 --sweep 30 --re 1e7 --alpha 2 --out ../cases/swept
+python wing.py --airfoil naca2412 --span 30 --root-chord 6 --tip-chord 1.8 --sweep 30 --re 1e7 --transition-3d 3
+```
+
+**Machine learning.** Field inversion (`src/fiml.py`): a multiplier on the SA production term found
+by adjoint-based optimisation against measured lift (or Cp), learned from local flow features by a
+small neural network and used inside SA for new cases. Learned laminar-separation-bubble length
+(`src/bubble_ml.py`, Eppler 387 LTPT data, Gaussian process with uncertainty). Polar surrogate
+(`src/surrogate.py`): a Gaussian process over every polar computed so far, with calibrated
+uncertainty and the next most informative RANS run.
+
+```bash
+python fiml.py invert naca0012 --re 3e6 --alpha 15 --out ../cases/fiml       # Gregory's Cl as target
+python bubble_ml.py scan && python bubble_ml.py fit
+python surrogate.py train && python surrogate.py predict naca2412 --re 3e6 --alpha 0:12:2
+python validate_research.py all                                              # all reports
 ```

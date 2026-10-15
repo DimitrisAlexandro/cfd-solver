@@ -304,7 +304,11 @@ def surfaces(bl, cols):
 import os
 BUBBLE = os.environ.get("CFD_BUBBLE")          # None: "auto" in the low-Re mode, "horton" above
 LE_BUBBLE_X = 0.15         # "auto": separation ahead of this x/c is a leading-edge bubble
-BUBBLE_K = 1000.0
+BUBBLE_K = float(os.environ.get("CFD_BUBBLE_K", 1000.0))
+# learned bubble-length correction (bubble_ml.py): f(features) -> K replacing
+# BUBBLE_K, features = dict(re, re_theta_s, H_s, x_sep, ue_sep, dlogue_ds);
+# None = the fixed constant
+BUBBLE_K_FN = None
 # low-Re mode (Re below LOWRE_MAX): bubble length "auto" + trip. "auto": Mayle
 # (K = 1000) for mid-chord bubbles; for leading-edge bubbles (separation ahead
 # of 0.1 c) not shorter than Horton's - Mayle alone made them too short
@@ -355,6 +359,17 @@ def bubble_length(re, ue_sep, theta_sep, model="mayle"):
     th = float(theta_sep)
     re_th = max(re * ue * th, 10.0) if math.isfinite(th) else 100.0
     return k * re_th**0.7 / (re * ue)
+
+
+def separation_features(re, s, Ue, th, H, sep, x):
+    """state of the laminar layer at separation (learned bubble model)"""
+    j = max(sep - 1, 1)
+    k0 = max(j - 3, 0)
+    due = (math.log(max(Ue[j], 1e-6)) - math.log(max(Ue[k0], 1e-6))) / max(s[j] - s[k0], 1e-9)
+    ret = re * float(Ue[sep]) * float(th[j]) if math.isfinite(float(th[j])) else 100.0
+    return {"re": float(re), "re_theta_s": float(ret), "H_s": float(H[j]) if math.isfinite(float(H[j])) else 3.5,
+            "x_sep": float(x[sep]), "ue_sep": float(Ue[sep]),
+            "dlogue_ds": float(due * float(th[j])) if math.isfinite(float(th[j])) else 0.0}
 
 
 # ----------------------------------------------------------------------
@@ -546,12 +561,17 @@ class Transition:
                     # leading-edge bubbles: Mayle's length, but not shorter than Horton's;
                     # mid-chord bubbles: Mayle's (Horton's longer length burst them at Re 1e5)
                     model = "max" if x[sep] < LE_BUBBLE_X else "mayle"
+                    if BUBBLE_K_FN is not None:
+                        feats = separation_features(self.re, s, Ue, th, H, sep, x)
+                        model += f":{float(BUBBLE_K_FN(feats)):.6g}"
                 x_est = x_at(s[sep] + bubble_length(self.re, Ue[sep], th[max(sep - 1, 1)], model))
                 how = "laminar separation"
             else:
                 x_est, how = 1.0, "laminar to the trailing edge"
             ts = float(th[max(sep - 1, 1)]) if sep is not None else float("nan")
+            feats = separation_features(self.re, s, Ue, th, H, sep, x) if sep is not None else None
             out[side] = {"x_est": float(x_est), "how": how, "N_end": float(N[end - 1]),
+                         "features": feats,
                          "theta_sep": ts, "ue_sep": float(Ue[sep]) if sep is not None else float("nan"),
                          "x_sep": None if sep is None else float(x[sep]),
                          "N": N, "x": x[:end], "H": H[:end], "theta": th[:end]}

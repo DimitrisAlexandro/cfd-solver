@@ -67,6 +67,7 @@ nav = st.navigation({
                P("tools/6_Optimizer.py", "Shape optimizer"),
                P("tools/7_Wing_sizing.py", "Wing sizing"),
                P("tools/8_Drag_rise.py", "Drag rise")],
+    "Research": [P("tools/25_Research.py", "Adjoint, transition, ML")],
     "Data": [P("tools/4_Geometry_preview.py", "Geometry check"),
              P("tools/9_Polar_library.py", "Polar library"),
              P("tools/10_Jobs_and_results.py", "Runs"),
