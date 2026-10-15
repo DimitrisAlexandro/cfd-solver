@@ -273,6 +273,22 @@ def _areas_positive(topo, P):
     return True
 
 
+def replot(out):
+    """redraw design.png from design.json"""
+    out = Path(out)
+    summ = json.loads((out / "design.json").read_text())
+    order = summ["order"]
+    au0, al0, _ = cst.fit(ag.sharp_outline(summ["start"]), order)
+
+    class P:
+        pass
+    pb = P()
+    pb.au0, pb.al0, pb.k, pb.scale_v = au0, al0, order + 1, 0.01
+    pb.coeffs = lambda x: (au0 + np.asarray(x[:order + 1]) * 0.01,
+                           al0 + np.asarray(x[order + 1:2 * order + 2]) * 0.01)
+    plots(summ, pb, out)
+
+
 class _FileShape:
     """design_optimize.evaluate needs coeffs()/write(): wrap a fixed .dat"""
 
@@ -294,10 +310,19 @@ def plots(summ, pb, out):
     H = summ["history"]
     fig, ax = plt.subplots(1, 3, figsize=(17, 4.6))
     it = np.arange(1, len(H) + 1)
-    ax[0].plot(it, [h["Cd"] * 1e4 for h in H], "o-", ms=4)
+    good = np.array([h.get("ok", True) for h in H])
+    cd = np.array([h["Cd"] for h in H]) * 1e4
+    ax[0].plot(it[good], cd[good], "o-", ms=4, label="converged design")
+    best = np.minimum.accumulate(np.where(good, cd, np.inf))
+    ax[0].plot(it, best, "k-", lw=1, label="best so far")
+    if (~good).any():
+        lo = cd[good].min() - 0.5
+        ax[0].plot(it[~good], np.full((~good).sum(), lo), "rx", ms=5,
+                   label="trial step without a converged flow")
     ax[0].set_xlabel("flow + adjoint solution"); ax[0].set_ylabel("Cd (counts)")
+    ax[0].legend(fontsize=7, loc="upper right")
     a2 = ax[0].twinx()
-    a2.plot(it, [h["Cl"] for h in H], "s--", color="C1", ms=3)
+    a2.plot(it[good], [h["Cl"] for h, g in zip(H, good) if g], "s", color="C1", ms=2)
     a2.axhline(summ["cl"], color="C1", lw=0.6)
     a2.set_ylabel("Cl", color="C1")
     ax[0].grid(alpha=.3)
