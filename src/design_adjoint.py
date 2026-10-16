@@ -103,7 +103,7 @@ class Problem:
                                           base={**self.base, "points": P})
                     if np.isfinite(g["Cd"]) and g["primal_residual"] < 1e-6:
                         break
-                except (ValueError, FloatingPointError, np.linalg.LinAlgError, RuntimeError):
+                except (ValueError, ArithmeticError, np.linalg.LinAlgError, RuntimeError):
                     pass
                 g = None
         if g is None:
