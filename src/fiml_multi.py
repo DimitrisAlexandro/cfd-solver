@@ -193,8 +193,17 @@ def invert(name, out=OUT, iters=20, level=0.5, log=print):
     c = find_case(name)
     cl, cp = target_cl(c), target_cp(c)
     t0 = time.time()
-    inv = fiml.Inversion(c["airfoil"], c["re"], c["alpha"], level, cl=cl, cp=cp, log=log,
-                         transition=c["transition"])
+    init = None
+    try:
+        inv = fiml.Inversion(c["airfoil"], c["re"], c["alpha"], level, cl=cl, cp=cp, log=log,
+                             transition=c["transition"])
+    except RuntimeError as e:
+        # no steady flow from a cold start (NACA 0012, Re 6e6, alpha 15.26):
+        # continuation in alpha from an attached lower-alpha solution
+        log(f"[fiml_multi] {name}: {e}; continuation from lower alpha")
+        init = continuation_state(c, level)
+        inv = fiml.Inversion(c["airfoil"], c["re"], c["alpha"], level, cl=cl, cp=cp, log=log,
+                             transition=c["transition"], init=init)
     s, pr = inv.s, inv.pr
     c0 = pl.coefficients(s, pr["walls"], pr["U"])[0]
     e0 = cp_error(s, pr["walls"], pr["U"], cp) if cp is not None else None
@@ -218,6 +227,18 @@ def invert(name, out=OUT, iters=20, level=0.5, log=print):
     return rec
 
 
+def continuation_state(c, level=0.5, start=4.0, step=1.5):
+    """converged flow at alpha - step, reached by warm-started steps from
+    alpha = start (a state dict for solve_primal init)"""
+    import adjoint as A
+    st = None
+    for a in np.arange(min(start, c["alpha"] - step), c["alpha"] - step + 1e-9, step):
+        pr = A.solve_primal(c["airfoil"], c["re"], float(a), level, c["transition"], init=st)
+        s = pr["solver"]
+        st = {"xc": s.m.xc.copy(), "U": s.U.copy(), "p": s.p.copy(), "nuT": s.turb.nuT.copy()}
+    return st
+
+
 def predict(name, model, out_json, level=0.5, log=print):
     """baseline SA and SA + learned beta at one test point"""
     import adjoint as A
@@ -227,7 +248,11 @@ def predict(name, model, out_json, level=0.5, log=print):
     net = fiml.MLP.from_json(json.loads(Path(model).read_text()))
     cl, cp = target_cl(c), target_cp(c)
     t0 = time.time()
-    base = A.solve_primal(c["airfoil"], c["re"], c["alpha"], level, c["transition"])
+    try:
+        base = A.solve_primal(c["airfoil"], c["re"], c["alpha"], level, c["transition"])
+    except RuntimeError:
+        base = A.solve_primal(c["airfoil"], c["re"], c["alpha"], level, c["transition"],
+                              init=continuation_state(c, level))
     s = base["solver"]
     cb = pl.coefficients(s, base["walls"], base["U"])[0]
     rec = {"name": name, "family": c["family"], "alpha": c["alpha"], "re": c["re"],
