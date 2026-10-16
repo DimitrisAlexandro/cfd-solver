@@ -16,8 +16,9 @@ ui.header("Research tools", "Adjoint gradients and adjoint shape design, swept-w
                             "model run from the command line (src/fiml.py, src/bubble_ml.py).")
 sys.path.insert(0, str(C.SRC))
 
-tab_g, tab_d, tab_s, tab_p = st.tabs(["Adjoint gradients", "Adjoint design", "Swept-wing transition",
-                                      "Polar surrogate"])
+tab_g, tab_d, tab_s, tab_p, tab_f = st.tabs(["Adjoint gradients", "Adjoint design",
+                                             "Swept-wing transition", "Polar surrogate",
+                                             "Learned SA correction"])
 
 # ----------------------------------------------------------------------
 with tab_g:
@@ -152,3 +153,31 @@ with tab_p:
                 f"(trained on {sg.n} points from {len(sg.sources)} polars).")
     except Exception as e:
         st.warning(f"Surrogate unavailable: {e}")
+
+# ----------------------------------------------------------------------
+with tab_f:
+    st.caption("Field inversion of the SA production multiplier against measured lift and pressure "
+               "(NACA 0012, NACA 4412, S809, E387), a neural network beta(local flow features), and a "
+               "leave-one-airfoil-out test: each family is predicted by a model that never saw it. "
+               "Run: `python src/fiml_multi.py invert`, `loao`, `summary`, `plot`.")
+    root = C.SRC.parent
+    summ = root / "validation" / "fiml_multi_summary.json"
+    png = root / "validation" / "fiml_multi.png"
+    if not summ.exists():
+        st.info("No results yet: run the commands above (about 3 h on 4 cores at mesh level 0.5).")
+    else:
+        d = json.loads(summ.read_text())
+        import pandas as pd
+        st.markdown("**Held-out predictions** (model trained without the airfoil's family)")
+        pr = pd.DataFrame(d["predictions"])
+        cols = [c for c in ("family", "re", "alpha", "cl_exp", "Cl_SA", "Cl_FIML", "cp_rms_SA",
+                            "cp_rms_FIML") if c in pr]
+        st.dataframe(pr[cols].sort_values(["family", "re", "alpha"]), hide_index=True,
+                     use_container_width=True)
+        st.markdown("**Inversions** (training data)")
+        iv = pd.DataFrame(d["inversions"])
+        cols = [c for c in ("name", "cl_target", "Cl_SA", "Cl_inv", "cp_rms_SA", "cp_rms_inv",
+                            "beta_min", "beta_max", "solutions") if c in iv]
+        st.dataframe(iv[cols], hide_index=True, use_container_width=True)
+        if png.exists():
+            st.image(str(png))
