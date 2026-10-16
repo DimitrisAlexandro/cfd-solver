@@ -161,7 +161,7 @@ with tab_f:
                "leave-one-airfoil-out test: each family is predicted by a model that never saw it. "
                "Run: `python src/fiml_multi.py invert`, `loao`, `summary`, `plot`.")
     root = C.SRC.parent
-    summ = root / "cases" / "fiml_multi" / "summary.json"
+    summ = root / "validation" / "fiml_multi_summary.json"
     png = root / "validation" / "fiml_multi.png"
     if not summ.exists():
         st.info("No results yet: run the commands above (about 3 h on 4 cores at mesh level 0.5).")

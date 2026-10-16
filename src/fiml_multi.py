@@ -339,6 +339,7 @@ def summarise(out=OUT):
                 "FIML_mean_abs": float(np.mean([abs(r["Cl_FIML"] - r["cl_exp"]) for r in rs])),
                 "points": len(rs)}
     (Path(out) / "summary.json").write_text(json.dumps(s, indent=1))
+    (ROOT / "validation" / "fiml_multi_summary.json").write_text(json.dumps(s, indent=1))
     return s
 
 
