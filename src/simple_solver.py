@@ -471,6 +471,10 @@ class SimpleSolver:
                 extra = f"  nuT {r['nuT']:.2e}" if "nuT" in r else ""
                 print(f"  it {it:5d}  cont {r['cont']:.2e}  Ux {r['Ux']:.2e}  "
                       f"Uy {r['Uy']:.2e}{extra}  ({time.time() - t0:.1f}s)")
+            if not np.isfinite(max(r.values())):
+                if verbose:
+                    print(f"  diverged at iteration {it}")
+                return it
             if max(r.values()) < tol:
                 if verbose:
                     print(f"  converged in {it} iterations ({time.time() - t0:.1f}s), "
@@ -528,7 +532,7 @@ class SimpleSolver:
                 with np.errstate(all="ignore"):
                     r = self.iterate()
                 rm = max(r.values())
-            except (ValueError, FloatingPointError, np.linalg.LinAlgError, RuntimeError):
+            except (ValueError, ArithmeticError, np.linalg.LinAlgError, RuntimeError):
                 r, rm = {}, np.nan
             # a blow-up: NaN, or O(1) normalised residuals far above the best
             # (a jump of the far-field boundary values alone can raise a 1e-6

@@ -1107,9 +1107,10 @@ def solve_primal(spec, re, alpha, level=1.0, transition="off", ncrit=9.0, tol=1e
     "lower": x}.
     robust: cold starts begin with first-order convection (the
     linear-upwind deferred correction blew up the cold start of deformed
-    design shapes at every under-relaxation and CFL tried) and the SIMPLEC
-    iterations run under pseudo-time continuation with roll-back
-    (SimpleSolver.solve_robust). Neither changes the converged solution.
+    design shapes at every under-relaxation and CFL tried); every phase runs
+    plain SIMPLEC and, if it blows up or stalls, pseudo-time continuation
+    with roll-back (SimpleSolver.solve_robust). Neither changes the
+    converged solution. Raises RuntimeError if no converged flow is found.
     Returns dict(solver, vortex, transition, info, fvm, mesh)."""
     s, fvm, mesh, U, turb, info = setup_case(spec, re, alpha, level, solver, regime,
                                              fvm_override, size_scale, base)
@@ -1131,28 +1132,37 @@ def solve_primal(spec, re, alpha, level=1.0, transition="off", ncrit=9.0, tol=1e
         if init is not None:
             vf.update(0)
     if robust:
+        ex = None if vf is None else (lambda: vf.gamma, lambda g: setattr(vf, "gamma", g))
+
+        def pseudo(tol, max_iter, callback=None):
+            return s.solve_robust(tol=tol, max_iter=max_iter, callback=callback, extra_state=ex)
+
         def drive(tol, max_iter, callback=None):
-            return s.solve_robust(tol=tol, max_iter=max_iter, callback=callback,
-                                  extra_state=None if vf is None else
-                                  (lambda: vf.gamma, lambda g: setattr(vf, "gamma", g)))
-        if init is None and s.second_order:
-            # first-order start, plain SIMPLEC: under pseudo-time the
-            # impulsive-start pressure (~V/dtau) of a cold start fed a wrong
-            # lift (Cl ~ 1e6) to the far-field vortex
-            s.second_order = False
-            snap = s._snapshot()
+            """plain SIMPLEC; on a blow-up, back to the start state and pseudo-
+            time continuation with roll-back. (Pseudo-time first was tried:
+            from a cold start or a warm start on a deformed mesh the
+            impulsive pressure, ~V/dtau, fed a wrong lift to the far-field
+            vortex and broke runs that plain SIMPLEC converged.)"""
+            snap, gam = s._snapshot(), (vf.gamma if vf is not None else None)
             try:
                 with np.errstate(all="ignore"):
-                    s.solve(tol=1e-5, max_iter=min(800, max_iter), verbose=False,
-                            callback=(vf.update if vf is not None else None))
-                ok = np.isfinite(s.U).all()
-            except (ValueError, FloatingPointError, np.linalg.LinAlgError, RuntimeError):
-                ok = False
-            if not ok:
-                s._restore(snap)
-                if vf is not None:
-                    vf.gamma = 0.0
-                drive(1e-5, min(800, max_iter), vf.update if vf is not None else None)
+                    it = s.solve(tol=tol, max_iter=max_iter, verbose=False, callback=callback)
+                last = max(s.history[-1].values()) if s.history else 0.0
+                if np.isfinite(s.U).all() and last < 1e-3:
+                    return it
+            except (ValueError, ArithmeticError, np.linalg.LinAlgError, RuntimeError):
+                pass
+            s._restore(snap)
+            if vf is not None:
+                vf.gamma = gam
+            return pseudo(tol, max_iter, callback)
+
+        if init is None and s.second_order:
+            # cold start: first-order convection first (the linear-upwind
+            # deferred correction blew up the cold start of deformed design
+            # shapes at every relaxation and CFL tried)
+            s.second_order = False
+            drive(1e-5, min(800, max_iter), vf.update if vf is not None else None)
             s.second_order = True
     else:
         def drive(tol, max_iter, callback=None):
@@ -1188,23 +1198,18 @@ def solve_primal(spec, re, alpha, level=1.0, transition="off", ncrit=9.0, tol=1e
             return True
         return None
     if robust:
-        # pseudo-time continuation (deformed design shapes: 5e-10 where plain
-        # SIMPLEC stalled at 4e-7); if it stalls well above tol, plain
-        # SIMPLEC from there (NACA 0012 alpha 17, stalled flow: 1e-5 -> 1e-10)
         drive(tol, max_iter, cb)
         if hist and hist[-1] > 100 * tol and np.isfinite(s.U).all():
+            # plain SIMPLEC stalled well above tol (deformed design shapes:
+            # 4e-7): continue under pseudo-time, keep it if it got lower
             snap, gam, last = s._snapshot(), (vf.gamma if vf is not None else None), hist[-1]
             hist.clear()
-            try:
-                with np.errstate(all="ignore"):
-                    s.solve(tol=tol, max_iter=max_iter, verbose=verbose, callback=cb)
-                ok = np.isfinite(s.U).all() and (hist[-1] if hist else 0.0) < last
-            except (ValueError, FloatingPointError, np.linalg.LinAlgError, RuntimeError):
-                ok = False
-            if not ok:
+            pseudo(tol, max_iter, cb)
+            if not (np.isfinite(s.U).all() and hist and hist[-1] < last):
                 s._restore(snap)
                 if vf is not None:
                     vf.gamma = gam
+                hist.clear()
                 hist.append(last)
     else:
         s.solve(tol=tol, max_iter=max_iter, verbose=verbose, callback=cb)

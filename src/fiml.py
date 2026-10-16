@@ -250,7 +250,7 @@ class Inversion:
                 s, vf = self.s, self.pr["vortex"]
                 try:
                     cache[k] = self.fun_grad(b)
-                except (FloatingPointError, ValueError, RuntimeError, np.linalg.LinAlgError):
+                except (ArithmeticError, ValueError, RuntimeError, np.linalg.LinAlgError):
                     # no converged flow for this trial beta: a large value
                     # sends the line search back; the next trial restarts
                     # from the accepted field (_solve)
