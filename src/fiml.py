@@ -117,18 +117,19 @@ def features(s):
 # ----------------------------------------------------------------------
 class Inversion:
     def __init__(self, spec, re, alpha, level=0.5, cl=None, cp=None, sigma_cl=0.005,
-                 sigma_cp=0.02, lam=1e-2, log=print, transition="off"):
+                 sigma_cp=0.02, lam=1e-2, log=print, transition="off", init=None):
         """cl: target lift; cp: (x, Cp, side) arrays of measured wall
         pressure (side +1 upper, -1 lower) - either or both.
         transition: as adjoint.solve_primal ("free": e^N transition of the
-        baseline, then frozen - beta corrects on top of it)"""
+        baseline, then frozen - beta corrects on top of it).
+        init: warm start of the baseline flow (polar state dict)"""
         self.spec, self.re, self.alpha, self.level = spec, re, alpha, level
         self.transition = transition
         self.cl, self.cp = cl, cp
         self.sig_cl, self.sig_cp, self.lam = sigma_cl, sigma_cp, lam
         self.log = log
         t0 = time.time()
-        self.pr = A.solve_primal(spec, re, alpha, level, transition)
+        self.pr = A.solve_primal(spec, re, alpha, level, transition, init=init)
         s = self.pr["solver"]
         self.s = s
         self.vol = s.m.vol
@@ -169,27 +170,38 @@ class Inversion:
         return hist[-1] if hist else 0.0
 
     def _cp_weights(self, adj, X):
-        """per-face weights and the misfit of a Cp objective"""
+        """misfit of a Cp objective and its weights per wall face: the CFD Cp
+        is interpolated (linearly in x, on the measured side) to every
+        measured point, J = sum_j (Cp(x_j) - Cp_j)^2 / n / sigma^2 - each
+        measurement counts once (face-weighted misfits were dominated by
+        the dense leading-edge faces)"""
         fo = adj.res.forces(X)
         c, per = fo["faces"]["wall"]
         m = self.s.m
         idx = m.patch_faces["wall"]
         x = m.bxf[idx, 0]
         side = np.where(-m.bSf[idx, 1] >= 0, 1, -1)
-        xe, ce, se = self.cp
-        tgt = np.full(len(x), np.nan)
-        for sd in (1, -1):
-            k = se == sd
-            if k.sum() > 1:
-                o = np.argsort(xe[k])
-                sel = (side == sd) & (x >= xe[k].min()) & (x <= xe[k].max())
-                tgt[sel] = np.interp(x[sel], xe[k][o], ce[k][o])
-        ok = np.isfinite(tgt)
         cpv = np.real(per["Cp"])
-        mis = np.where(ok, cpv - tgt, 0.0)
+        xe, ce, se = self.cp
+        W = np.zeros((len(xe), len(x)))            # Cp(x_j) = W[j] @ Cp_faces
+        for sd in (1, -1):
+            f = np.where(side == sd)[0]
+            if len(f) < 2:
+                continue
+            f = f[np.argsort(x[f])]
+            xs = x[f]
+            for jj in np.where(se == sd)[0]:
+                if xe[jj] < xs[0] or xe[jj] > xs[-1]:
+                    continue
+                k = min(max(np.searchsorted(xs, xe[jj]) - 1, 0), len(xs) - 2)
+                t = (xe[jj] - xs[k]) / max(xs[k + 1] - xs[k], 1e-30)
+                W[jj, f[k]] += 1 - t
+                W[jj, f[k + 1]] += t
+        ok = W.sum(1) > 0
         n = max(ok.sum(), 1)
+        mis = np.where(ok, W @ cpv - ce, 0.0)
         Jcp = float((mis**2).sum() / n / self.sig_cp**2)
-        w = 2 * mis / n / self.sig_cp**2
+        w = W.T @ (2 * mis / n / self.sig_cp**2)
         return Jcp, {"wall": w}
 
     def fun_grad(self, beta):
