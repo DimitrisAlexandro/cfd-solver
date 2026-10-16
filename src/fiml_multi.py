@@ -318,6 +318,69 @@ def summarise(out=OUT):
     return s
 
 
+def plot(out=OUT, path=ROOT / "validation" / "fiml_multi.png"):
+    """lift error per held-out family (SA vs SA + learned beta) and the Cp
+    of the held-out NACA 4412"""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    pred = [json.loads(p.read_text()) for p in sorted((Path(out) / "pred").glob("*/*.json"))]
+    fig, ax = plt.subplots(1, 3, figsize=(16, 4.6))
+    fams = ["NACA 0012", "S809", "E387"]
+    mk = {"NACA 0012": "o", "S809": "s", "E387": "^", "NACA 4412": "D"}
+    for f in fams:
+        rs = sorted([r for r in pred if r["family"] == f and r.get("cl_exp") is not None],
+                    key=lambda r: (r["re"], r["alpha"]))
+        if not rs:
+            continue
+        a = [r["alpha"] for r in rs]
+        ax[0].plot(a, [r["Cl_SA"] - r["cl_exp"] for r in rs], mk[f], mfc="none", color="gray",
+                   label=f"{f}: SA")
+        ax[0].plot(a, [r["Cl_FIML"] - r["cl_exp"] for r in rs], mk[f], color="C3",
+                   label=f"{f}: SA + learned beta (family not in training)")
+    ax[0].axhline(0, color="k", lw=0.6)
+    ax[0].set_xlabel("alpha (deg)")
+    ax[0].set_ylabel("Cl - Cl experiment")
+    ax[0].legend(fontsize=7)
+    ax[0].set_title("lift error, leave-one-airfoil-out")
+    r4 = [r for r in pred if r["family"] == "NACA 4412" and "wall_FIML" in r]
+    if r4:
+        r = r4[0]
+        xe, ce, se = coles_wadcock_cp()
+        for k, st, lab in (("wall_SA", "--", "SA"), ("wall_FIML", "-", "SA + learned beta (4412 unseen)")):
+            w = r[k]
+            x, cp, sd = map(np.asarray, (w["x"], w["Cp"], w["side"]))
+            for side in (1, -1):
+                o = np.argsort(x[sd == side])
+                ax[1].plot(x[sd == side][o], cp[sd == side][o], st, color="C0" if k == "wall_SA" else "C3",
+                           label=lab if side == 1 else None)
+        ax[1].plot(xe, ce, "ko", mfc="none", ms=4, label="Coles & Wadcock")
+        inv = Path(out) / "inv" / "n4412_re1.52e6_a13.87.json"
+        if inv.exists():
+            w = json.loads(inv.read_text())["wall_inv"]
+            x, cp, sd = map(np.asarray, (w["x"], w["Cp"], w["side"]))
+            o = np.argsort(x[sd == 1])
+            ax[1].plot(x[sd == 1][o], cp[sd == 1][o], ":", color="C2", label="field inversion (4412 data)")
+        ax[1].invert_yaxis()
+        ax[1].set_xlabel("x/c")
+        ax[1].set_ylabel("Cp")
+        ax[1].set_title("NACA 4412, alpha 13.87, Re 1.52e6")
+        ax[1].legend(fontsize=7)
+    inv = [json.loads(p.read_text()) for p in sorted((Path(out) / "inv").glob("*.json"))]
+    names = [r["name"] for r in inv]
+    y = np.arange(len(inv))
+    e0 = [abs(r["Cl_SA"] - r["cl_target"]) if r["cl_target"] is not None else np.nan for r in inv]
+    e1 = [abs(r["Cl_inv"] - r["cl_target"]) if r["cl_target"] is not None else np.nan for r in inv]
+    ax[2].barh(y + 0.2, e0, 0.4, color="gray", label="SA")
+    ax[2].barh(y - 0.2, e1, 0.4, color="C3", label="field inversion")
+    ax[2].set_yticks(y, names, fontsize=7)
+    ax[2].set_xlabel("|Cl - Cl experiment| (training cases)")
+    ax[2].legend(fontsize=7)
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    return path
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -336,6 +399,7 @@ def main(argv=None):
     p = sub.add_parser("loao")
     p.add_argument("--jobs", type=int, default=3)
     sub.add_parser("summary")
+    sub.add_parser("plot")
     a = ap.parse_args(argv)
     if a.cmd == "invert":
         run_inversions(a.cases, a.jobs, a.iters)
@@ -345,6 +409,8 @@ def main(argv=None):
         predict(a.name, a.model, a.out)
     elif a.cmd == "loao":
         run_loao(a.jobs)
+    elif a.cmd == "plot":
+        print(plot())
     else:
         print(json.dumps(summarise(), indent=1)[:4000])
 
