@@ -1,0 +1,32 @@
+# S809, Ohio State University wind tunnel, Re = 0.75 million, clean (free transition).
+# Ramsay, Hoffmann & Gregorek, NREL/TP-442-7817 (1995), Appendix B.
+# Taken from the AeroDyn table S809_Cln.dat of github.com/NatLabRockies/HARP_Opt
+# (Source/WT_Perf/v3.05.00a-adp/CertTest/Airfoils/UnsteadyAeroExp); only the measured
+# range -20.1..20.1 deg is kept (the AeroDyn file extends it to +-180 deg by Viterna).
+# alpha(deg)  Cl  Cd  Cm
+   -20.10     -.560    .3027    .0612
+   -18.10     -.670    .3069    .0904
+   -16.10     -.790    .1928    .0293
+   -14.20     -.840    .0898   -.0090
+   -12.20     -.700    .0553   -.0045
+   -10.10     -.630    .0390   -.0044
+    -8.20     -.560    .0233   -.0051
+    -6.10     -.640    .0131    .0018
+    -4.10     -.420    .0134   -.0216
+    -2.10     -.210    .0119   -.0282
+      .10      .050    .0122   -.0346
+     2.00      .300    .0116   -.0405
+     4.10      .540    .0144   -.0455
+     6.20      .790    .0146   -.0507
+     8.10      .900    .0162   -.0404
+    10.20      .930    .0274   -.0321
+    11.30      .920    .0303   -.0281
+    12.10      .950    .0369   -.0284
+    13.20      .990    .0509   -.0322
+    14.20     1.010    .0648   -.0361
+    15.30     1.020    .0776   -.0363
+    16.30     1.000    .0917   -.0393
+    17.10      .940    .0994   -.0398
+    18.10      .850    .2306   -.0983
+    19.10      .700    .3142   -.1242
+    20.10      .660    .3186   -.1155

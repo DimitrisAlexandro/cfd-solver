@@ -80,6 +80,8 @@ class SimpleSolver:
         # SIMPLEC needs no pressure under-relaxation; SIMPLE uses 1 - alpha_u
         self.simplec = simplec
         self.au = alpha_u
+        # pseudo-time CFL (None = off; see iterate and solve_robust)
+        self.cfl = None
         self.ap = alpha_p if alpha_p is not None else (1.0 if simplec else 1.0 - alpha_u)
         self.second_order = second_order
         m = mesh
@@ -283,17 +285,26 @@ class SimpleSolver:
         diag, a_on, a_no, src, fast, nu_f, nu_b, Db = self._momentum(Ub, gU)
         F, Fb = self.F, self.Fb
 
+        # pseudo-transient continuation: V/dtau = a_P / CFL (a_P ~ the
+        # convective + viscous spectral radius times V, so dtau is the local
+        # time step at that CFL). The Majumdar factor below absorbs it in the
+        # face fluxes, so the converged discrete solution (and the adjoint's
+        # residual) does not depend on it
+        pt = diag / self.cfl if self.cfl is not None else None
         diag = diag / self.au
         src += ((1 - self.au) * diag)[:, None] * self.U
-        if fast:
-            A = self._pattern.matrix(diag, a_on, a_no)
-        else:
-            A = csr(np.r_[diag, a_on, a_no], np.r_[np.arange(n), own, nei],
-                    np.r_[np.arange(n), nei, own], n)
         # momentum residual (before solving), normalised
         # (both components normalised by |U|: a component that is ~0
         #  everywhere would otherwise look unconverged forever)
         scale = max((diag * np.linalg.norm(self.U, axis=1)).sum(), 1e-30)
+        dA = diag if pt is None else diag + pt
+        if pt is not None:
+            src += pt[:, None] * self.U
+        if fast:
+            A = self._pattern.matrix(dA, a_on, a_no)
+        else:
+            A = csr(np.r_[dA, a_on, a_no], np.r_[np.arange(n), own, nei],
+                    np.r_[np.arange(n), nei, own], n)
         resU = [np.abs(A @ self.U[:, k] - src[:, k]).sum() / scale for k in range(2)]
         Ustar = np.c_[tuple(self.lin.scalars(A, [src[:, 0], src[:, 1]],
                                              [self.U[:, 0], self.U[:, 1]]))]
@@ -301,13 +312,25 @@ class SimpleSolver:
         # ---- Rhie-Chow face fluxes -------------------------------------------
         Dp = m.vol / diag                                   # V / a_P (relaxed)
         Df = m.interp(Dp)
+        # Majumdar factor: face flux F = UbarS - Df/af * dp at convergence,
+        # af = Df / interp(V/a_P(unrelaxed)); = alpha_u without pseudo time.
+        # With pseudo time Rhie-Chow uses the damped diagonal (consistent with
+        # the cell velocities; V/a_P alone diverged at small CFL) and af
+        # takes the local damping, so the converged flux is unchanged
+        af, ab = self.au, self.au
+        if pt is not None:
+            Dt = m.vol / (diag * self.au)
+            Dp = m.vol / dA
+            Df = m.interp(Dp)
+            af = Df / m.interp(Dt)
+            ab = Dp[bc] / Dt[bc]
         gp_f = m.interp(self.gradp)
         # face-centre velocity (skewness-corrected, lagged gradients)
         Uf = np.c_[m.interp_skew(Ustar[:, 0], gU[0]), m.interp_skew(Ustar[:, 1], gU[1])]
         UbarS = np.einsum('ij,ij->i', Uf, m.Sf)
         Fstar = UbarS - Df * ((self.p[nei] - self.p[own]) * m.coef -
                               np.einsum('ij,ij->i', gp_f, m.Delta))
-        Fstar += (1 - self.au) * (self.F - self.Ubar_S_old)  # Majumdar correction
+        Fstar += (1 - af) * (self.F - self.Ubar_S_old)  # Majumdar correction
         self.Ubar_S_old = UbarS
         if self.dt is not None:
             # transient Rhie-Chow correction: old-time contributions use the old
@@ -329,9 +352,9 @@ class SimpleSolver:
             # velocity correction explode -> floor at the ideal (1 - alpha_u) a_P.
             # (The converged solution does not depend on Dc; Rhie-Chow uses V/a_P.)
             nbsum = np.bincount(own, -a_on, n) + np.bincount(nei, -a_no, n)
-            Dc = m.vol / np.maximum(diag - nbsum, (1.0 - self.au) * diag)
+            Dc = m.vol / np.maximum(dA - nbsum, (1.0 - self.au) * dA)
         else:
-            Dc = Dp
+            Dc = m.vol / dA
         Dcf = m.interp(Dc)
         cb = Dc[bc] * m.bcoef
         if self.has_outlet:
@@ -345,7 +368,7 @@ class SimpleSolver:
             # Majumdar correction on the outlet faces too: without it the
             # converged outlet flux carries alpha_u * V/a_P and the solution
             # depends (slightly, ~1e-4) on the under-relaxation
-            Fbstar[o] += (1 - self.au) * (self.Fb[o] - self.Ubar_Sb_old[o])
+            Fbstar[o] += (1 - (ab if np.isscalar(ab) else ab[o])) * (self.Fb[o] - self.Ubar_Sb_old[o])
             self.Ubar_Sb_old[o] = UbSb
 
         # ---- pressure correction ---------------------------------------------
@@ -376,6 +399,13 @@ class SimpleSolver:
         pcb = np.where(self.b_outlet, 0.0, pc[bc])
         gpc = m.grad_gg(pc, pcb)          # same operator as the momentum eq.
         self.U = Ustar - Dc[:, None] * gpc
+        if getattr(self, "majumdar_corrected", True):
+            # Majumdar's old-iterate term uses the face interpolation of the
+            # CORRECTED velocity (F^old - Ubar(U^old).S). The predicted
+            # Ustar gives the same converged solution but made the
+            # iteration unstable for alpha_u <~ 0.8 (or pseudo-time CFL <~ 3)
+            self.Ubar_S_old = np.einsum('ij,ij->i', np.c_[m.interp_skew(self.U[:, 0], gU[0]),
+                                                          m.interp_skew(self.U[:, 1], gU[1])], m.Sf)
         self.p = self.p + self.ap * pc
         if not self.has_outlet:
             self.p -= self.p[0]
@@ -441,6 +471,10 @@ class SimpleSolver:
                 extra = f"  nuT {r['nuT']:.2e}" if "nuT" in r else ""
                 print(f"  it {it:5d}  cont {r['cont']:.2e}  Ux {r['Ux']:.2e}  "
                       f"Uy {r['Uy']:.2e}{extra}  ({time.time() - t0:.1f}s)")
+            if not np.isfinite(max(r.values())):
+                if verbose:
+                    print(f"  diverged at iteration {it}")
+                return it
             if max(r.values()) < tol:
                 if verbose:
                     print(f"  converged in {it} iterations ({time.time() - t0:.1f}s), "
@@ -450,6 +484,108 @@ class SimpleSolver:
         if verbose:
             print(f"  NOT converged after {max_iter} iterations: {r}")
         return max_iter
+
+    # everything the iteration carries over (pb_out: set by the far-field
+    # vortex update; left NaN by a blow-up it poisoned every roll-back)
+    _STATE = ("U", "p", "F", "Fb", "Ubar_S_old", "Ubar_Sb_old", "gradp", "Ub", "pb_out")
+    CFL0 = 10.0                     # initial pseudo-time CFL of solve_robust
+
+    def _snapshot(self):
+        st = {k: np.copy(getattr(self, k)) for k in self._STATE}
+        st["gU"] = [g.copy() for g in self.gU]
+        if self.turb is not None:
+            st["nuT"] = self.turb.nuT.copy()
+        return st
+
+    def _restore(self, st):
+        for k in self._STATE:
+            setattr(self, k, st[k].copy())
+        self.gU = [g.copy() for g in st["gU"]]
+        if self.turb is not None:
+            self.turb.nuT = st["nuT"].copy()
+        # the AMG hierarchy may have been built from a blown-up matrix
+        self.lin._ml, self.lin._ml_age = None, 0
+
+    def solve_robust(self, tol=1e-6, max_iter=5000, cfl0=None, cfl_max=200.0, verbose=False,
+                     callback=None, extra_state=None, every=100):
+        """Pseudo-transient continuation around the SIMPLEC iteration.
+        Local pseudo time steps V/dtau = a_P/CFL damp the momentum and SA
+        updates; the CFL follows switched evolution relaxation (Mulder & van
+        Leer 1985), CFL = cfl0 * r0 / r (not below cfl0), and pseudo-time
+        is switched off once CFL reaches cfl_max (plain SIMPLEC from there
+        on, same converged solution). If the residual blows up (NaN, an
+        exception, or 1e3 x its best value) the state goes back to the last
+        good snapshot and the CFL ceiling is cut by 4 (at most 6 times).
+        extra_state: (get, set) of additional state to roll back with the
+        flow (e.g. the far-field vortex strength).
+        Returns iterations; sets self.converged and self.rollbacks."""
+        self.converged = False
+        self.rollbacks = 0
+        cfl0 = self.CFL0 if cfl0 is None else cfl0
+        cap = cfl_max
+        self.cfl = cfl0
+        r0 = None
+        best, snap_it = np.inf, 0
+        snap = (self._snapshot(), extra_state[0]() if extra_state else None, np.inf)
+        it = 0
+        while it < max_iter:
+            it += 1
+            try:
+                with np.errstate(all="ignore"):
+                    r = self.iterate()
+                rm = max(r.values())
+            except (ValueError, ArithmeticError, np.linalg.LinAlgError, RuntimeError):
+                r, rm = {}, np.nan
+            # a blow-up: NaN, or O(1) normalised residuals far above the best
+            # (a jump of the far-field boundary values alone can raise a 1e-6
+            # residual by 1e3 without any instability)
+            bad = not np.isfinite(rm) or (rm > 1.0 and np.isfinite(best) and rm > 1e3 * best)
+            if bad:
+                if self.rollbacks >= 6:
+                    if verbose:
+                        print(f"  diverged at it {it} (no rollback left)")
+                    self._restore(snap[0])        # last good state, not NaNs
+                    if extra_state is not None:
+                        extra_state[1](snap[1])
+                    self.cfl = None
+                    return it
+                self._restore(snap[0])
+                if extra_state is not None:
+                    extra_state[1](snap[1])
+                self.rollbacks += 1
+                cap = max(min(cap, self.cfl if self.cfl is not None else cap) / 4.0, 0.05)
+                self.cfl = min(cfl0, cap)
+                r0 = None
+                best = snap[2]
+                if verbose:
+                    print(f"  it {it}: residual blew up -> back to it {snap_it}, "
+                          f"CFL cap {cap:.3g}")
+                continue
+            if r0 is None:
+                r0 = rm
+            if rm < best:
+                best = rm
+            # snapshot the state while it is healthy (within 10x of the best)
+            if it % 25 == 0 and rm < 10 * best:
+                snap = (self._snapshot(), extra_state[0]() if extra_state else None, best)
+                snap_it = it
+            if self.cfl is not None:
+                # SER, never below the starting CFL (only a roll-back lowers
+                # the ceiling): a CFL that fell with a rising residual
+                # slowed down stalled-flow cases for no gain in robustness
+                c = min(max(cfl0 * r0 / max(rm, 1e-300), min(cfl0, cap)), cap)
+                self.cfl = None if c >= cfl_max else c
+            if verbose and (it % every == 0 or it == 1):
+                print(f"  it {it:5d}  res {rm:.2e}  CFL "
+                      f"{'off' if self.cfl is None else f'{self.cfl:.3g}'}")
+            if callback is not None and callback(it, r) is True:
+                self.converged = True
+                break
+            if rm < tol:
+                self.converged = True
+                break
+        self.cfl = None
+        return it
 
     # ------------------------------------------------------------------
     # unsteady time stepping
