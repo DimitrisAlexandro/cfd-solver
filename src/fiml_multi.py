@@ -98,7 +98,6 @@ def training_cases():
     return [
         _case("n0012_re3e6_a10", "NACA 0012", "naca0012", 3e6, 10.0, cl="gregory", cp="gregory"),
         _case("n0012_re3e6_a15", "NACA 0012", "naca0012", 3e6, 15.0, cl="gregory", cp="gregory"),
-        _case("n0012_re6e6_a15.26", "NACA 0012", "naca0012", 6e6, 15.26, cl="ladson"),
         _case("n4412_re1.52e6_a13.87", "NACA 4412", "naca4412", 1.52e6, 13.87, cp="coles"),
         _case("s809_re7.5e5_a8.1", "S809", S809, 7.5e5, 8.1, "free", cl="osu"),
         _case("s809_re7.5e5_a14.2", "S809", S809, 7.5e5, 14.2, "free", cl="osu"),
