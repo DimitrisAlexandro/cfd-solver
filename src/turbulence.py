@@ -211,6 +211,11 @@ class SpalartAllmaras:
         # under-relaxation
         diag_r = diag / self.alpha
         src = src + (1 - self.alpha) * diag_r * nuT
+        norm = max(np.abs(diag_r * nuT).sum(), 1e-30)
+        if getattr(s, "cfl", None) is not None:      # pseudo-time (see SimpleSolver)
+            pt = diag / s.cfl
+            diag_r = diag_r + pt
+            src = src + pt * nuT
         if self.seed is not None:
             # trip: nuT >= the seed level, imposed implicitly (penalty) so that the
             # residual measures the converged state (a floor applied after the
@@ -229,6 +234,6 @@ class SpalartAllmaras:
         else:
             A = csr(np.r_[diag_r, a_on, a_no], np.r_[np.arange(n), own, nei],
                     np.r_[np.arange(n), nei, own], n)
-        res = np.abs(A @ nuT - src).sum() / max(np.abs(diag_r * nuT).sum(), 1e-30)
+        res = np.abs(A @ nuT - src).sum() / norm
         self.nuT = np.maximum(s.lin.scalar(A, src, nuT), 0.0)
         return res

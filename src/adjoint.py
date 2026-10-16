@@ -760,6 +760,60 @@ class Jacobian:
 # ----------------------------------------------------------------------
 # adjoint solve and gradients
 # ----------------------------------------------------------------------
+# sparse direct factorisation of the adjoint matrix
+# ----------------------------------------------------------------------
+ADJOINT_SOLVER = None          # None = MUMPS when installed, else SuperLU
+
+
+class _MumpsLU:
+    """MUMPS (python-mumps; METIS ordering) with iterative refinement:
+    MUMPS' default pivoting threshold leaves |r| ~1e-8 relative on this
+    saddle-point system, two refinement steps bring it to the SuperLU
+    level (~1e-10) for the cost of two cheap solves."""
+
+    def __init__(self, A, ordering="metis", refine=2):
+        import mumps
+        self.A = A.tocsr()
+        self.ctx = mumps.Context()
+        try:
+            self.ctx.factor(A.tocoo(), ordering=ordering)
+        except Exception:
+            self.ctx = mumps.Context()
+            self.ctx.factor(A.tocoo(), ordering="auto")
+        self.refine = refine
+
+    def solve(self, b):
+        b = np.asarray(b)
+        x = np.real(self.ctx.solve(b.copy()))
+        for _ in range(self.refine):
+            x = x + np.real(self.ctx.solve(b - self.A @ x))
+        return x
+
+
+def mumps_available():
+    try:
+        import mumps  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def factorize(A, backend=None):
+    """LU of a square sparse matrix with .solve(b). backend: "mumps",
+    "superlu" or None (ADJOINT_SOLVER, else MUMPS when python-mumps is
+    installed). MUMPS factorises the level-0.7 NACA 0012 adjoint matrix
+    (109k unknowns) about 2x faster than SuperLU and the gap grows with the
+    mesh (validation/adjoint_speed_report.md)."""
+    backend = backend or ADJOINT_SOLVER or ("mumps" if mumps_available() else "superlu")
+    if backend == "mumps":
+        try:
+            return _MumpsLU(A)
+        except Exception:
+            pass
+    return splu(A.tocsc(), permc_spec="COLAMD")
+
+
+# ----------------------------------------------------------------------
 class Adjoint:
     """Adjoint of one converged flow solution.
 
@@ -791,7 +845,8 @@ class Adjoint:
         """dR/dX (coloured complex step) and its transposed LU. jacobian: a
         Jacobian object of the same mesh (reuses the colouring).
 
-        Linear solver: SuperLU (partial pivoting, COLAMD ordering). The
+        Linear solver: factorize() - MUMPS when python-mumps is installed,
+        else SuperLU (partial pivoting, COLAMD ordering). The
         matrix is a saddle-point system (continuity rows have no diagonal)
         with pivots over ~15 orders of magnitude (eddy-viscosity rows scale
         with nu); MKL PARDISO's static pivoting returned wrong solutions
@@ -803,7 +858,7 @@ class Adjoint:
         self.timing["jacobian"] = self.jac.time
         if factorise:
             t0 = time.time()
-            self.lu = splu(self.J.T.tocsc(), permc_spec="COLAMD")
+            self.lu = factorize(self.J.T)
             self.timing["factorisation"] = time.time() - t0
         return self
 
@@ -833,11 +888,11 @@ class Adjoint:
                     self.psi[name] = x
                     continue
                 t1 = time.time()
-                self.lu = splu(self.J.T.tocsc(), permc_spec="COLAMD")
+                self.lu = factorize(self.J.T)
                 self.timing["factorisation"] = time.time() - t1
             if not hasattr(self, "lu"):
                 t1 = time.time()
-                self.lu = splu(self.J.T.tocsc(), permc_spec="COLAMD")
+                self.lu = factorize(self.J.T)
                 self.timing["factorisation"] = time.time() - t1
             self.psi[name] = self.lu.solve(-g)
         self.timing["adjoint_solves"] = time.time() - t0
@@ -1044,14 +1099,21 @@ def setup_case(spec, re, alpha, level=1.0, solver="simple", regime="auto", fvm_o
 
 def solve_primal(spec, re, alpha, level=1.0, transition="off", ncrit=9.0, tol=1e-10,
                  max_iter=20000, init=None, solver="simple", verbose=False, regime="auto",
-                 fvm_override=None, size_scale=None, base=None):
+                 fvm_override=None, size_scale=None, base=None, robust=True):
     """Steady flow, converged tightly (the adjoint linearises about it):
     as polar.run_point, then the point-vortex far field is updated every
     iteration and the residuals are driven to `tol` (or until they stall).
     transition: "off", "free" (e^N; frozen for the adjoint) or {"upper": x,
-    "lower": x}. Returns dict(solver, vortex, transition, info, fvm, mesh)."""
+    "lower": x}.
+    robust: cold starts begin with first-order convection (the
+    linear-upwind deferred correction blew up the cold start of deformed
+    design shapes at every under-relaxation and CFL tried) and the SIMPLEC
+    iterations run under pseudo-time continuation with roll-back
+    (SimpleSolver.solve_robust). Neither changes the converged solution.
+    Returns dict(solver, vortex, transition, info, fvm, mesh)."""
     s, fvm, mesh, U, turb, info = setup_case(spec, re, alpha, level, solver, regime,
                                              fvm_override, size_scale, base)
+    robust = robust and hasattr(s, "solve_robust")
     walls = info["walls"]
     if init is not None:
         if len(init["U"]) == fvm.ncells:
@@ -1068,6 +1130,33 @@ def solve_primal(spec, re, alpha, level=1.0, transition="off", ncrit=9.0, tol=1e
                               center=(0.25 * info.get("ref_chord", 1.0), 0.0), every=50)
         if init is not None:
             vf.update(0)
+    if robust:
+        def drive(tol, max_iter, callback=None):
+            return s.solve_robust(tol=tol, max_iter=max_iter, callback=callback,
+                                  extra_state=None if vf is None else
+                                  (lambda: vf.gamma, lambda g: setattr(vf, "gamma", g)))
+        if init is None and s.second_order:
+            # first-order start, plain SIMPLEC: under pseudo-time the
+            # impulsive-start pressure (~V/dtau) of a cold start fed a wrong
+            # lift (Cl ~ 1e6) to the far-field vortex
+            s.second_order = False
+            snap = s._snapshot()
+            try:
+                with np.errstate(all="ignore"):
+                    s.solve(tol=1e-5, max_iter=min(800, max_iter), verbose=False,
+                            callback=(vf.update if vf is not None else None))
+                ok = np.isfinite(s.U).all()
+            except (ValueError, FloatingPointError, np.linalg.LinAlgError, RuntimeError):
+                ok = False
+            if not ok:
+                s._restore(snap)
+                if vf is not None:
+                    vf.gamma = 0.0
+                drive(1e-5, min(800, max_iter), vf.update if vf is not None else None)
+            s.second_order = True
+    else:
+        def drive(tol, max_iter, callback=None):
+            return s.solve(tol=tol, max_iter=max_iter, verbose=False, callback=callback)
     tr = None
     if turb and transition != "off":
         import transition as T
@@ -1078,14 +1167,13 @@ def solve_primal(spec, re, alpha, level=1.0, transition="off", ncrit=9.0, tol=1e
                 s.solve(tol=1e-4, max_iter=min(1500, max_iter), verbose=False,
                         callback=vf.update)
             tr = T.Transition(s, mesh, re, mode="fixed", x_tr=transition)
-            s.solve(tol=1e-6, max_iter=max_iter, verbose=False, callback=vf.update)
+            drive(1e-6, max_iter, vf.update)
         else:
             tr = T.Transition(s, mesh, re, mode="free", ncrit=ncrit, x_tr=None)
             T.solve_with_transition(s, tr, tol=1e-6, max_iter=max_iter,
                                     callback=lambda it, r: vf.update(it))
     else:
-        s.solve(tol=1e-6, max_iter=max_iter, verbose=False,
-                callback=(vf.update if vf is not None else None))
+        drive(1e-6, max_iter, vf.update if vf is not None else None)
     # tight convergence with the far field updated every iteration
     if vf is not None:
         vf.every = 1
@@ -1099,9 +1187,32 @@ def solve_primal(spec, re, alpha, level=1.0, transition="off", ncrit=9.0, tol=1e
         if len(hist) > 400 and min(hist[-200:]) > 0.7 * min(hist[-400:-200]):
             return True
         return None
-    s.solve(tol=tol, max_iter=max_iter, verbose=verbose, callback=cb)
+    if robust:
+        # pseudo-time continuation (deformed design shapes: 5e-10 where plain
+        # SIMPLEC stalled at 4e-7); if it stalls well above tol, plain
+        # SIMPLEC from there (NACA 0012 alpha 17, stalled flow: 1e-5 -> 1e-10)
+        drive(tol, max_iter, cb)
+        if hist and hist[-1] > 100 * tol and np.isfinite(s.U).all():
+            snap, gam, last = s._snapshot(), (vf.gamma if vf is not None else None), hist[-1]
+            hist.clear()
+            try:
+                with np.errstate(all="ignore"):
+                    s.solve(tol=tol, max_iter=max_iter, verbose=verbose, callback=cb)
+                ok = np.isfinite(s.U).all() and (hist[-1] if hist else 0.0) < last
+            except (ValueError, FloatingPointError, np.linalg.LinAlgError, RuntimeError):
+                ok = False
+            if not ok:
+                s._restore(snap)
+                if vf is not None:
+                    vf.gamma = gam
+                hist.append(last)
+    else:
+        s.solve(tol=tol, max_iter=max_iter, verbose=verbose, callback=cb)
     if vf is not None:
         vf.update(0)
+    if not np.isfinite(s.U).all() or (hist and not hist[-1] < 1e-3):
+        raise RuntimeError(f"{spec} Re {re:g} alpha {alpha:g}: the flow did not converge "
+                           f"(residual {hist[-1] if hist else float('nan'):.2e})")
     return {"solver": s, "vortex": vf, "transition": tr, "info": info, "fvm": fvm, "mesh": mesh,
             "walls": walls, "U": U, "residual": hist[-1] if hist else None,
             "iterations": len(s.history)}
