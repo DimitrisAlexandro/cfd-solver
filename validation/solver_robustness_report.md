@@ -66,3 +66,15 @@ Tests: `tests/test_robust.py` covers:
 - a forced blow-up and its roll-back;
 - MUMPS against SuperLU;
 - the robust and plain NACA 0012 paths against each other.
+
+## The adjoint design re-run (NACA 0012, minimum Cd at Cl 0.5, Re 3e6, t/c >= 0.119, level 0.5)
+
+Same settings as `adjoint_report.md`, stopped after 77 evaluations (the earlier run stopped at 75).
+
+| | earlier solver | this solver |
+|---|---|---|
+| converged evaluations | 26 of 75 | 40 of 77 |
+| converged evaluations in the window 52-74 | 1 of 23 | 8 of 23 |
+| best Cd (design mesh) | 0.0095468 | 0.0095419 |
+
+The two runs follow the same path up to evaluation 52; after that the new solver converges more of the trial shapes. The gain in Cd is negligible: the design sits on a plateau where the remaining improvement needs a sharper nose than the CST bound allows, and the failed trial steps are the bound-limited shapes described above. The optimiser is no longer stopped by the solver on most of its line searches, but this design problem was already converged. A nose-radius constraint, or a finer mesh near the nose, would be needed to go further.
