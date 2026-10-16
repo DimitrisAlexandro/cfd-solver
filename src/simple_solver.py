@@ -485,7 +485,9 @@ class SimpleSolver:
             print(f"  NOT converged after {max_iter} iterations: {r}")
         return max_iter
 
-    _STATE = ("U", "p", "F", "Fb", "Ubar_S_old", "Ubar_Sb_old", "gradp", "Ub")
+    # everything the iteration carries over (pb_out: set by the far-field
+    # vortex update; left NaN by a blow-up it poisoned every roll-back)
+    _STATE = ("U", "p", "F", "Fb", "Ubar_S_old", "Ubar_Sb_old", "gradp", "Ub", "pb_out")
     CFL0 = 10.0                     # initial pseudo-time CFL of solve_robust
 
     def _snapshot(self):
