@@ -117,15 +117,18 @@ def features(s):
 # ----------------------------------------------------------------------
 class Inversion:
     def __init__(self, spec, re, alpha, level=0.5, cl=None, cp=None, sigma_cl=0.005,
-                 sigma_cp=0.02, lam=1e-2, log=print):
+                 sigma_cp=0.02, lam=1e-2, log=print, transition="off"):
         """cl: target lift; cp: (x, Cp, side) arrays of measured wall
-        pressure (side +1 upper, -1 lower) - either or both"""
+        pressure (side +1 upper, -1 lower) - either or both.
+        transition: as adjoint.solve_primal ("free": e^N transition of the
+        baseline, then frozen - beta corrects on top of it)"""
         self.spec, self.re, self.alpha, self.level = spec, re, alpha, level
+        self.transition = transition
         self.cl, self.cp = cl, cp
         self.sig_cl, self.sig_cp, self.lam = sigma_cl, sigma_cp, lam
         self.log = log
         t0 = time.time()
-        self.pr = A.solve_primal(spec, re, alpha, level)
+        self.pr = A.solve_primal(spec, re, alpha, level, transition)
         s = self.pr["solver"]
         self.s = s
         self.vol = s.m.vol
@@ -156,8 +159,13 @@ class Inversion:
                 return True
             return None
         vf.every = 1
-        s.solve(tol=1e-10, max_iter=6000, verbose=False, callback=cb)
+        # pseudo-time continuation with roll-back: a trial beta near stall
+        # no longer ends the inversion with a diverged flow
+        s.solve_robust(tol=1e-10, max_iter=6000, callback=cb,
+                       extra_state=(lambda: vf.gamma, lambda g: setattr(vf, "gamma", g)))
         vf.update(0)
+        if not np.isfinite(s.U).all():
+            raise FloatingPointError("trial flow diverged")
         return hist[-1] if hist else 0.0
 
     def _cp_weights(self, adj, X):
@@ -227,11 +235,20 @@ class Inversion:
         def f(b):
             k = b.tobytes()
             if k not in cache:
-                cache[k] = self.fun_grad(b)
                 s, vf = self.s, self.pr["vortex"]
+                try:
+                    cache[k] = self.fun_grad(b)
+                except (FloatingPointError, ValueError, RuntimeError, np.linalg.LinAlgError):
+                    # no converged flow for this trial beta: a large value
+                    # sends the line search back; the next trial restarts
+                    # from the accepted field (_solve)
+                    self.log("  [fiml] trial flow diverged - rejected", flush=True)
+                    J0 = cache[beta0][0] if beta0 in cache else 1.0
+                    return (1e3 * (1.0 + abs(J0)), np.zeros(len(b)), self._ref)
                 cache[k] = cache[k] + ((s.U.copy(), s.p.copy(), s.turb.nuT.copy(), vf.gamma),)
             return cache[k]
         beta = self.beta.copy()
+        beta0 = beta.tobytes()
         Jb = f(beta)[0]
         self._ref = f(beta)[2]
         while len(self.hist) < maxiter and move > 1e-3:
@@ -346,9 +363,10 @@ def train(files, hidden=(20, 20), epochs=4000, log=print):
 
 
 def solve_augmented(spec, re, alpha, net, level=0.5, every=20, relax=0.5, max_iter=8000,
-                    init=None):
-    """SA with beta = net(q(x)) updated every `every` iterations"""
-    pr = A.solve_primal(spec, re, alpha, level, init=init)          # baseline start
+                    init=None, transition="off", primal=None):
+    """SA with beta = net(q(x)) updated every `every` iterations.
+    primal: a converged baseline (solve_primal; it is modified in place)"""
+    pr = primal or A.solve_primal(spec, re, alpha, level, transition, init=init)
     s, vf = pr["solver"], pr["vortex"]
     # the learned beta from the baseline flow, applied BEFORE solving (the
     # baseline is converged below the tolerance: a solve that only set beta
@@ -370,8 +388,9 @@ def solve_augmented(spec, re, alpha, net, level=0.5, every=20, relax=0.5, max_it
             return True
         return None
     vf.every = 1
-    s.solve(tol=0.0, max_iter=min(1000, max_iter), verbose=False, callback=cb)   # beta settles
-    s.solve(tol=1e-9, max_iter=max_iter, verbose=False, callback=cb)
+    ex = (lambda: vf.gamma, lambda g: setattr(vf, "gamma", g))
+    s.solve_robust(tol=0.0, max_iter=min(1000, max_iter), callback=cb, extra_state=ex)  # beta settles
+    s.solve_robust(tol=1e-9, max_iter=max_iter, callback=cb, extra_state=ex)
     import polar as pl
     c = pl.coefficients(s, pr["walls"], pr["U"])[0]
     return c, pr, hist
