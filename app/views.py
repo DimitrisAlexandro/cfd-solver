@@ -86,13 +86,19 @@ def live_job(jid, kind="polar"):
         except FileNotFoundError:
             st.warning("This run no longer exists. Its record was deleted from cases/_jobs.")
             return
-        mins = (time.time() - j["started"]) / 60
+        mins = (time.time() - j.get("run_started", j["started"])) / 60
         c1, c2 = st.columns([5, 1])
         c1.markdown(f"**{j['title']}**  {ui.status_md(j['status'])}  "
                     f"<span style='color:{ui.GRAPHITE}'>{mins:.1f} min</span>", unsafe_allow_html=True)
-        if j["status"] == "running" and c2.button("Cancel run", key=f"cancel{jid}"):
+        if j["status"] in C.ACTIVE and c2.button("Cancel run", key=f"cancel{jid}"):
             C.cancel_job(jid)
             st.rerun()
+        if j["status"] == "queued":
+            st.caption("Waiting for a free worker slot" +
+                       ("" if C.worker_alive() else ": the worker is not running. Start it with "
+                        "`python src/jobqueue.py worker` (the app starts one itself unless "
+                        "AEROLAB_EMBEDDED_WORKER=0)."))
+            return
         log = C.job_log(jid)
         pts = C.parse_points(log) if kind == "polar" else []
         n_tot = j["meta"].get("n_angles")
@@ -110,6 +116,8 @@ def live_job(jid, kind="polar"):
             st.caption(f"Results saved in {j['out']}")
             if kind in ("grid_study", "project") and st.button("Show results", key=f"show{jid}"):
                 st.rerun(scope="app")
+        elif j["status"] == "cancelled":
+            st.info("This run was cancelled.")
         elif j["status"] == "failed":
             st.error("The run stopped before writing results. The end of the solver log above "
                      "shows why.")
