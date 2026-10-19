@@ -1,17 +1,41 @@
 # AeroLab on a server:
-#   cp .env.example .env    (set a password)
+#   cp .env.example .env    (set a password; optionally the worker settings)
 #   docker compose up -d --build
 #   open http://<server>:8501
+#
+# Two services from one image:
+#   aerolab         the web app; it only queues runs
+#   aerolab-worker  runs the queued jobs (src/jobqueue.py): restarting or updating the app
+#                   no longer stops CFD runs, and a run cut off by a restart of the worker is
+#                   queued again when it comes back
+# Both mount the same cases volume (results and the job queue in cases/_jobs).
+x-aerolab: &aerolab
+  build: .
+  image: aerolab
+  restart: unless-stopped
+  volumes:
+    - aerolab-cases:/data/cases        # results, polars, aircraft, job queue: kept across updates
+
 services:
   aerolab:
-    build: .
-    image: aerolab
-    restart: unless-stopped
+    <<: *aerolab
     ports:
       - "8501:8501"
     environment:
       - AEROLAB_PASSWORD=${AEROLAB_PASSWORD:-}
-    volumes:
-      - aerolab-cases:/data/cases        # results, polars, aircraft: kept across updates
+      - AEROLAB_EMBEDDED_WORKER=0        # the worker is its own service
+  aerolab-worker:
+    <<: *aerolab
+    command: ["python", "-u", "src/jobqueue.py", "worker"]
+    environment:
+      - AEROLAB_WORKER_SLOTS=${AEROLAB_WORKER_SLOTS:-}     # parallel runs (default: cores / 2)
+      - AEROLAB_JOB_THREADS=${AEROLAB_JOB_THREADS:-}       # threads per run (default: cores / slots)
+      - AEROLAB_JOB_MEM_GB=${AEROLAB_JOB_MEM_GB:-}         # memory limit per run (default: none)
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.path.insert(0, 'src'); import jobqueue; sys.exit(0 if jobqueue.worker_alive() else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
 volumes:
   aerolab-cases:

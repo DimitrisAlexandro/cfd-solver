@@ -158,7 +158,7 @@ with tab_g:
         override = blocked and st.checkbox("Run anyway", False, key=f"ovr{sel}{variant}",
                                            help="The checks found an error. Run only if you know why it doesn't apply.")
         c1, c2 = st.columns(2)
-        running = jk in st.session_state and C.get_job(st.session_state[jk])["status"] == "running"
+        running = jk in st.session_state and C.get_job(st.session_state[jk])["status"] in C.ACTIVE
         if c1.button(f"Run what's out of date ({len(plan)})", type="primary",
                      disabled=not plan or running or (blocked and not override),
                      width="stretch", help="Runs the stale and never-run analyses in dependency order"):

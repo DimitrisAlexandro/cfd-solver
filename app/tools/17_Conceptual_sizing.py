@@ -307,13 +307,13 @@ vj = st.session_state.get("sz_verify")
 if res and vj:
     st.markdown("### Verification")
     stat = {t: C.get_job(j)["status"] for t, j in vj["jobs"].items()}
-    if any(s == "running" for s in stat.values()):
+    if any(s in C.ACTIVE for s in stat.values()):
         for t, j in vj["jobs"].items():
             views.live_job(j, "performance")
 
         @st.fragment(run_every="4s")
         def _watch():
-            if not any(C.get_job(j)["status"] == "running" for j in vj["jobs"].values()):
+            if not any(C.get_job(j)["status"] in C.ACTIVE for j in vj["jobs"].values()):
                 st.rerun(scope="app")
         _watch()
     else:
