@@ -8,7 +8,7 @@ import aircraft_views as AV
 import common as C
 import ui
 
-import aircraft as A
+from aerolab.aircraft import aircraft as A
 
 C.page_setup()
 ui.header("Aircraft model", "Lifting surfaces, control surfaces, fuselage, mass and centre of "
@@ -178,12 +178,12 @@ with tab_edit:
         with right:
             import tempfile
             from pathlib import Path as _P
-            import aero_database as D
+            from aerolab.aircraft import aero_database as D
             with tempfile.TemporaryDirectory() as td:
                 D.write_avl(new, td)
                 avl = (_P(td) / "aircraft.avl").read_text()
                 mass_f = (_P(td) / "aircraft.mass").read_text()
-            import stl_aircraft as S
+            from aerolab.aircraft import stl_aircraft as S
             c1, c2 = st.columns(2)
             c1.download_button("Download aircraft (JSON)", json.dumps(new.to_dict(), indent=1),
                                file_name=f"{path.stem}.json", width="stretch")

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import project as PR  # noqa: E402
+from aerolab.workflow import project as PR  # noqa: E402
 
 
 def small(tmp_path):
@@ -107,7 +107,7 @@ def test_failure_is_recorded_and_downstream_skipped(tmp_path):
 
 
 def test_aircraft_file_content_is_tracked(tmp_path):
-    import aircraft as A
+    from aerolab.aircraft import aircraft as A
     f = tmp_path / "plane.json"
     A.demo_aircraft().save(f)
     p = PR.Project.create("File plane", "empty", aircraft_source=str(f), root=tmp_path)

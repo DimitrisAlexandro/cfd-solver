@@ -1,0 +1,62 @@
+[
+ {
+  "level": 0.5,
+  "cells": 7726,
+  "unknowns": 60169,
+  "nnz": 1371595,
+  "flow_s": 8.5,
+  "jacobian_s": 15.2,
+  "superlu": {
+   "factorise_s": 11.7,
+   "solve_s": 0.1,
+   "rel_residual": 1.532100931418909e-09
+  },
+  "mumps": {
+   "factorise_s": 6.7,
+   "solve_s": 0.21,
+   "rel_residual": 4.957148480011029e-10
+  },
+  "psi_rel_difference": 6.135435924119486e-09,
+  "peak_rss_MB": 1393.15625
+ },
+ {
+  "level": 0.7,
+  "cells": 14027,
+  "unknowns": 109435,
+  "nnz": 2512591,
+  "flow_s": 37.2,
+  "jacobian_s": 28.1,
+  "superlu": {
+   "factorise_s": 32.9,
+   "solve_s": 0.25,
+   "rel_residual": 2.6793963691005216e-09
+  },
+  "mumps": {
+   "factorise_s": 17.2,
+   "solve_s": 0.37,
+   "rel_residual": 1.0360419847122575e-09
+  },
+  "psi_rel_difference": 5.327862672871133e-09,
+  "peak_rss_MB": 2479.5078125
+ },
+ {
+  "level": 1.0,
+  "cells": 27564,
+  "unknowns": 215335,
+  "nnz": 4970022,
+  "flow_s": 58.0,
+  "jacobian_s": 62.7,
+  "superlu": {
+   "factorise_s": 107.3,
+   "solve_s": 0.56,
+   "rel_residual": 1.3650009138034927e-08
+  },
+  "mumps": {
+   "factorise_s": 54.4,
+   "solve_s": 0.87,
+   "rel_residual": 1.5351575351288046e-09
+  },
+  "psi_rel_difference": 1.256524669890611e-07,
+  "peak_rss_MB": 5181.96875
+ }
+]
