@@ -7,15 +7,15 @@ import pytest
 import scipy.sparse as sp
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from fvmesh import FVMesh  # noqa: E402
-from simple_solver import SimpleSolver  # noqa: E402
+from aerolab.core.fvmesh import FVMesh  # noqa: E402
+from aerolab.core.simple_solver import SimpleSolver  # noqa: E402
 
 pardiso = pytest.importorskip("pypardiso", reason="pypardiso (MKL PARDISO) not installed")
 
 
 def test_pardiso_lu_refactor_same_pattern():
     """symbolic analysis once, numeric refactorisation for new values"""
-    from coupled import PardisoLU
+    from aerolab.core.coupled import PardisoLU
     rng = np.random.default_rng(0)
     n = 400
     A = sp.random(n, n, density=0.02, random_state=1, format="csr") + sp.eye(n) * 5
@@ -34,9 +34,9 @@ def test_pardiso_lu_refactor_same_pattern():
 def test_coupled_channel_matches_simple(linear):
     """unstructured-triangle channel: the coupled solver converges to the
     SIMPLEC solution (same discretisation), in far fewer iterations"""
-    import validate_channel as vch
-    from coupled import CoupledSolver
-    from fvmesh import rect_tri
+    from aerolab.validation import validate_channel as vch
+    from aerolab.core.coupled import CoupledSolver
+    from aerolab.core.fvmesh import rect_tri
     m = FVMesh(*rect_tri(0.1, 0, 3, -vch.H, vch.H, names=vch.NAMES))
     bcs = {"wallB": {"type": "wall"}, "wallT": {"type": "wall"},
            "inlet": {"type": "inlet", "U": vch.profile}, "outlet": {"type": "outlet"}}
@@ -54,7 +54,7 @@ def test_coupled_naca_sa_matches_simple():
     """turbulent NACA 0012 (SA, validated mesh), alpha 4: same lift/drag as
     SIMPLEC within the documented offset (Cl -6e-4 at small angles, see
     claude/phase4b-coupled.md), in far fewer iterations"""
-    import polar as pl
+    from aerolab.airfoil import polar as pl
     a, b = (pl.run_point("tmr0012", 6e6, 4.0, transition="off", solver=sv)[0]
             for sv in ("coupled", "simple"))
     assert a["solver"] == "coupled" and a["status"].startswith("converged")
@@ -64,7 +64,7 @@ def test_coupled_naca_sa_matches_simple():
 
 
 def test_auto_solver_choice(monkeypatch):
-    import polar as pl
+    from aerolab.airfoil import polar as pl
     monkeypatch.delenv("CFD_SOLVER", raising=False)
     assert pl.resolve_solver("auto", 6e6) == "simple"
     monkeypatch.setenv("CFD_SOLVER", "coupled")

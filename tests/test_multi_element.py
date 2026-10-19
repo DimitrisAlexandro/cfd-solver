@@ -7,10 +7,10 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import multi_element as me  # noqa: E402
-import panel  # noqa: E402
-import boundary_layer as bl  # noqa: E402
-from geometry import signed_area  # noqa: E402
+from aerolab.airfoil import multi_element as me  # noqa: E402
+from aerolab.airfoil import panel  # noqa: E402
+from aerolab.physics import boundary_layer as bl  # noqa: E402
+from aerolab.mesh.geometry import signed_area  # noqa: E402
 
 
 def karman_trefftz(xc=-0.08, yc=0.06, tau_deg=12.0, n=200):
@@ -97,15 +97,15 @@ def test_limited_boundary_layer():
 
 
 def test_multi_mesh_valid(tmp_path):
-    import hybrid_mesher as hm
-    import mesh_check
+    from aerolab.mesh import hybrid_mesher as hm
+    from aerolab.mesh import mesh_check
     el, info = me.load_multi("30p30n", level=0.7)
     m = hm.multi_mesh(el, 9e6, level=0.7, alpha_deg=8.0)
     assert set(m["patches"]) == {"wall_slat", "wall_main", "wall_flap", "farfield"}
     hm.save_npz(m, tmp_path / "m.npz")
     errors, stats = mesh_check.check(tmp_path / "m.npz", verbose=False)
     assert not errors, errors
-    from fvmesh import FVMesh
+    from aerolab.core.fvmesh import FVMesh
     fvm = FVMesh(m["points"], m["cells"], m["patches"])
     assert fvm.n_clamped == 0                       # no near-90 deg faces
 
@@ -118,7 +118,7 @@ def test_jaxa_geometry_and_data():
     assert gaps["flap"] == pytest.approx(0.00584, abs=2e-5)
     assert info["min_gaps"]["slat-main"] == pytest.approx(0.0295, abs=0.0005)
     assert info["min_gaps"]["main-flap"] == pytest.approx(0.0127, abs=0.0005)
-    import validate_multi as vm
+    from aerolab.validation import validate_multi as vm
     exp = vm._read_exp(9.5, "kevlar2017")
     assert len(exp) == 66 and set(exp["element"]) == {"slat", "main", "flap"}
     # every tap lands on its element's surface, in a continuous sequence

@@ -10,7 +10,7 @@ import streamlit as st
 import common as C
 import ui
 
-import aircraft as A
+from aerolab.aircraft import aircraft as A
 
 CTRL_COLOR = {"elevator": "#C2571A", "aileron": "#2B7A4B", "rudder": "#7A4FA0", "flap": "#8A7B12"}
 
@@ -210,8 +210,8 @@ def upload_panel():
     """import an aircraft from the app's JSON or an AVL geometry (+ mass, airfoil) files"""
     import re
     import tempfile
-    import aero_database as D
-    import aircraft_import as AI
+    from aerolab.aircraft import aero_database as D
+    from aerolab.aircraft import aircraft_import as AI
     left, right = st.columns([5, 6], gap="large")
     with left:
         with st.container(border=True):
@@ -234,7 +234,7 @@ def upload_panel():
                 D.write_avl(demo, td)
                 avl_t = (Path(td) / "aircraft.avl").read_text()
                 mass_t = (Path(td) / "aircraft.mass").read_text()
-            import stl_aircraft as S
+            from aerolab.aircraft import stl_aircraft as S
             c1, c2, c3, c4 = st.columns(4)
             c4.download_button("Example .stl", S.stl_bytes(S.aircraft_mesh(demo), demo.name),
                                file_name="example_aircraft.stl", width="stretch")
@@ -308,7 +308,7 @@ def upload_panel():
 
 @st.cache_data(show_spinner=False, max_entries=4)
 def _stl_read(data):
-    import stl_aircraft as S
+    from aerolab.aircraft import stl_aircraft as S
     t = S.read_stl(data)
     u = S.guess_units(t)
     return t, u, S.guess_orientation(t, u)
@@ -316,7 +316,7 @@ def _stl_read(data):
 
 @st.cache_data(show_spinner=False, max_entries=8)
 def _stl_import(data, la, nose, up, units, sections, mass, cg, controls, name, af_dir):
-    import stl_aircraft as S
+    from aerolab.aircraft import stl_aircraft as S
     t = S.read_stl(data)
     ac, warns, info = S.to_aircraft(t, la, nose, up, units, sections, af_dir, mass, cg, controls, name)
     return json.dumps(ac.to_dict()), warns, info["V"], info["T"], info["mesh"]
@@ -325,7 +325,7 @@ def _stl_import(data, la, nose, up, units, sections, mass, cg, controls, name, a
 def _stl_options(fname, data):
     """STL import settings (axes, units, sections, mass) -> (aircraft, warnings, (V, T))"""
     import re
-    import stl_aircraft as S
+    from aerolab.aircraft import stl_aircraft as S
     with st.spinner("Reading the mesh"):
         tris, u0, (la0, nose0, up0) = _stl_read(data)
     with st.container(border=True):

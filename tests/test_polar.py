@@ -9,8 +9,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import airfoil  # noqa: E402
-import polar  # noqa: E402
+from aerolab.airfoil import airfoil  # noqa: E402
+from aerolab.airfoil import polar  # noqa: E402
 
 
 def test_parse_alpha():
@@ -22,10 +22,10 @@ def test_parse_alpha():
 def test_moment_sign_convention():
     """Lift acts near the quarter chord: about the leading edge the moment is
     nose-down, Cm_LE ~ -Cl/4; about c/4 it is small."""
-    from postproc import wall_data
+    from aerolab.core.postproc import wall_data
     r, st = polar.run_point("naca0012", 500.0, 4.0, level=0.5)
     fvm, mesh, patches, bcs, U, turb, info = polar.make_case("naca0012", 500.0, 4.0, 0.5)
-    from simple_solver import SimpleSolver
+    from aerolab.core.simple_solver import SimpleSolver
     s = SimpleSolver(fvm, bcs, 1 / 500.0, U0=U)
     s.set_initial(st["U"], st["p"])
     s.solve(tol=1e-7, max_iter=3000, verbose=False)

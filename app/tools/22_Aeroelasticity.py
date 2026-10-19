@@ -11,10 +11,10 @@ import common as C
 import ui
 import views
 
-import aeroelastic as AE
-import aircraft as A
-import wing as W
-import wing_structure as WS
+from aerolab.aircraft import aeroelastic as AE
+from aerolab.aircraft import aircraft as A
+from aerolab.aircraft import wing as W
+from aerolab.aircraft import wing_structure as WS
 
 C.page_setup()
 ui.header("Aeroelasticity", "Wing modes, 3D unsteady aerodynamics and p-k flutter including aileron flutter; "

@@ -13,8 +13,8 @@ import common as C
 import ui
 import views
 
-import aircraft as A
-import sizing as SZ
+from aerolab.aircraft import aircraft as A
+from aerolab.aircraft import sizing as SZ
 
 G0 = 9.80665
 C.page_setup()
@@ -74,7 +74,7 @@ with setup:
         cll = c3.number_input("CL max, landing", 0.8, 3.5, R["cl_max_landing"], 0.05,
                               help="Plain flap on a NACA 2412: about 1.9–2.0 trimmed; slotted 2.2–2.4")
         c1, c2, c3 = st.columns(3)
-        gear = c1.selectbox("Landing gear", list(__import__("drag_buildup").GEAR_PRESETS), index=1,
+        gear = c1.selectbox("Landing gear", list(__import__("aerolab.aircraft.drag_buildup", fromlist=["x"]).GEAR_PRESETS), index=1,
                             format_func=lambda k: k.replace("_", ", ").replace("fixed, ", "fixed: "))
         comp = c2.checkbox("Composite structure", R["composite"],
                            help="0.85 on wing, tail and fuselage mass; smoother surfaces, more laminar flow")
@@ -307,13 +307,13 @@ vj = st.session_state.get("sz_verify")
 if res and vj:
     st.markdown("### Verification")
     stat = {t: C.get_job(j)["status"] for t, j in vj["jobs"].items()}
-    if any(s == "running" for s in stat.values()):
+    if any(s in C.ACTIVE for s in stat.values()):
         for t, j in vj["jobs"].items():
             views.live_job(j, "performance")
 
         @st.fragment(run_every="4s")
         def _watch():
-            if not any(C.get_job(j)["status"] == "running" for j in vj["jobs"].values()):
+            if not any(C.get_job(j)["status"] in C.ACTIVE for j in vj["jobs"].values()):
                 st.rerun(scope="app")
         _watch()
     else:

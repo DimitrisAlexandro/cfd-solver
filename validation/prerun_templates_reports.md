@@ -1,10 +1,10 @@
 # Pre-run checks, project templates and reports (2026-10-12)
 
-Branch `prerun-templates-reports` (on top of `trust-and-projects`). New: `src/preflight.py`,
-`src/templates.py`, `src/report.py`, `tests/test_prerun_templates_reports.py` (13). New dependencies:
+Branch `prerun-templates-reports` (on top of `trust-and-projects`). New: `src/aerolab/workflow/preflight.py`,
+`src/aerolab/workflow/templates.py`, `src/aerolab/workflow/report.py`, `tests/test_prerun_templates_reports.py` (13). New dependencies:
 `python-docx`, `reportlab` (reports).
 
-## Pre-run checks (`src/preflight.py`)
+## Pre-run checks (`src/aerolab/workflow/preflight.py`)
 Levels ok / info / warn / error; an error disables Run (with a "Run anyway" override).
 
 **Airfoil polar** (about 1 s; `--deep` adds the mesh, ~3 s):
@@ -28,7 +28,7 @@ extrapolated) with a one-click "compute section polars at Re X" job, speeds agai
 without battery energy), spar positions, and the runtime from the medians of earlier project runs.
 The design report repeats the warnings under "Setup checks".
 
-## Templates (`src/templates.py`)
+## Templates (`src/aerolab/workflow/templates.py`)
 | template | method | MTOW | span | key results (baseline run) |
 |---|---|---|---|---|
 | Two-seat trainer | sized (Raymer Class II), piston | 782 kg | 9.3 m | SM 20 %, L/D 19, V_max 78 m/s |
@@ -47,7 +47,7 @@ drag `engine`, performance `propulsion` (simple / the aircraft's BEMT model), `p
 structure aileron mass / balance / frequency. The section-polar library is now part of the aircraft
 node's fingerprint: computing new polars marks the aircraft analyses out of date (reason shown).
 
-## Reports (`src/report.py`)
+## Reports (`src/aerolab/workflow/report.py`)
 Block document model rendered to PDF (reportlab) and Word (python-docx).
 - **Design report** (one variant): summary table with confidence, setup checks, template notes, aircraft
   (geometry, surfaces, planform figure), one section per analysis (inputs, results, confidence and
@@ -56,7 +56,7 @@ Block document model rendered to PDF (reportlab) and Word (python-docx).
 - **Trade study** (several variants): parameter differences, key findings (largest improvements and
   degradations per variant), caveats (stale results, results to use with care), comparison table coloured
   better/worse, change chart, assumptions and references.
-- About 2–3 s per report; Projects → Reports tab, or `python report.py design|trade ...`.
+- About 2–3 s per report; Projects → Reports tab, or `python src/run.py report design|trade ...`.
 
 ## Checks
 - 216 tests pass (13 new here).

@@ -14,7 +14,7 @@ NACA 0012, Re 6e6, SA, polar −4…16° (11 angles, 29k cells, 2-core cloud mac
 
 Hard points gain the most: α 14° 98 → 52 s, α 16° 83 → 69 s; 30P30N α 5.5: 210 → 164 s (1.3×).
 
-**Why not 5–10×:** the coupled solver needs 3–8× fewer outer iterations (as predicted), but each one costs ~4× a SIMPLEC iteration: 0.33 s, of which ~0.2 s is the PARDISO LU factorization of the 87 564 × 87 564 block system (11.4 M LU entries). The factorization did not get faster with any PARDISO setting tested (ordering, matching/scaling, two-level, single precision ~1.4× but needs float32 plumbing) or with 2 threads vs 1 on this machine. On a machine with more real cores PARDISO scales and SIMPLEC does not, so **measure on your own machine**: `python benchmark_coupled.py --polar`.
+**Why not 5–10×:** the coupled solver needs 3–8× fewer outer iterations (as predicted), but each one costs ~4× a SIMPLEC iteration: 0.33 s, of which ~0.2 s is the PARDISO LU factorization of the 87 564 × 87 564 block system (11.4 M LU entries). The factorization did not get faster with any PARDISO setting tested (ordering, matching/scaling, two-level, single precision ~1.4× but needs float32 plumbing) or with 2 threads vs 1 on this machine. On a machine with more real cores PARDISO scales and SIMPLEC does not, so **measure on your own machine**: `python src/run.py benchmark_coupled --polar`.
 
 ## Accuracy
 - Laminar channel (triangles): coupled = SIMPLEC to **1e-12** (test).

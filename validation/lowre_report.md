@@ -1,6 +1,6 @@
 # Low-Reynolds-number mode: Eppler 387
 
-RANS (Spalart–Allmaras) with e^N transition (N_crit 9) and separation-induced transition: transition at laminar separation + Mayle's long-bubble length Re_l = 1000 Re_θs^0.7; leading-edge bubbles (separation ahead of 0.15 c): not shorter than Horton's Re_l = 4×10⁴ and no trip; mid-chord bubbles: a turbulence trip behind the transition point (ν̃ ≥ 100 ν over 0.02 c × 0.05 c) so the shear layer reattaches. Every angle from a cold start. Reference: NASA Langley LTPT (TM-4062) and XFOIL. Reproduce with `python src/validate_lowre.py`; `--report-only` rebuilds this page from the saved results.
+RANS (Spalart–Allmaras) with e^N transition (N_crit 9) and separation-induced transition: transition at laminar separation + Mayle's long-bubble length Re_l = 1000 Re_θs^0.7; leading-edge bubbles (separation ahead of 0.15 c): not shorter than Horton's Re_l = 4×10⁴ and no trip; mid-chord bubbles: a turbulence trip behind the transition point (ν̃ ≥ 100 ν over 0.02 c × 0.05 c) so the shear layer reattaches. Every angle from a cold start. Reference: NASA Langley LTPT (TM-4062) and XFOIL. Reproduce with `python src/run.py validate_lowre`; `--report-only` rebuilds this page from the saved results.
 
 | Re | α | Cl | LTPT | XFOIL | Cd | LTPT | XFOIL | ΔCd vs LTPT | x_tr upper | XFOIL x_tr | status |
 |---|---|---|---|---|---|---|---|---|---|---|---|

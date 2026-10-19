@@ -14,7 +14,7 @@ GRID = "#E6EAEE"
 PANEL = "#EEF1F4"
 BLUE = "#1D4E89"
 SERIES = ["#1D4E89", "#C2571A", "#2B7A4B", "#7A4FA0", "#8A7B12", "#2F8F9D", "#9C3D54"]
-STATUS = {"running": ("blue", "running"), "finished": ("green", "finished"),
+STATUS = {"queued": ("violet", "queued"), "running": ("blue", "running"), "finished": ("green", "finished"),
           "converged": ("green", "converged"), "failed": ("red", "failed"),
           "diverged": ("red", "diverged"), "cancelled": ("gray", "cancelled"),
           "unsteady": ("orange", "unsteady")}
@@ -124,7 +124,7 @@ def trust_md(level, text=None):
 
 def trust_notes(notes, title="Confidence", expanded=False, container=None):
     """[(level, text)] -> one badge line (the worst level) + the reasons in an expander"""
-    import trust as T
+    from aerolab.workflow import trust as T
     if not notes:
         return
     lev = T.worst(*(l for l, _ in notes))
