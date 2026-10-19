@@ -6,3 +6,4 @@ cases
 .pytest_cache
 *.npz
 tests
+src/aerolab/fv3d/native/build

@@ -1,9 +1,9 @@
 # 3D RANS solver (3D-1) and wing meshes (3D-2): validation and status
 
-In-house 3D finite volume (no OpenFOAM): `src/fv3d/`. The heavy loops are in C++
+In-house 3D finite volume (no OpenFOAM): `src/aerolab/fv3d/`. The heavy loops are in C++
 (`fv3d/native/aero3d.cpp`, built with g++ on first use, numpy fallback).
 
-## 3D-1: core (`python -m fv3d.validate_core3d`) — all pass
+## 3D-1: core (`python src/run.py validate_core3d`) — all pass
 | case | result | reference |
 |---|---|---|
 | Lid-driven cavity Re 100, one-cell extrusion | max \|U3D − U2D\| = 9e-12 | 2D solver, same grid |
@@ -11,7 +11,7 @@ In-house 3D finite volume (no OpenFOAM): `src/fv3d/`. The heavy loops are in C++
 | Laminar square duct Re_Dh 50 | f·Re 56.1, u_max/u_mean 2.04 | 56.91, 2.096 (Shah & London) |
 | Sphere Re 100 (61k cells) | Cd 1.099, Ls/D 0.875 | 1.087–1.09, 0.87–0.88 |
 
-## 3D-2: wings (`python -m fv3d.validate_wing3d`)
+## 3D-2: wings (`python src/run.py validate_wing3d`)
 Rectangular NACA 0012 wing, AR 6, Re 3e6, SA, 415k cells (wake-band mesh), compared with
 AeroLab's vortex lattice using the 2D SA polar of the section:
 

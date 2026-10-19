@@ -58,7 +58,9 @@ def test_adjoint_equals_tangent(turbulent):
     ga = adj.gradient_alpha()
     for k in ("Cl", "Cd", "Cm"):
         tangent = dI[k] + adj.res.objective_gradient(adj.X, k) @ dX
-        assert abs(tangent - ga[k]) < 1e-6 * max(abs(ga[k]), 1e-6)
+        # relative, with a floor: the two linear solves agree to ~1e-10 absolute for all
+        # three (round-off); dCd/dalpha is only ~7e-5, so 1e-6 of it would be below that
+        assert abs(tangent - ga[k]) < 1e-6 * max(abs(ga[k]), 1e-3)
 
 
 def test_dcl_dalpha_vs_finite_difference(turbulent):
@@ -68,9 +70,12 @@ def test_dcl_dalpha_vs_finite_difference(turbulent):
           "nuT": pr["solver"].turb.nuT}
     # small steps: the limiter / upwind switches make larger-step differences
     # noisy at the 1e-3 level (the adjoint is the exact local derivative)
+    # on the SAME mesh: the wake band follows alpha, so re-meshing at alpha +- da adds a
+    # mesh-alignment change (0.16 % of dCl/dalpha) that the fixed-mesh adjoint excludes
     da = 0.02
+    base = {"mesh": pr["mesh"], "info": pr["info"]}
     c = [pl.coefficients(q["solver"], q["walls"], q["U"])[0] for q in
-         (A.solve_primal("naca0012", 1e6, 3.0 + s * da, level=0.3, init=st) for s in (1, -1))]
+         (A.solve_primal("naca0012", 1e6, 3.0 + s * da, level=0.3, init=st, base=base) for s in (1, -1))]
     ga = adj.gradient_alpha()
     for k, tol in (("Cl", 1e-4), ("Cm", 2e-2)):
         fd = (c[0][k] - c[1][k]) / (2 * da)

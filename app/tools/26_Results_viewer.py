@@ -8,8 +8,8 @@ import streamlit as st
 import common as C
 import ui
 
-import postview as V
-import wakeview as W
+from aerolab.mesh import postview as V
+from aerolab.mesh import wakeview as W
 
 C.page_setup()
 ui.header("Results viewer", "Every result on disk, 2D and 3D: meshes, flow fields, surface pressure, "
@@ -62,7 +62,7 @@ def _volume3d(path, mtime, x_end, res):
 res = _results()
 if not res:
     st.info("No results in cases/ yet. Run an airfoil polar, or a 3D wing: "
-            "`python -m fv3d.wing3d ... --out ../cases/wing3d`.")
+            "`python src/run.py wing3d ... --out ../cases/wing3d`.")
     st.stop()
 
 c1, c2, c3 = st.columns([1, 3, 1], vertical_alignment="bottom")

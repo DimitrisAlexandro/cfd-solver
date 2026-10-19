@@ -5,6 +5,8 @@ by source hash in native/build/. Without a compiler everything still runs throug
 numpy / pyamg fallbacks (slower). Environment:
     AEROLAB_NATIVE=0      force the fallbacks
     AEROLAB_THREADS=n     OpenMP threads (default: all cores)
+    AEROLAB_NATIVE_MARCH  g++ -march target (default "native": tuned to this CPU; a Docker
+                          image built for other machines can use e.g. "x86-64-v2")
 """
 import ctypes
 import hashlib
@@ -30,15 +32,16 @@ VP = ctypes.c_void_p
 
 
 def _build():
-    h = hashlib.sha256(SRC.read_bytes()).hexdigest()[:10]
+    march = os.environ.get("AEROLAB_NATIVE_MARCH", "native").strip() or "native"
+    h = hashlib.sha256(SRC.read_bytes() + march.encode()).hexdigest()[:10]
     out = HERE / "build" / f"libaero3d_{h}.so"
     if not out.exists():
         out.parent.mkdir(exist_ok=True)
-        cmd = ["g++", "-O3", "-march=native", "-fopenmp", "-shared", "-fPIC", "-std=c++17", str(SRC), "-o",
+        cmd = ["g++", "-O3", f"-march={march}", "-fopenmp", "-shared", "-fPIC", "-std=c++17", str(SRC), "-o",
                str(out) + ".tmp"]
         r = subprocess.run(cmd, capture_output=True, text=True)
-        if r.returncode != 0:                 # retry without -march=native (portable build)
-            cmd.remove("-march=native")
+        if r.returncode != 0:                 # retry without -march (portable build)
+            cmd.remove(f"-march={march}")
             r = subprocess.run(cmd, capture_output=True, text=True)
             if r.returncode != 0:
                 raise RuntimeError(r.stderr[-2000:])
@@ -283,7 +286,7 @@ def sa_source(nuT, Omega, d, nu, gamma, consts):
         L.sa_source(n, _c(nuT), _c(Omega), _c(d), float(nu), g.ctypes.data if g is not None else None,
                     _c(consts), S0, J)
         return S0, J
-    import kernels
+    from aerolab.core import kernels
     return kernels.sa_source(_c(nuT), _c(Omega), _c(d), float(nu),
                              np.ones(1) if gamma is None else _c(gamma), gamma is not None, *consts)
 
