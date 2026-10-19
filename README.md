@@ -15,8 +15,42 @@ pip install -r requirements.txt
 ./run_app.sh                 # opens http://localhost:8501
 ```
 
-All results are written to `cases/` (not in git). Long analyses run as
-background processes; they keep running when the browser is closed.
+All results are written to `cases/` (not in git).
+
+**Runs and the worker.** Every analysis started in the app is queued (`cases/_jobs`) and run by
+a separate worker process, a few at a time:
+- Locally the app starts the worker itself.
+- Runs keep going when the browser is closed or the app is restarted.
+- A run cut off by a restart of the worker is queued again when the worker comes back.
+- The sidebar shows running and queued runs; **Runs** lists all of them.
+
+Settings (environment variables):
+- `AEROLAB_WORKER_SLOTS`: parallel runs (default: half the cores).
+- `AEROLAB_JOB_THREADS`: threads per run.
+- `AEROLAB_JOB_MEM_GB`: memory limit per run.
+
+`python src/run.py jobqueue status` lists the queue; `python src/run.py jobqueue worker` runs a
+worker by hand.
+
+**Command line.** Every tool runs as `python src/run.py <tool> [arguments]`, for example
+`python src/run.py airfoil polar naca0012 --re 3e6 --alpha=0:10:2 --out cases/n0012`.
+`python src/run.py` alone lists the tools.
+
+**Code layout.** `src/aerolab/` holds the code in packages:
+
+| package | contents |
+|---|---|
+| `core` | finite-volume solvers and numerics |
+| `mesh` | mesher, triangulation, mesh checks, viewers |
+| `physics` | transition and boundary-layer models |
+| `airfoil` | sections, CST, panel method, polars, multi-element |
+| `design` | adjoint, optimisers, inverse design, sizing, surrogate |
+| `ml` | field inversion and learned corrections |
+| `aircraft` | wings, aircraft, loads, performance, structures |
+| `workflow` | projects, pre-run checks, confidence, reports, job queue |
+| `validation` | validation and benchmark scripts |
+
+The app (Streamlit) is in `app/`.
 
 ## Put it online for a team
 
@@ -42,10 +76,18 @@ git clone https://github.com/DimitrisAlexandro/cfd-solver.git && cd cfd-solver
 cp .env.example .env          # set AEROLAB_PASSWORD (empty = no password)
 docker compose up -d --build  # http://<server>:8501
 ```
-- Results, polars and aircraft are kept in the `aerolab-cases` volume across updates.
+- Two services from one image:
+  - `aerolab` is the web app.
+  - `aerolab-worker` runs the queued analyses.
+  
+  Updating or restarting the app does not stop runs.
+- Results, polars, aircraft and the job queue are kept in the `aerolab-cases` volume across updates.
 - Update with `git pull && docker compose up -d --build`.
 - For HTTPS, put the server behind a reverse proxy, for example Caddy: `aerolab.example.com { reverse_proxy localhost:8501 }`.
 - The coupled solver's MKL library is optional: `docker compose build --build-arg PARDISO=1`.
+- MUMPS, the faster adjoint solver, is built into the image. `--build-arg MUMPS=0` leaves it
+  out; the adjoint then uses SuperLU and gives the same results, more slowly.
+- Worker settings go in `.env`: `AEROLAB_WORKER_SLOTS`, `AEROLAB_JOB_THREADS`, `AEROLAB_JOB_MEM_GB`.
 
 A fresh install starts with CFD section polars of the NACA 2412 (clean and with 10°/20° flaps)
 and the NACA 0012 (`data/wing_polars`), so the aircraft tools use CFD sections from the start.
@@ -54,24 +96,24 @@ and the NACA 0012 (`data/wing_polars`), so the aircraft tools use CFD sections f
 
 | Group | Page | Command line |
 |---|---|---|
-| Analysis | Airfoil polar (incl. plain flaps, compressible), Multi-element, Wing | `src/airfoil.py`, `src/wing.py` |
-| Aircraft | Aircraft model (3D), Weight and balance, Drag buildup, Propeller and engine, Stability and control, Aero database, Flight loads, Performance | `src/aircraft.py`, `src/weight_balance.py`, `src/drag_buildup.py`, `src/propeller.py`, `src/aero_database.py`, `src/loads.py`, `src/performance.py` |
-| Design | Conceptual sizing, Inverse design, Shape optimizer, Wing sizing, Drag rise | `src/sizing.py`, `src/design_*.py` |
-| Workspace | Projects (templates, pre-run checks, dependency graph, variants, comparison, reports) | `src/project.py`, `src/templates.py`, `src/preflight.py`, `src/report.py` |
-| Data | Geometry check, Polar library, Runs, Validation, Confidence | `src/trust.py` |
-| Research | Discrete adjoint and adjoint design, local transition transport, swept-wing transition, field inversion / ML, polar surrogate | `src/adjoint.py`, `src/design_adjoint.py`, `src/aft.py`, `src/swept_transition.py`, `src/fiml.py`, `src/bubble_ml.py`, `src/surrogate.py` |
+| Analysis | Airfoil polar (incl. plain flaps, compressible), Multi-element, Wing | `src/aerolab/airfoil/airfoil.py`, `src/aerolab/aircraft/wing.py` |
+| Aircraft | Aircraft model (3D), Weight and balance, Drag buildup, Propeller and engine, Stability and control, Aero database, Flight loads, Performance | `src/aerolab/aircraft/aircraft.py`, `src/aerolab/aircraft/weight_balance.py`, `src/aerolab/aircraft/drag_buildup.py`, `src/aerolab/aircraft/propeller.py`, `src/aerolab/aircraft/aero_database.py`, `src/aerolab/aircraft/loads.py`, `src/aerolab/aircraft/performance.py` |
+| Design | Conceptual sizing, Inverse design, Shape optimizer, Wing sizing, Drag rise | `src/aerolab/aircraft/sizing.py`, `src/aerolab/design/design_*.py` |
+| Workspace | Projects (templates, pre-run checks, dependency graph, variants, comparison, reports) | `src/aerolab/workflow/project.py`, `src/aerolab/workflow/templates.py`, `src/aerolab/workflow/preflight.py`, `src/aerolab/workflow/report.py` |
+| Data | Geometry check, Polar library, Runs, Validation, Confidence | `src/aerolab/workflow/trust.py` |
+| Research | Discrete adjoint and adjoint design, local transition transport, swept-wing transition, field inversion / ML, polar surrogate | `src/aerolab/design/adjoint.py`, `src/aerolab/design/design_adjoint.py`, `src/aerolab/physics/aft.py`, `src/aerolab/physics/swept_transition.py`, `src/aerolab/ml/fiml.py`, `src/aerolab/ml/bubble_ml.py`, `src/aerolab/design/surrogate.py` |
 
 Examples:
 
 ```bash
 cd src
-python airfoil.py polar naca2412 --re 3e6 --alpha=-4:16:2 --out ../cases/n2412
-python airfoil.py polar "naca2412@flap=25c20" --re 3e6 --alpha=-4:12:2 --out ../cases/n2412_flap20
-python aircraft.py demo && python aircraft.py analyse ../cases/aircraft/demo_trainer.json --speed 50 --alt 1000
-python aero_database.py aircraft ../cases/aircraft/demo_trainer.json --alpha=-6:24:1 --beta=-10:10:2 \
+python run.py airfoil polar naca2412 --re 3e6 --alpha=-4:16:2 --out ../cases/n2412
+python run.py airfoil polar "naca2412@flap=25c20" --re 3e6 --alpha=-4:12:2 --out ../cases/n2412_flap20
+python run.py aircraft demo && python run.py aircraft analyse ../cases/aircraft/demo_trainer.json --speed 50 --alt 1000
+python run.py aero_database aircraft ../cases/aircraft/demo_trainer.json --alpha=-6:24:1 --beta=-10:10:2 \
        --mach 0.15 --deflect elevator=-20,-10,10,20 aileron=-15,15 rudder=-20,20 --out ../cases/db_demo
-python loads.py ../cases/aircraft/demo_trainer.json --vc 60 --category utility --fuel 80 --out ../cases/loads_demo
-python performance.py ../cases/aircraft/demo_trainer.json --power 75 --fuel 80 --out ../cases/perf_demo
+python run.py loads ../cases/aircraft/demo_trainer.json --vc 60 --category utility --fuel 80 --out ../cases/loads_demo
+python run.py performance ../cases/aircraft/demo_trainer.json --power 75 --fuel 80 --out ../cases/perf_demo
 ```
 
 Exports for other tools: JSBSim `<aerodynamics>` XML, AVL geometry + mass
@@ -104,17 +146,17 @@ section polars). Every result is stored under the fingerprint of its inputs, so:
 
 ```bash
 cd src
-python project.py new "Trainer study" --template aircraft
-python project.py run ../cases/projects/trainer-study                   # ~1 min
-python project.py variant ../cases/projects/trainer-study cfrp --set "structure.material=CFRP (UD caps, ±45 skins)"
-python project.py status ../cases/projects/trainer-study                # what is stale, and why
-python project.py run ../cases/projects/trainer-study --variant cfrp    # 2 analyses, the rest shared
-python project.py compare ../cases/projects/trainer-study
+python run.py project new "Trainer study" --template aircraft
+python run.py project run ../cases/projects/trainer-study                   # ~1 min
+python run.py project variant ../cases/projects/trainer-study cfrp --set "structure.material=CFRP (UD caps, ±45 skins)"
+python run.py project status ../cases/projects/trainer-study                # what is stale, and why
+python run.py project run ../cases/projects/trainer-study --variant cfrp    # 2 analyses, the rest shared
+python run.py project compare ../cases/projects/trainer-study
 ```
 
 ## Pre-run checks, templates and reports
 
-**Pre-run checks** (`src/preflight.py`) run before anything is started, in about a second:
+**Pre-run checks** (`src/aerolab/workflow/preflight.py`) run before anything is started, in about a second:
 
 - airfoil polar: geometry (file, thickness, trailing edge, flap angle), Reynolds and Mach sanity, angle
   range, the expected y+ at the suction peak (fitted to 22 converged runs, within 5 %), optional mesh
@@ -126,31 +168,31 @@ python project.py compare ../cases/projects/trainer-study
 
 Errors block the Run button (with a "Run anyway" override); warnings explain what to change.
 
-**Templates** (`src/templates.py`): a ready-to-run project for each class — two-seat trainer,
+**Templates** (`src/aerolab/workflow/templates.py`): a ready-to-run project for each class — two-seat trainer,
 motor-glider (electric self-launch), 15 m sailplane (glide polar), 15 kg fixed-wing UAV, eVTOL lift +
 cruise (wing-borne flight) — with the geometry, masses, propulsion, flight conditions, loads category and
 aileron balance of that class. Trainer, motor-glider and eVTOL are sized from requirements; sailplane and
 UAV use typical mass fractions (Raymer's statistics don't hold there). Each template states its limits.
 
-**Reports** (`src/report.py`): one button turns a variant into a design report, or several variants into
+**Reports** (`src/aerolab/workflow/report.py`): one button turns a variant into a design report, or several variants into
 a trade study, as PDF or Word: results with inputs and confidence, figures, key findings (better / worse
 against the reference), evidence and limits of every tool, validated cases, and a traceability table
 (result id = fingerprint of the inputs).
 
 ```bash
 cd src
-python templates.py list
-python templates.py new glider "My sailplane"
-python preflight.py polar naca2412 --re 3e6 --alpha=-4:16:2 --deep
-python preflight.py project ../cases/projects/my-sailplane
-python project.py run ../cases/projects/my-sailplane
-python report.py design ../cases/projects/my-sailplane --format pdf
-python report.py trade ../cases/projects/trainer-study --variants baseline,heavy,cfrp --format docx
+python run.py templates list
+python run.py templates new glider "My sailplane"
+python run.py preflight polar naca2412 --re 3e6 --alpha=-4:16:2 --deep
+python run.py preflight project ../cases/projects/my-sailplane
+python run.py project run ../cases/projects/my-sailplane
+python run.py report design ../cases/projects/my-sailplane --format pdf
+python run.py report trade ../cases/projects/trainer-study --variants baseline,heavy,cfrp --format docx
 ```
 
 ## Confidence of every result (trust layer)
 
-`src/trust.py` rates every polar point green / amber / red ("validated range", "use with care",
+`src/aerolab/workflow/trust.py` rates every polar point green / amber / red ("validated range", "use with care",
 "low confidence") with an expected uncertainty band for Cl and Cd and the reasons:
 
 - **validation envelope**: 11 validated cases (NASA TMR, XFOIL free and tripped, NASA LTPT E387,
@@ -166,26 +208,26 @@ and the Projects page show the level of every result; the aircraft pages show th
 of each tool; the **Confidence** page checks any flow condition before you run it.
 
 ```bash
-python trust.py check --re 3e6 --alpha 4 --transition free     # GREEN: Cl ±2 %, Cd ±3 %
-python trust.py polar ../cases/n2412                            # every angle
-python trust.py grid-study ../cases/n2412 --alpha 4,8 --jobs 2  # GCI
+python src/run.py trust check --re 3e6 --alpha 4 --transition free     # GREEN: Cl ±2 %, Cd ±3 %
+python src/run.py trust polar ../cases/n2412                            # every angle
+python src/run.py trust grid-study ../cases/n2412 --alpha 4,8 --jobs 2  # GCI
 ```
 
 ## Designing a new aircraft
 
-1. **Conceptual sizing** (`src/sizing.py`): mission, field lengths, climb, ceiling, configuration and
+1. **Conceptual sizing** (`src/aerolab/aircraft/sizing.py`): mission, field lengths, climb, ceiling, configuration and
    propulsion in; constraint diagram, mission fuel or battery, Class I/II weights, converged take-off
    mass, geometry, component masses and c.g. positions, landing gear and propulsion out. Save it as an
    aircraft model and press **Verify**: the Performance tool checks every requirement.
-2. **Weight and balance** (`src/weight_balance.py`): edit components, loading diagram, scissor plot for
+2. **Weight and balance** (`src/aerolab/aircraft/weight_balance.py`): edit components, loading diagram, scissor plot for
    the tail size, landing-gear checks.
-3. **Drag buildup** (`src/drag_buildup.py`): component CD0 with laminar runs, roughness, gear, cooling,
+3. **Drag buildup** (`src/aerolab/aircraft/drag_buildup.py`): component CD0 with laminar runs, roughness, gear, cooling,
    struts; sets the model's extra drag.
-4. **Propeller and engine** (`src/propeller.py`): minimum-induced-loss blade design and BEMT analysis,
+4. **Propeller and engine** (`src/aerolab/aircraft/propeller.py`): minimum-induced-loss blade design and BEMT analysis,
    fixed pitch or constant speed, piston / turboprop / electric; the Performance page uses it.
 5. Then Stability and control, Flight loads, Aero database and Performance as before.
 
-Validation: `python src/validate_design_tools.py --verify` (Cessna 172 and Pipistrel Velis Electro
+Validation: `python src/run.py validate_design_tools --verify` (Cessna 172 and Pipistrel Velis Electro
 sizing checks, drag buildup, propeller, scissor plot) → `validation/design_tools_report.md`.
 ## Low-Reynolds-number airfoils (UAV, model aircraft)
 
@@ -198,26 +240,26 @@ shear layer. Below Re 2e4 the flow is solved laminar (`--regime laminar` forces 
 
 ```bash
 cd src
-python airfoil.py polar ../validation/reference/e387.dat --re 2e5 --alpha -2:10:2 --xfoil
-python validate_lowre.py            # Eppler 387 at Re 1e5, 2e5, 3e5 vs NASA Langley LTPT and XFOIL (~1.5 h)
+python run.py airfoil polar ../validation/reference/e387.dat --re 2e5 --alpha -2:10:2 --xfoil
+python run.py validate_lowre            # Eppler 387 at Re 1e5, 2e5, 3e5 vs NASA Langley LTPT and XFOIL (~1.5 h)
 ```
 
 ## Wing structure (first pass)
 
-Aircraft → **Wing structure** (`src/wing_structure.py`) sizes the wing box for every case of a Flight
+Aircraft → **Wing structure** (`src/aerolab/aircraft/wing_structure.py`) sizes the wing box for every case of a Flight
 loads run: spar caps, webs, skins and ribs (aluminium 2024-T3 / 7075-T6, CFRP or GFRP), the wing mass
 against Raymer's Class II estimate, EI and GJ, deflection and twist, divergence and aileron-reversal
 speeds and a flutter estimate (typical section with Theodorsen aerodynamics) against CS-23.629's 1.2 V_D.
 
 ```bash
 cd src
-python loads.py ../cases/aircraft/demo_trainer.json --vc 60 --out ../cases/loads_demo
-python wing_structure.py ../cases/aircraft/demo_trainer.json ../cases/loads_demo/loads.json --out ../cases/struct_demo
+python run.py loads ../cases/aircraft/demo_trainer.json --vc 60 --out ../cases/loads_demo
+python run.py wing_structure ../cases/aircraft/demo_trainer.json ../cases/loads_demo/loads.json --out ../cases/struct_demo
 ```
 
 ## Aeroelasticity
 
-Aircraft → **Aeroelasticity** (`src/aeroelastic.py`), after saving the wing structure with the aircraft:
+Aircraft → **Aeroelasticity** (`src/aerolab/aircraft/aeroelastic.py`), after saving the wing structure with the aircraft:
 wing modes (beam finite elements, with the aileron as a rigid surface on a hinge spring), 3D unsteady
 aerodynamics (frequency-domain vortex-ring lattice), **p-k flutter** for symmetric and antisymmetric
 modes including **aileron flutter** and a mass-balance sweep, and static aeroelasticity on the same
@@ -226,14 +268,14 @@ trims every case with the elastic twist and bending.
 
 ```bash
 cd src
-python aeroelastic.py ../cases/aircraft/my_aircraft.json --out ../cases/aeroelastic
-python loads.py ../cases/aircraft/my_aircraft.json --vc 60 --flexible --out ../cases/loads_flex
-python validate_aeroelastic.py      # Theodorsen limit, Goland wing (137 m/s), aileron mass balance (~4 min)
+python run.py aeroelastic ../cases/aircraft/my_aircraft.json --out ../cases/aeroelastic
+python run.py loads ../cases/aircraft/my_aircraft.json --vc 60 --flexible --out ../cases/loads_flex
+python run.py validate_aeroelastic      # Theodorsen limit, Goland wing (137 m/s), aileron mass balance (~4 min)
 ```
 
 ## Research tools: adjoint, transition physics, machine learning
 
-**Discrete adjoint** (`src/adjoint.py`): the exact gradient of Cl, Cd or Cm with respect to every
+**Discrete adjoint** (`src/aerolab/design/adjoint.py`): the exact gradient of Cl, Cd or Cm with respect to every
 design variable for one extra linear solve. The converged state is the root of a residual that
 mirrors the solver term by term (the quantities the solver lags between iterations — Rhie–Chow
 face fluxes, the skew-corrected pressure gradient, outlet fluxes, the far-field vortex — are
@@ -244,36 +286,36 @@ finite differences of complete flow solutions to 1e-5–1e-3 (`validation/adjoin
 
 ```bash
 cd src
-python adjoint.py gradient naca0012 --re 3e6 --alpha 4          # dCl, dCd, dCm / d(alpha, Re, 18 CST coefficients)
-python adjoint.py check naca0012 --re 3e6 --alpha 2              # against finite differences
-python design_adjoint.py --start naca0012 --re 3e6 --cl 0.5 --t-min 0.119   # 19-variable SLSQP design
-python adjoint_error.py estimate naca0012 --re 3e6 --alpha 4 --check        # adjoint-weighted residual
+python run.py adjoint gradient naca0012 --re 3e6 --alpha 4          # dCl, dCd, dCm / d(alpha, Re, 18 CST coefficients)
+python run.py adjoint check naca0012 --re 3e6 --alpha 2              # against finite differences
+python run.py design_adjoint --start naca0012 --re 3e6 --cl 0.5 --t-min 0.119   # 19-variable SLSQP design
+python run.py adjoint_error estimate naca0012 --re 3e6 --alpha 4 --check        # adjoint-weighted residual
 ```
 
 **Transition physics.** `--transition aft` runs a local amplification-factor transport model
-(`src/aft.py`): the e^N envelope as transport equations on the RANS mesh (no surface marching),
+(`src/aerolab/physics/aft.py`): the e^N envelope as transport equations on the RANS mesh (no surface marching),
 with Thwaites' integral carried along for the boundary-layer history; within 0.01–0.05 c of XFOIL
 on NACA 0012. `--tu` sets N_crit from the free-stream turbulence (Mack). Swept wings
-(`src/swept_transition.py`, `wing.py --transition-3d ALPHA`): attachment-line contamination and
-instability (Poll), crossflow (Falkner–Skan–Cooke profiles, `src/fsc.py`) and Tollmien–Schlichting
+(`src/aerolab/physics/swept_transition.py`, `wing.py --transition-3d ALPHA`): attachment-line contamination and
+instability (Poll), crossflow (Falkner–Skan–Cooke profiles, `src/aerolab/physics/fsc.py`) and Tollmien–Schlichting
 along the span.
 
 ```bash
-python airfoil.py polar naca0012 --re 3e6 --alpha 0:6:2 --transition aft --tu 0.07
-python swept_transition.py naca0012 --sweep 30 --re 1e7 --alpha 2 --out ../cases/swept
-python wing.py --airfoil naca2412 --span 30 --root-chord 6 --tip-chord 1.8 --sweep 30 --re 1e7 --transition-3d 3
+python src/run.py airfoil polar naca0012 --re 3e6 --alpha 0:6:2 --transition aft --tu 0.07
+python src/run.py swept_transition naca0012 --sweep 30 --re 1e7 --alpha 2 --out ../cases/swept
+python src/run.py wing --airfoil naca2412 --span 30 --root-chord 6 --tip-chord 1.8 --sweep 30 --re 1e7 --transition-3d 3
 ```
 
-**Machine learning.** Field inversion (`src/fiml.py`): a multiplier on the SA production term found
+**Machine learning.** Field inversion (`src/aerolab/ml/fiml.py`): a multiplier on the SA production term found
 by adjoint-based optimisation against measured lift (or Cp), learned from local flow features by a
 small neural network and used inside SA for new cases. Learned laminar-separation-bubble length
-(`src/bubble_ml.py`, Eppler 387 LTPT data, Gaussian process with uncertainty). Polar surrogate
-(`src/surrogate.py`): a Gaussian process over every polar computed so far, with calibrated
+(`src/aerolab/ml/bubble_ml.py`, Eppler 387 LTPT data, Gaussian process with uncertainty). Polar surrogate
+(`src/aerolab/design/surrogate.py`): a Gaussian process over every polar computed so far, with calibrated
 uncertainty and the next most informative RANS run.
 
 ```bash
-python fiml.py invert naca0012 --re 3e6 --alpha 15 --out ../cases/fiml       # Gregory's Cl as target
-python bubble_ml.py scan && python bubble_ml.py fit
-python surrogate.py train && python surrogate.py predict naca2412 --re 3e6 --alpha 0:12:2
-python validate_research.py all                                              # all reports
+python src/run.py fiml invert naca0012 --re 3e6 --alpha 15 --out ../cases/fiml       # Gregory's Cl as target
+python src/run.py bubble_ml scan && python src/run.py bubble_ml fit
+python src/run.py surrogate train && python src/run.py surrogate predict naca2412 --re 3e6 --alpha 0:12:2
+python src/run.py validate_research all                                              # all reports
 ```

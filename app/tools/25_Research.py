@@ -13,7 +13,7 @@ import views
 C.page_setup()
 ui.header("Research tools", "Adjoint gradients and adjoint shape design, swept-wing transition, and the "
                             "polar surrogate. Field inversion / machine learning and the learned bubble "
-                            "model run from the command line (src/fiml.py, src/bubble_ml.py).")
+                            "model run from the command line (src/aerolab/ml/fiml.py, src/aerolab/ml/bubble_ml.py).")
 sys.path.insert(0, str(C.SRC))
 
 tab_g, tab_d, tab_s, tab_p, tab_f = st.tabs(["Adjoint gradients", "Adjoint design",
@@ -108,7 +108,7 @@ with tab_s:
     tu = c1.number_input("Turbulence Tu (%), 0 = N_crit 9", 0.0, 2.0, 0.0, 0.01)
     chi = c2.number_input("Crossflow transition chi", 50.0, 500.0, 200.0)
     cont = c3.checkbox("Root contaminates the attachment line", False)
-    import swept_transition as stt
+    from aerolab.physics import swept_transition as stt
     with st.spinner("boundary layers ..."):
         r = stt.analyse(spec, float(sweep), re, alpha, tu or None, None, chi, cont)
     al = r["attachment_line"]
@@ -129,9 +129,9 @@ with tab_s:
 
 # ----------------------------------------------------------------------
 with tab_p:
-    import surrogate as SG
+    from aerolab.design import surrogate as SG
     st.caption("Gaussian process over every polar in the library; mean and +-2 sd (calibrated by "
-               "leaving polars out). Retrain after adding polars: `python surrogate.py train`.")
+               "leaving polars out). Retrain after adding polars: `python src/run.py surrogate train`.")
     c1, c2, c3 = st.columns(3)
     spec = c1.text_input("Airfoil", "naca2412", key="p_spec")
     re = c2.number_input("Reynolds number", 5e4, 3e7, 3e6, format="%.3g", key="p_re")
@@ -159,7 +159,7 @@ with tab_f:
     st.caption("Field inversion of the SA production multiplier against measured lift and pressure "
                "(NACA 0012, NACA 4412, S809, E387), a neural network beta(local flow features), and a "
                "leave-one-airfoil-out test: each family is predicted by a model that never saw it. "
-               "Run: `python src/fiml_multi.py invert`, `loao`, `summary`, `plot`.")
+               "Run: `python src/run.py fiml_multi invert`, `loao`, `summary`, `plot`.")
     root = C.SRC.parent
     summ = root / "validation" / "fiml_multi_summary.json"
     png = root / "validation" / "fiml_multi.png"

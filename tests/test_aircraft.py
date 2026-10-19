@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import aircraft as A  # noqa: E402
-import wing as W  # noqa: E402
+from aerolab.aircraft import aircraft as A  # noqa: E402
+from aerolab.aircraft import wing as W  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -99,7 +99,7 @@ def test_fuselage_apparent_mass():
 
 
 def test_database_exports(tmp_path, demo):
-    import aero_database as D
+    from aerolab.aircraft import aero_database as D
     ac, _ = demo
     db = D.aircraft_database(ac, [-4.0, 0.0, 4.0, 8.0], [-4.0, 0.0, 4.0], [0.15], 0.0,
                              {"elevator": [-10.0, 10.0], "aileron": [10.0], "rudder": [10.0]},
@@ -116,7 +116,7 @@ def test_database_exports(tmp_path, demo):
 
 
 def test_loads_balance_and_vn(demo):
-    import loads as Ld
+    from aerolab.aircraft import loads as Ld
     ac, _ = demo
     vn = Ld.vn_diagram(ac, 1.6, -0.9, 5.0, 60.0, "normal")
     assert vn["n_pos"] == pytest.approx(3.8)                  # 750 kg: formula > 3.8, capped
@@ -133,7 +133,7 @@ def test_loads_balance_and_vn(demo):
 
 
 def test_propeller_and_flap_models(demo):
-    import performance as P
+    from aerolab.aircraft import performance as P
     ac, _ = demo
     pr = P.Propulsion(75.0, 0.8, 1.8, 300.0, v_design=60.0)
     P0 = pr.power(0.0)
@@ -146,7 +146,7 @@ def test_propeller_and_flap_models(demo):
 
 # ---------------------------------------------------------------------- multi-panel surfaces
 def _cranked():
-    import validate_aircraft as VA
+    from aerolab.validation import validate_aircraft as VA
     return VA.test_cranked()
 
 
@@ -178,7 +178,7 @@ def test_collinear_kink_changes_nothing(demo):
 
 def test_cranked_against_aerosandbox():
     pytest.importorskip("aerosandbox")
-    import validate_aircraft as VA
+    from aerolab.validation import validate_aircraft as VA
     ac = _cranked()
     r, d = VA.ours(ac, 2.0)
     ref = VA.compare_asb(ac, 2.0)
@@ -190,7 +190,7 @@ def test_cranked_against_aerosandbox():
 
 
 def test_cranked_loads_balance():
-    import loads as Ld
+    from aerolab.aircraft import loads as Ld
     ac = _cranked()
     an = A.Analysis(ac, 50.0, 0.0, None)
     t = an.trim()

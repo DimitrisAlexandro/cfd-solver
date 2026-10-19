@@ -8,9 +8,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 pv = pytest.importorskip("pyvista")
-import case          # noqa: E402
-import viewer        # noqa: E402
-from io_vtk import write_vtp_lines, write_vtu, write_vtm   # noqa: E402
+from aerolab.mesh import case          # noqa: E402
+from aerolab.mesh import viewer        # noqa: E402
+from aerolab.core.io_vtk import write_vtp_lines, write_vtu, write_vtm   # noqa: E402
 
 
 def test_vtk_roundtrip(tmp_path):
@@ -67,7 +67,7 @@ def test_viewer_offscreen(cyl_case, tmp_path):
 
 
 def test_viewer_mesh_npz(tmp_path):
-    import hybrid_mesher as hm
+    from aerolab.mesh import hybrid_mesher as hm
     m = hm.build_mesh(naca="0012", n_side=60, verbose=False)
     hm.save_npz(m, tmp_path / "m.npz")
     v = viewer.Viewer(tmp_path / "m.npz", off_screen=True)

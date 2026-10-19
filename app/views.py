@@ -31,7 +31,7 @@ def airfoil_picker(key="af", label="Airfoil", allow_flap=False):
         if on and abs(de) > 20:
             st.caption("Above 20° the flap flow separates; expect unsteady or diverged points.")
         if on and de != 0:
-            import airfoil_geom as ag
+            from aerolab.airfoil import airfoil_geom as ag
             spec = ag.flap_spec(spec, cf, de)
             name = f"{name}_flap{round(100 * cf)}c{de:g}"
     return spec, name
@@ -61,7 +61,7 @@ def section_plot(spec, height=200, title=None):
     """airfoil outline, equal axes"""
     title = title and title.replace(str(Path(str(spec)).stem), C.display_name(Path(str(spec)).stem))
     if "@flap=" in str(spec):
-        import airfoil_geom as ag
+        from aerolab.airfoil import airfoil_geom as ag
         b, (cf, d) = ag.parse_flap(spec)
         title = f"{C.display_name(Path(str(b)).stem)}, flap {100 * cf:g} % c at {d:g}°"
     try:
@@ -96,7 +96,7 @@ def live_job(jid, kind="polar"):
         if j["status"] == "queued":
             st.caption("Waiting for a free worker slot" +
                        ("" if C.worker_alive() else ": the worker is not running. Start it with "
-                        "`python src/jobqueue.py worker` (the app starts one itself unless "
+                        "`python src/run.py jobqueue worker` (the app starts one itself unless "
                         "AEROLAB_EMBEDDED_WORKER=0)."))
             return
         log = C.job_log(jid)
@@ -259,7 +259,7 @@ def polar_results(out_dir):
 
 def polar_trust(out, d):
     """confidence line under the polar's headline numbers; returns the assessment"""
-    import trust as T
+    from aerolab.workflow import trust as T
     ass = T.assess_polar(d, T.load_grid_study(out))
     c = ass["counts"]
     parts = " ".join(ui.trust_md(l, f"{c[l]} {ui.TRUST[l][1]}") for l in T.LEVELS if c[l])
@@ -273,7 +273,7 @@ def polar_trust(out, d):
 
 def trust_details(out, d, ass):
     """per-angle reasons + grid convergence study (levels 0.7 / 1 / 1.4)"""
-    import trust as T
+    from aerolab.workflow import trust as T
     out = Path(out)
     pts = ass["points"]
     if not pts:
@@ -358,12 +358,12 @@ PF_HEAD = {"ok": ("green", "all clear"), "info": ("green", "all clear"),
 
 @st.cache_data(show_spinner=False, max_entries=64)
 def _prerun_polar(spec, re, angles, mach, transition, xtr, level, jobs, pg, regime, ncrit, deep):
-    import preflight as PF
+    from aerolab.workflow import preflight as PF
     return PF.check_polar(spec, re, angles, mach, transition, ncrit, xtr, level, jobs, pg, regime, deep)
 
 
 def prerun_items(items, expanded=False, title=None, level=None):
-    import preflight as PF
+    from aerolab.workflow import preflight as PF
     lev = level or PF.worst(items)
     color, head = PF_HEAD[lev]
     with st.expander(f"{title or 'Pre-run check'}: {head}", expanded=expanded or lev in ("warn", "error"),
@@ -391,7 +391,7 @@ def prerun_polar(spec, re, angles, mach, transition, xtr, level, jobs, pg, regim
 
 
 def trust_notes(tool, title="Confidence", **ctx):
-    import trust as T
+    from aerolab.workflow import trust as T
     ui.trust_notes(T.tool_notes(tool, **ctx), title)
 
 

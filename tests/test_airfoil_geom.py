@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import airfoil_geom as ag  # noqa: E402
+from aerolab.airfoil import airfoil_geom as ag  # noqa: E402
 
 
 def _dist(P, C):
@@ -73,7 +73,7 @@ def test_sharp_te_gets_small_base():
     loop, info = ag.load_airfoil("tmr0012")
     assert info["te_thickness"] == pytest.approx(ag.TE_THICK, rel=1e-2)   # rescaled after the cut
     assert loop[:, 0].max() == pytest.approx(1.0, abs=1e-9) and loop[:, 0].min() == pytest.approx(0.0, abs=1e-9)
-    import validate_naca0012_sa as v
+    from aerolab.validation import validate_naca0012_sa as v
     assert np.abs(loop - v.tmr0012(160)).max() < 5e-4          # same as the validated TMR loop
 
 
@@ -89,8 +89,8 @@ def test_bad_input(tmp_path):
 
 
 def test_mesh_from_dat(tmp_path):
-    import hybrid_mesher as hm
-    from geometry import first_cell_height
+    from aerolab.mesh import hybrid_mesher as hm
+    from aerolab.mesh.geometry import first_cell_height
     f = tmp_path / "n2412.dat"
     ag.write_dat(f, ag.naca_raw("2412", 160), "NACA 2412")
     loop, _ = ag.load_airfoil(str(f), n_side=80)

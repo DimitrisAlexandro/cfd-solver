@@ -43,7 +43,7 @@ with info:
     if af:
         views.section_plot(af, height=200, title=f"Section: {aname}")
     try:
-        import airfoil_geom as ag
+        from aerolab.airfoil import airfoil_geom as ag
         tc = ag.load_airfoil(af)[1]["max_thickness"] if af else None
     except Exception:
         tc = None

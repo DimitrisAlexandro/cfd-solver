@@ -1,4 +1,4 @@
-"""The job queue and worker (src/jobqueue.py)."""
+"""The job queue and worker (src/aerolab/workflow/jobqueue.py)."""
 import sys
 import time
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import jobqueue as JQ  # noqa: E402
+from aerolab.workflow import jobqueue as JQ  # noqa: E402
 
 
 @pytest.fixture

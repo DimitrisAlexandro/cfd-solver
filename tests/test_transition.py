@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import transition as T  # noqa: E402
+from aerolab.physics import transition as T  # noqa: E402
 
 
 def test_envelope_blasius_e9():
@@ -43,7 +43,7 @@ def test_reproduces_xfoil_on_xfoil_pressure():
     import ctypes
     from xfoil import XFoil
     from xfoil.model import Airfoil
-    import airfoil_geom as ag
+    from aerolab.airfoil import airfoil_geom as ag
     xf = XFoil()
     xf.print = False
     loop, _ = ag.load_airfoil("naca0012", n_side=120, n_te=2)
@@ -70,8 +70,8 @@ def test_reproduces_xfoil_on_xfoil_pressure():
 
 
 def test_rans_profile_extraction_blasius():
-    import validate_flatplate as vf
-    from simple_solver import SimpleSolver
+    from aerolab.validation import validate_flatplate as vf
+    from aerolab.core.simple_solver import SimpleSolver
     lv = 0.5
     m = vf.plate_mesh(lv)
     nx_up, nx_pl, ny = int(24 * lv), int(112 * lv), int(96 * lv)
@@ -90,7 +90,7 @@ def test_rans_profile_extraction_blasius():
 def test_coupled_naca0012_alpha0():
     """Coarse mesh, Re 3e6, alpha 0: symmetric transition near mid-chord
     (XFOIL 0.51) and drag far below the fully turbulent value."""
-    import polar
+    from aerolab.airfoil import polar
     r, _ = polar.run_point("naca0012", 3e6, 0.0, level=0.6, transition="free")
     assert r["status"] == "converged" and r["transition_converged"]
     assert 0.42 < r["x_tr_upper"] < 0.6 and 0.42 < r["x_tr_lower"] < 0.6

@@ -7,9 +7,9 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import fsc  # noqa: E402
-import swept_transition as st  # noqa: E402
-import transition as T  # noqa: E402
+from aerolab.physics import fsc  # noqa: E402
+from aerolab.physics import swept_transition as st  # noqa: E402
+from aerolab.physics import transition as T  # noqa: E402
 
 
 def test_falkner_skan_reference_values():
@@ -89,7 +89,7 @@ def test_wing_spanwise_transition():
     """quasi-3D wing: stations along the span, leading-edge sweep from the
     quarter-chord sweep and the taper, crossflow on a 30-degree wing at
     Re 1e7, Tollmien-Schlichting on the same wing unswept"""
-    import wing as W
+    from aerolab.aircraft import wing as W
     out = {}
     for sweep in (0.0, 30.0):
         w = W.Wing(30, 6.0, 1.8, sweep, 0, 0, 1)

@@ -7,10 +7,10 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import preflight as PF  # noqa: E402
-import project as PR  # noqa: E402
-import report as RP  # noqa: E402
-import templates as TP  # noqa: E402
+from aerolab.workflow import preflight as PF  # noqa: E402
+from aerolab.workflow import project as PR  # noqa: E402
+from aerolab.workflow import report as RP  # noqa: E402
+from aerolab.workflow import templates as TP  # noqa: E402
 
 
 def levels(res):

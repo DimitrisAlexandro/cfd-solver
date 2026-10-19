@@ -42,9 +42,9 @@ def page_setup(title=None, icon=None):
 
 
 # ----------------------------------------------------------------------
-# background jobs: queued here, run by the worker (src/jobqueue.py)
+# background jobs: queued here, run by the worker (src/aerolab/workflow/jobqueue.py)
 # ----------------------------------------------------------------------
-import jobqueue as JQ  # noqa: E402
+from aerolab.workflow import jobqueue as JQ  # noqa: E402
 
 ACTIVE = JQ.ACTIVE                     # ("queued", "running"): the run is not over yet
 
@@ -146,12 +146,12 @@ def display_name(name):
 # readers
 # ----------------------------------------------------------------------
 def read_vtu_cell_data(path):
-    import io_vtk
+    from aerolab.core import io_vtk
     return io_vtk.read_vtu_cell_data(path)
 
 
 def read_mesh_npz(path):
-    import io_vtk
+    from aerolab.core import io_vtk
     return io_vtk.read_case_mesh(Path(path).parent)
 
 
@@ -268,7 +268,7 @@ def field_image(case_dir, field, xlim=(-0.4, 1.6), ylim=(-0.5, 0.5), cmap="turbo
 # geometry + inviscid preview
 # ----------------------------------------------------------------------
 def raw_outline(spec):
-    import airfoil_geom as ag
+    from aerolab.airfoil import airfoil_geom as ag
     s = str(spec)
     if not s.lower().startswith(("naca", "tmr")) and not Path(s).is_absolute():
         s = str(SRC / s)
@@ -278,7 +278,7 @@ def raw_outline(spec):
 def panel_polar(spec, alphas):
     """inviscid panel solutions; the panels at a sharp trailing edge (singular
     Cp, -100 and below) are dropped from the plotted distribution"""
-    import panel
+    from aerolab.airfoil import panel
     o = raw_outline(spec)
     out = [panel.solve([o], a) for a in alphas]
     for r in out:

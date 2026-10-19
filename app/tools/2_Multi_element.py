@@ -9,8 +9,8 @@ import views
 C.page_setup()
 ui.header("Multi-element airfoil", "Slat, main and flap on one hybrid mesh, fully turbulent "
                                    "Spalart–Allmaras. Validated on the JAXA 30P30N.")
-import multi_element as me
-import panel
+from aerolab.airfoil import multi_element as me
+from aerolab.airfoil import panel
 
 setup, preview = st.columns([5, 6], gap="large")
 with setup:

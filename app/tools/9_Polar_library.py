@@ -15,7 +15,7 @@ rows = C.scan_polars()
 if not rows:
     st.info("No polars yet. Run an airfoil polar and it appears here.")
     st.stop()
-import trust as T  # noqa: E402
+from aerolab.workflow import trust as T  # noqa: E402
 
 
 @st.cache_data(show_spinner=False)

@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import airfoil_geom as ag  # noqa: E402
-import panel  # noqa: E402
+from aerolab.airfoil import airfoil_geom as ag  # noqa: E402
+from aerolab.airfoil import panel  # noqa: E402
 
 
 def test_spec_roundtrip_and_stem():

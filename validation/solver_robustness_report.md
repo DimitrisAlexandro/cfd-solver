@@ -2,7 +2,7 @@
 
 ## MUMPS for the adjoint linear solve
 
-`adjoint.factorize()` uses MUMPS (python-mumps, METIS ordering, two steps of iterative refinement) when it is installed, and SuperLU otherwise. Benchmark on NACA 0012, Re 3e6, alpha 4 (`python src/bench_adjoint.py`, 4 cores; data in `adjoint_speed.json`):
+`adjoint.factorize()` uses MUMPS (python-mumps, METIS ordering, two steps of iterative refinement) when it is installed, and SuperLU otherwise. Benchmark on NACA 0012, Re 3e6, alpha 4 (`python src/run.py bench_adjoint`, 4 cores; data in `adjoint_speed.json`):
 
 | mesh level | cells | unknowns | flow | Jacobian | SuperLU LU | MUMPS LU | adjoint residual SuperLU / MUMPS |
 |---|---|---|---|---|---|---|---|

@@ -14,7 +14,7 @@ C.page_setup()
 ui.header("Wing", "Vortex lattice with section polars from the CFD solver: taper, sweep, dihedral, "
                   "twist, root and tip sections, stall. Polars are computed once and cached; after "
                   "that a wing takes seconds.")
-import wing as W
+from aerolab.aircraft import wing as W
 
 setup, preview = st.columns([5, 6], gap="large")
 with setup:

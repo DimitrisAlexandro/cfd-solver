@@ -7,7 +7,7 @@ import streamlit as st
 import common as C
 import ui
 
-import trust as T
+from aerolab.workflow import trust as T
 
 C.page_setup()
 ui.header("Confidence", "How far each result can be trusted: the validated envelope of the solver, the error "

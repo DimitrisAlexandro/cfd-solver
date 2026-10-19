@@ -14,7 +14,7 @@ ui.header("Wing sizing", "Mission in, wing out. For each planform the area follo
                          "speed with that planform's own CL max; designs are ranked by cruise L/D "
                          "with a span limit and a root-first stall check. Wing only: no fuselage, "
                          "tail or flaps.")
-import design_wing_sizing as WS
+from aerolab.design import design_wing_sizing as WS
 
 setup, info = st.columns([5, 6], gap="large")
 with setup:

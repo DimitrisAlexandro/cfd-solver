@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import aircraft as A  # noqa: E402
-import stl_aircraft as S  # noqa: E402
+from aerolab.aircraft import aircraft as A  # noqa: E402
+from aerolab.aircraft import stl_aircraft as S  # noqa: E402
 
 
 def _compare(a, b, tol_len=0.012, tol_deg=0.15):
@@ -66,7 +66,7 @@ def test_open_sheets_and_cut_sections(tmp_path):
     b, _, _ = S.to_aircraft(m, sections="cut", af_dir=tmp_path)
     assert [s.name for s in b.surfaces] == ["wing", "horizontal tail", "fin"]
     _compare(ac, b)
-    import airfoil_geom as ag
+    from aerolab.airfoil import airfoil_geom as ag
     _, inf = ag.load_airfoil(b.wing.airfoil)
     assert inf["max_thickness"] == pytest.approx(0.12, abs=0.006)
 
@@ -80,7 +80,7 @@ def test_stl_bytes_roundtrip():
 
 
 def test_cranked_roundtrip(tmp_path):
-    import validate_aircraft as VA
+    from aerolab.validation import validate_aircraft as VA
     ac = VA.test_cranked()
     ac.fuselage = A.Fuselage(7.5, 1.1, 0.0, 0.0, 0.3, 0.15)
     b, _, _ = S.to_aircraft(S.aircraft_mesh(ac), af_dir=tmp_path)
