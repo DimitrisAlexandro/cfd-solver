@@ -1,6 +1,6 @@
 # Design tools: validation
 
-Reproduce with `python src/validate_design_tools.py [--verify]`.
+Reproduce with `python src/run.py validate_design_tools [--verify]`.
 
 ## Drag buildup
 

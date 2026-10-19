@@ -15,7 +15,7 @@ with c1:
     spec, name = views.airfoil_picker("geo", allow_flap=True)
 if spec is None:
     st.stop()
-import airfoil_geom as ag
+from aerolab.airfoil import airfoil_geom as ag
 try:
     loop, info = ag.load_airfoil(spec)
 except Exception as e:
@@ -67,7 +67,7 @@ zoom = c3.selectbox("View", ["Whole section", "Leading edge", "Trailing edge", "
 if c4.button("Build mesh", width="stretch"):
     import matplotlib.pyplot as plt
     from matplotlib.collections import PolyCollection
-    import polar as pl
+    from aerolab.airfoil import polar as pl
     with st.spinner("Meshing..."):
         fvm, mesh, *_ = pl.make_case(spec, re, a, level=lev)
     P = mesh["points"]

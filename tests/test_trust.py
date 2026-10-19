@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import trust as T  # noqa: E402
+from aerolab.workflow import trust as T  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 

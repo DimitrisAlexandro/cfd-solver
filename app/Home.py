@@ -93,7 +93,8 @@ with left:
                 c3.caption(t)
 with right:
     k = st.columns(3)
-    k[0].metric("Running", sum(j["status"] == "running" for j in jobs))
+    k[0].metric("Running", sum(j["status"] == "running" for j in jobs),
+                delta=f"{sum(j['status'] == 'queued' for j in jobs)} queued", delta_color="off")
     k[1].metric("Finished", sum(j["status"] == "finished" for j in jobs))
     k[2].metric("Saved polars", len(C.scan_polars()))
     st.markdown("#### Recent runs")

@@ -28,7 +28,7 @@ with setup:
             V = c1.number_input("Speed (m/s)", 1.0, 400.0, 40.0)
             ch = c2.number_input("Chord (m)", 0.01, 20.0, 1.0)
             alt = c3.number_input("Altitude (m)", 0.0, 15000.0, 0.0, 100.0)
-            import wing as W
+            from aerolab.aircraft import wing as W
             rho, mu, a_snd, T, _ = W.isa(alt)
             re, mach = rho * V * ch / mu, V / a_snd
             st.caption(f"Re {C.fmt_re(re)}, M {mach:.3f} (ISA)")

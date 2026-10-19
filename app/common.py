@@ -4,11 +4,8 @@ import base64
 import json
 import os
 import re
-import signal
-import subprocess
 import sys
 import time
-import uuid
 from pathlib import Path
 
 import numpy as np
@@ -45,74 +42,56 @@ def page_setup(title=None, icon=None):
 
 
 # ----------------------------------------------------------------------
-# background jobs (CFD runs take minutes to hours: separate processes)
+# background jobs: queued here, run by the worker (src/aerolab/workflow/jobqueue.py)
 # ----------------------------------------------------------------------
+from aerolab.workflow import jobqueue as JQ  # noqa: E402
+
+ACTIVE = JQ.ACTIVE                     # ("queued", "running"): the run is not over yet
+
+
+def ensure_worker():
+    """local installs: start a detached worker if none is alive (it survives
+    restarts of the app). On a server the worker is its own service:
+    AEROLAB_EMBEDDED_WORKER=0."""
+    if os.environ.get("AEROLAB_EMBEDDED_WORKER", "1") == "0" or JQ.worker_alive():
+        return
+    JQ.spawn_background_worker()
+    for _ in range(20):                # the first heartbeat comes within a second
+        if JQ.worker_alive():
+            return
+        time.sleep(0.1)
+
+
 def start_job(kind, title, args, out_dir, meta=None):
-    """run `python <args>` in src/, stdout+stderr -> log; returns job id"""
-    jid = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:4]
-    log = JOBS / f"{jid}.log"
-    with open(log, "w") as f:
-        p = subprocess.Popen([sys.executable, "-u"] + [str(a) for a in args], cwd=SRC,
-                             stdout=f, stderr=subprocess.STDOUT, start_new_session=True,
-                             env={**os.environ, "PYTHONWARNINGS": "ignore", "MPLBACKEND": "Agg"})
-    job = {"id": jid, "kind": kind, "title": title, "args": [str(a) for a in args],
-           "out": str(out_dir), "pid": p.pid, "started": time.time(), "meta": meta or {}}
-    (JOBS / f"{jid}.json").write_text(json.dumps(job, indent=1))
-    return jid
-
-
-def _alive(pid):
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    try:                                              # zombie = finished
-        with open(f"/proc/{pid}/stat") as f:
-            return f.read().split()[2] != "Z"
-    except OSError:
-        return True
+    """queue `python <args>` (run in src/ by the worker); returns the job id"""
+    ensure_worker()
+    return JQ.submit(kind, title, args, out_dir, meta)
 
 
 def job_status(job):
-    if job.get("cancelled"):
-        return "cancelled"
-    if _alive(job["pid"]):
-        return "running"
-    done = {"polar": "polar.json", "wing": "wing.json", "drag_rise": "drag_rise.json",
-            "optimize": "optimize.json", "inverse": "inverse.json", "sizing": "sizing.json",
-            "aero_db": "database_done.json", "loads": "loads.json", "performance": "performance.json",
-            "grid_study": "grid_study.json", "project": "run.json", "adjoint": "adjoint.json",
-            "adjoint_design": "design.png"}
-    f = Path(job["out"]) / done.get(job["kind"], "_none_")
-    return "finished" if f.exists() else "failed"
+    return JQ.status(job)
 
 
 def list_jobs():
     jobs = []
-    for f in sorted(JOBS.glob("*.json"), reverse=True):
-        try:
-            j = json.loads(f.read_text())
-        except Exception:
-            continue
+    for j in sorted(JQ.records(), key=lambda j: j["id"], reverse=True):
         j["status"] = job_status(j)
         jobs.append(j)
     return jobs
 
 
 def get_job(jid):
-    j = json.loads((JOBS / f"{jid}.json").read_text())
+    j = JQ.read(jid)
     j["status"] = job_status(j)
     return j
 
 
 def cancel_job(jid):
-    j = json.loads((JOBS / f"{jid}.json").read_text())
-    try:
-        os.killpg(j["pid"], signal.SIGTERM)
-    except OSError:
-        pass
-    j["cancelled"] = True
-    (JOBS / f"{jid}.json").write_text(json.dumps(j, indent=1))
+    JQ.request_cancel(jid)
+
+
+def worker_alive():
+    return JQ.worker_alive()
 
 
 def job_log(jid, tail=None):
@@ -167,12 +146,12 @@ def display_name(name):
 # readers
 # ----------------------------------------------------------------------
 def read_vtu_cell_data(path):
-    import io_vtk
+    from aerolab.core import io_vtk
     return io_vtk.read_vtu_cell_data(path)
 
 
 def read_mesh_npz(path):
-    import io_vtk
+    from aerolab.core import io_vtk
     return io_vtk.read_case_mesh(Path(path).parent)
 
 
@@ -289,7 +268,7 @@ def field_image(case_dir, field, xlim=(-0.4, 1.6), ylim=(-0.5, 0.5), cmap="turbo
 # geometry + inviscid preview
 # ----------------------------------------------------------------------
 def raw_outline(spec):
-    import airfoil_geom as ag
+    from aerolab.airfoil import airfoil_geom as ag
     s = str(spec)
     if not s.lower().startswith(("naca", "tmr")) and not Path(s).is_absolute():
         s = str(SRC / s)
@@ -299,7 +278,7 @@ def raw_outline(spec):
 def panel_polar(spec, alphas):
     """inviscid panel solutions; the panels at a sharp trailing edge (singular
     Cp, -100 and below) are dropped from the plotted distribution"""
-    import panel
+    from aerolab.airfoil import panel
     o = raw_outline(spec)
     out = [panel.solve([o], a) for a in alphas]
     for r in out:

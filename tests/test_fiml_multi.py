@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import fiml_multi as F  # noqa: E402
+from aerolab.ml import fiml_multi as F  # noqa: E402
 
 
 def test_data_loaders():

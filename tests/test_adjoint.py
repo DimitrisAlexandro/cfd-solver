@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import adjoint as A  # noqa: E402
+from aerolab.design import adjoint as A  # noqa: E402
 
 
 @pytest.fixture(scope="module")
@@ -63,7 +63,7 @@ def test_adjoint_equals_tangent(turbulent):
 
 def test_dcl_dalpha_vs_finite_difference(turbulent):
     pr, adj = turbulent
-    import polar as pl
+    from aerolab.airfoil import polar as pl
     st = {"xc": pr["fvm"].xc, "U": pr["solver"].U, "p": pr["solver"].p,
           "nuT": pr["solver"].turb.nuT}
     # small steps: the limiter / upwind switches make larger-step differences
@@ -80,7 +80,7 @@ def test_dcl_dalpha_vs_finite_difference(turbulent):
 def test_shape_gradient_vs_finite_difference(turbulent):
     """one CST coefficient: mesh deformed by the same IDW map"""
     pr, adj = turbulent
-    import polar as pl
+    from aerolab.airfoil import polar as pl
     defo = A.IDWDeformation(pr["solver"].m, pr["walls"])
     dP = A.cst_wall_velocities(defo, 8)
     j = 3
@@ -103,7 +103,7 @@ def test_laminar_adjoint():
     adj = A.Adjoint(pr["solver"], 2.0, pr["vortex"], pr["walls"])
     assert adj.res.N == 5 * adj.res.n + adj.res.nf + adj.res.no
     adj.solve(["Cl", "Cd"])
-    import polar as pl
+    from aerolab.airfoil import polar as pl
     st = {"xc": pr["fvm"].xc, "U": pr["solver"].U, "p": pr["solver"].p}
     da = 0.2            # laminar Re 2e3: small-step differences are noisy
     c = [pl.coefficients(q["solver"], q["walls"], q["U"])[0] for q in
@@ -129,8 +129,8 @@ def test_idw_deformation_is_linear_and_fixes_far_field(turbulent):
 
 
 def test_nested_subdivision_conserves_geometry(turbulent):
-    import adjoint_error as E
-    from fvmesh import FVMesh
+    from aerolab.design import adjoint_error as E
+    from aerolab.core.fvmesh import FVMesh
     pr, _ = turbulent
     m = pr["solver"].m
     pats = {n: np.c_[m.ba[m.patch_faces[n]], m.bb[m.patch_faces[n]]] for n in m.patch_names}
@@ -146,7 +146,7 @@ def test_nested_subdivision_conserves_geometry(turbulent):
 def test_deformation_turns_boundary_layer_columns_with_the_wall(turbulent):
     """a nose-radius change: plain IDW leans the boundary-layer columns, the
     normal-following deformation keeps them orthogonal"""
-    from fvmesh import FVMesh
+    from aerolab.core.fvmesh import FVMesh
     pr, _ = turbulent
     m = pr["solver"].m
 
@@ -157,7 +157,7 @@ def test_deformation_turns_boundary_layer_columns_with_the_wall(turbulent):
     pats = {n: np.c_[m.ba[m.patch_faces[n]], m.bb[m.patch_faces[n]]] for n in m.patch_names}
     # the thin near-wall cells (aspect ratios ~1e3), where a lean makes the
     # explicit non-orthogonal correction diverge
-    from turbulence import wall_distance
+    from aerolab.core.turbulence import wall_distance
     d = wall_distance(m, m.patch_faces["wall"])
     near = (m.nverts[m.own] == 4) & (d[m.own] < 0.002)
     inc = {}
