@@ -173,11 +173,11 @@ with tab_f:
         cols = [c for c in ("family", "re", "alpha", "cl_exp", "Cl_SA", "Cl_FIML", "cp_rms_SA",
                             "cp_rms_FIML") if c in pr]
         st.dataframe(pr[cols].sort_values(["family", "re", "alpha"]), hide_index=True,
-                     use_container_width=True)
+                     width="stretch")
         st.markdown("**Inversions** (training data)")
         iv = pd.DataFrame(d["inversions"])
         cols = [c for c in ("name", "cl_target", "Cl_SA", "Cl_inv", "cp_rms_SA", "cp_rms_inv",
                             "beta_min", "beta_max", "solutions") if c in iv]
-        st.dataframe(iv[cols], hide_index=True, use_container_width=True)
+        st.dataframe(iv[cols], hide_index=True, width="stretch")
         if png.exists():
             st.image(str(png))
