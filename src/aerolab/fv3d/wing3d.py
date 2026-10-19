@@ -1,6 +1,6 @@
 """3D RANS of a wing: mesh, solve, forces and span loading.
 
-    python -m fv3d.wing3d --airfoil naca0012 --semi-span 3 --re 3e6 --alpha 0,4,8 --level 0.5 --out ../cases/wing3d_demo
+    python src/run.py wing3d --airfoil naca0012 --semi-span 3 --re 3e6 --alpha 0,4,8 --level 0.5 --out ../cases/wing3d_demo
 
 Outputs (out/): wing3d.json (CL, CD, Cm, per angle: span loading, residual history),
 report.txt. Coefficients on the half-wing planform area (= full-wing coefficients).
@@ -60,8 +60,8 @@ def section_start(info, alpha, re, max_iter=1500, log=print):
     free stream over one chord; the tip fill starts at the free stream. A cold start
     from a uniform field drives the blunt trailing-edge wake through a violent
     transient that can diverge; the 2D field has it already settled."""
-    from fvmesh import FVMesh
-    from simple_solver import SimpleSolver
+    from aerolab.core.fvmesh import FVMesh
+    from aerolab.core.simple_solver import SimpleSolver
     sm = info["section_mesh"]
     P, ff = sm["points"], sm["farfield"]
     ca, sa = math.cos(math.radians(alpha)), math.sin(math.radians(alpha))

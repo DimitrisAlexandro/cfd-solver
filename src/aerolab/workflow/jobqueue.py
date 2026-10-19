@@ -178,7 +178,7 @@ class Worker:
         t = str(self.threads)
         return {**os.environ, "PYTHONWARNINGS": "ignore", "MPLBACKEND": "Agg",
                 "OMP_NUM_THREADS": t, "OPENBLAS_NUM_THREADS": t, "MKL_NUM_THREADS": t,
-                "NUMBA_NUM_THREADS": t}
+                "NUMBA_NUM_THREADS": t, "AEROLAB_THREADS": t}      # AEROLAB_THREADS: 3D C++ kernel
 
     def recover(self):
         """jobs left 'running' by a worker that died: re-queue (or fail)"""

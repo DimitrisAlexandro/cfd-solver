@@ -2,7 +2,7 @@
 
 Packages:
     core       Finite-volume solvers and numerics: mesh geometry, SIMPLEC, coupled and compressible solvers, turbulence, linear solvers.
-    mesh       Meshing and geometry: hybrid mesher, triangulation, mesh checks, case runner, viewers.
+    mesh       Meshing and geometry: hybrid mesher, triangulation, mesh checks, case runner, viewers and result readers.
     physics    Transition and boundary-layer models: e^N, AFT, swept-wing criteria, integral boundary layer.
     airfoil    Airfoil sections: geometry, CST, panel method, polars, multi-element, XFOIL reference.
     design     Adjoint, shape optimisation, inverse design, sizing and the polar surrogate.
@@ -10,6 +10,7 @@ Packages:
     aircraft   Wings and aircraft: models, loads, performance, structures, aeroelasticity, databases.
     workflow   Projects, pre-run checks, confidence, reports and the job queue.
     validation Validation and benchmark scripts.
+    fv3d       3D finite-volume RANS solver (wings): mesh, solver, native C++ kernel, validation.
 
 Command line: python src/run.py <tool> [arguments]   (e.g. python src/run.py airfoil polar naca0012 ...)
 """
@@ -103,6 +104,16 @@ MODULES = {
     'validate_transonic': 'validation',
     'validate_unsteady': 'validation',
     'validate_wing': 'validation',
+    'postview': 'mesh',
+    'wakeview': 'mesh',
+    'mesh3d': 'fv3d',
+    'meshgen3d': 'fv3d',
+    'native': 'fv3d',
+    'solver3d': 'fv3d',
+    'validate_core3d': 'fv3d',
+    'validate_wing3d': 'fv3d',
+    'wing3d': 'fv3d',
+    'wingmesh': 'fv3d',
 }
 
 

@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import matplotlib  # noqa: E402
 matplotlib.use("Agg")
 
-import postview as V  # noqa: E402
+from aerolab.mesh import postview as V  # noqa: E402
 
 FOIL = ROOT / "cases" / "foil_a4"
 
@@ -31,10 +31,10 @@ def test_2d_case_reads_and_renders():
 
 @pytest.fixture(scope="module")
 def wing_fields(tmp_path_factory):
-    from fv3d.mesh3d import FVMesh3D
-    from fv3d.solver3d import Solver3D
-    from fv3d.wingmesh import wing_mesh
-    from fv3d import wing3d
+    from aerolab.fv3d.mesh3d import FVMesh3D
+    from aerolab.fv3d.solver3d import Solver3D
+    from aerolab.fv3d.wingmesh import wing_mesh
+    from aerolab.fv3d import wing3d
     pm, info = wing_mesh("naca0012", semi_span=1.0, level=0.25, re=1e6, farfield=6.0)
     m = FVMesh3D(pm)
     a = math.radians(4.0)
@@ -70,7 +70,7 @@ def test_3d_fields_round_trip_and_render(wing_fields):
 
 @pytest.mark.skipif(not (FOIL / "results.vtu").exists(), reason="no saved 2D case")
 def test_2d_wake_survey_recovers_the_surface_drag():
-    import wakeview as W
+    from aerolab.mesh import wakeview as W
     c = V.Case2D(FOIL)
     wk = W.Wake2D(c)
     rows = wk.survey((0.1, 1.0))
@@ -82,7 +82,7 @@ def test_2d_wake_survey_recovers_the_surface_drag():
 
 
 def test_3d_wake_tools(wing_fields):
-    import wakeview as W
+    from aerolab.mesh import wakeview as W
     c = V.Case3D(wing_fields)
     wk = W.Wake3D(c)
     f = wk.plane(0.5, nt=61, nz=81)
@@ -103,7 +103,7 @@ def test_3d_wake_tools(wing_fields):
 def test_maskell_matches_a_vortex_pair():
     """induced drag of a vortex pair with cores: 1/2 int psi xi equals the analytic
     kinetic energy of two Lamb-Oseen vortices mirrored in z = 0"""
-    import wakeview as W
+    from aerolab.mesh import wakeview as W
     G, b, rc = 1.0, 1.0, 0.1
     t = np.linspace(-1.5, 1.5, 241)
     z = np.linspace(0.0, 3.0, 241)
@@ -119,7 +119,7 @@ def test_maskell_matches_a_vortex_pair():
 
 
 def test_whole_wake_scene(wing_fields):
-    import wakeview as W
+    from aerolab.mesh import wakeview as W
     wk = W.Wake3D(V.Case3D(wing_fields))
     vol = W.wake_volume(wk, 3.0, "Coarse")
     for f in ("loss", "nut_ratio", "Q", "Tu"):

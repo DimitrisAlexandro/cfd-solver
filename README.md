@@ -88,6 +88,10 @@ docker compose up -d --build  # http://<server>:8501
 - MUMPS, the faster adjoint solver, is built into the image. `--build-arg MUMPS=0` leaves it
   out; the adjoint then uses SuperLU and gives the same results, more slowly.
 - Worker settings go in `.env`: `AEROLAB_WORKER_SLOTS`, `AEROLAB_JOB_THREADS`, `AEROLAB_JOB_MEM_GB`.
+- The 3D solver's C++ kernel is compiled while the image is built, tuned to the CPU of the
+  machine that builds it. To build an image that runs on other machines, set
+  `AEROLAB_NATIVE_MARCH=x86-64-v2` in `.env`. Without a compiler the 3D solver still runs, on
+  its slower numpy fallback; the build log says which one you got.
 
 A fresh install starts with CFD section polars of the NACA 2412 (clean and with 10°/20° flaps)
 and the NACA 0012 (`data/wing_polars`), so the aircraft tools use CFD sections from the start.
@@ -122,7 +126,7 @@ FORCE/MOMENT load sets, VTK flow fields (ParaView).
 
 ## 3D RANS solver (in house, no OpenFOAM)
 
-`src/fv3d/` is a 3D finite-volume RANS solver with the same discretisation as the
+`src/aerolab/fv3d/` is a 3D finite-volume RANS solver with the same discretisation as the
 validated 2D one: cell-centred on polyhedral meshes (OpenFOAM-style faces / owner /
 neighbour), collocated SIMPLEC with Rhie-Chow, Spalart-Allmaras, least-squares and
 Green-Gauss gradients exact for linear fields on any cell shape (skewed, tapered,
@@ -133,10 +137,10 @@ numpy, slower).
 
 ```bash
 cd src
-python -m fv3d.wing3d --semi-span 3 --taper 0.5 --sweep 20 --twist -2 --re 3e6 \
+python run.py wing3d --semi-span 3 --taper 0.5 --sweep 20 --twist -2 --re 3e6 \
        --alpha 0,4,8 --level 0.4 --out ../cases/wing3d_demo      # half wing, SA
-python -m fv3d.validate_core3d     # 3D-1: cavity / airfoil consistency with 2D, duct, sphere
-python -m fv3d.validate_wing3d     # 3D-2: wings against the vortex lattice
+python run.py validate_core3d     # 3D-1: cavity / airfoil consistency with 2D, duct, sphere
+python run.py validate_wing3d     # 3D-2: wings against the vortex lattice
 ```
 
 The wing mesher sweeps the validated 2D hybrid airfoil mesh (y+ < 1 boundary
@@ -187,7 +191,7 @@ The app's **Data → Results viewer** page opens every result under `cases/`, ne
     lattice 0.0048 just behind the wing, shed circulation 0.179 vs root 0.174; further
     downstream numerical diffusion of the coarser wake mesh lowers the induced drag.
 
-The readers (`src/postview.py`, `src/wakeview.py`) need numpy, scipy and matplotlib only.
+The readers (`src/aerolab/mesh/postview.py`, `src/aerolab/mesh/wakeview.py`) need numpy, scipy and matplotlib only.
 
 ## Validation
 
