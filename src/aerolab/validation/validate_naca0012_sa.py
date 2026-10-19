@@ -74,9 +74,17 @@ def tmr0012(n_side=160, te_blend=0.85, n_te=3, te_thick=TE_THICK):
 
 
 def airfoil_mesh(level=1.0, alpha=0.0, verbose=False, wall=None, naca=None, re=RE,
-                 farfield=FARFIELD, yplus=0.7, growth=1.15, size_scale=None):
+                 farfield=FARFIELD, yplus=0.7, growth=1.15, wake_alphas=None, wake_band=True,
+                 wake_growth=0.05, size_scale=None):
     """Turbulent (y+ < 1) hybrid airfoil mesh, the settings validated here.
-    Default body: the TMR NACA 0012; pass naca="2412" or wall=(M,2) for others."""
+    Default body: the TMR NACA 0012; pass naca="2412" or wall=(M,2) for others.
+    wake_band: the graded wake band, 10 chords along the free stream (False: the
+    original 3-chord strip). wake_alphas: angles the band must cover (3D wings use one
+    section mesh for all their angles). wake_growth: cell size growth per chord along
+    the band (x 1/level). 0.05 for 2D: finer wake cells resolve the weak shedding of
+    the blunt trailing edge and the steady solvers then sit in a slow limit cycle
+    (NACA 0012, M 0.7, alpha 2: Cl +-1 % at 0.012-0.03, converged at 0.05). The 3D
+    wing section uses 0.012, which holds the tip vortex for ~10 chords."""
     r = level
     if wall is None and naca is None:
         wall, label = tmr0012(int(round(160 * r))), "TMR NACA 0012"
@@ -90,8 +98,10 @@ def airfoil_mesh(level=1.0, alpha=0.0, verbose=False, wall=None, naca=None, re=R
                          n_layers=int(round(60 * r * math.log(1.15) / math.log(growth))),
                          bl_ar_cap=1.0,
                          farfield_radius=farfield, n_farfield=int(round(48 * r)),
-                         h_near=0.03 / r, grad=0.15 / r, wake_length=3.0,
-                         wake_h=0.015 / r, wake_grad=0.05 / r, alpha_deg=alpha,
+                         h_near=0.03 / r, grad=0.15 / r, wake_length=10.0 if wake_band else 3.0,
+                         wake_h=0.015 / r, wake_grad=(wake_growth if wake_band else 0.05) / r, alpha_deg=alpha,
+                         wake=dict(alphas=wake_alphas or [alpha], width=(0.04, 0.06), cross=0.25 / r)
+                         if wake_band else None,
                          label=f"{label} (level {r:g})", verbose=verbose,
                          size_scale=size_scale)
 
