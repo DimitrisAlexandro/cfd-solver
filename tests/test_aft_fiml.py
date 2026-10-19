@@ -8,22 +8,22 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import adjoint as A  # noqa: E402
-import aft as AF  # noqa: E402
-import fiml  # noqa: E402
-import surrogate as SG  # noqa: E402
-import transition as T  # noqa: E402
+from aerolab.design import adjoint as A  # noqa: E402
+from aerolab.physics import aft as AF  # noqa: E402
+from aerolab.ml import fiml  # noqa: E402
+from aerolab.design import surrogate as SG  # noqa: E402
+from aerolab.physics import transition as T  # noqa: E402
 
 
 @pytest.fixture(scope="module")
 def laminar_plate():
-    import validate_flatplate as vf
-    from simple_solver import SimpleSolver
+    from aerolab.validation import validate_flatplate as vf
+    from aerolab.core.simple_solver import SimpleSolver
     m = vf.plate_mesh(0.5)
     s = SimpleSolver(m, vf.BCS, 1.0 / 5e6, U0=(1.0, 0.0))
     s.solve(tol=1e-8, max_iter=8000, verbose=False)
     a = AF.AFT.__new__(AF.AFT)
-    from turbulence import wall_distance
+    from aerolab.core.turbulence import wall_distance
     a.s, a.re, a.ncrit, a.closure = s, 5e6, 9.0, "thwaites"
     wall = np.where(s.b_wall)[0]
     a._wall_faces = wall
@@ -100,7 +100,7 @@ def test_beta_gradient_vs_finite_difference(coarse_turbulent):
     adj = A.Adjoint(s, 4.0, pr["vortex"], pr["walls"])
     adj.solve(["Cl"])
     g = adj.gradient_beta("Cl")
-    import polar as pl
+    from aerolab.airfoil import polar as pl
     st = {"xc": pr["fvm"].xc, "U": s.U, "p": s.p, "nuT": s.turb.nuT}
     eps = 0.02
     cl = []

@@ -67,7 +67,7 @@ A model trained on all seven inversions is saved as `cases/fiml_multi/models/all
 
 Reproduce (about 3 h on 4 cores):
 
-    python src/fiml_multi.py invert --jobs 3
-    python src/fiml_multi.py loao --jobs 4
-    python src/fiml_multi.py summary
-    python src/fiml_multi.py plot
+    python src/run.py fiml_multi invert --jobs 3
+    python src/run.py fiml_multi loao --jobs 4
+    python src/run.py fiml_multi summary
+    python src/run.py fiml_multi plot

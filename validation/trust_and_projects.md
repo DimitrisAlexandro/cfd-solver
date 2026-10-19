@@ -1,10 +1,10 @@
 # Trust layer and project graph (2026-10-12)
 
-Branch `trust-and-projects` (on top of `wing-structure`). New: `src/trust.py`, `src/project.py`,
+Branch `trust-and-projects` (on top of `wing-structure`). New: `src/aerolab/workflow/trust.py`, `src/aerolab/workflow/project.py`,
 `app/tools/23_Projects.py`, `app/tools/24_Confidence.py`, `tests/test_trust.py` (11),
 `tests/test_project.py` (6). No new dependencies.
 
-## 1. Trust layer (`src/trust.py`)
+## 1. Trust layer (`src/aerolab/workflow/trust.py`)
 
 Every polar point gets a level (validated range / use with care / low confidence), an expected
 uncertainty band for Cl and Cd, the reasons, and the nearest validated case.
@@ -36,7 +36,7 @@ uncertainty band for Cl and Cd, the reasons, and the nearest validated case.
   GCI meaningless, absolute GCI reported.
 - The same run at α 8° ended unsteady and is rated low confidence (Cd band ±28 %).
 
-## 2. Project graph (`src/project.py`)
+## 2. Project graph (`src/aerolab/workflow/project.py`)
 
 A project holds variants; a variant is a graph of analyses with parameters and inputs. Node kinds:
 aircraft model (source + field overrides such as `mass`, `surfaces.wing.span`), stability, drag,

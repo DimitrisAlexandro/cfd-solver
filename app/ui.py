@@ -124,7 +124,7 @@ def trust_md(level, text=None):
 
 def trust_notes(notes, title="Confidence", expanded=False, container=None):
     """[(level, text)] -> one badge line (the worst level) + the reasons in an expander"""
-    import trust as T
+    from aerolab.workflow import trust as T
     if not notes:
         return
     lev = T.worst(*(l for l, _ in notes))

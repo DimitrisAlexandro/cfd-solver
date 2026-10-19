@@ -1,6 +1,6 @@
 # AeroLab on your own server:  docker compose up -d   ->  http://<server>:8501
 # One image, two services (docker-compose.yml): the web app, and the worker that runs the
-# queued CFD jobs (python src/jobqueue.py worker).
+# queued CFD jobs (python src/run.py jobqueue worker).
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \

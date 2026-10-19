@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import wing as W  # noqa: E402
-import validate_wing as vw  # noqa: E402
+from aerolab.aircraft import wing as W  # noqa: E402
+from aerolab.validation import validate_wing as vw  # noqa: E402
 
 VAL = Path(__file__).resolve().parents[1] / "validation"
 

@@ -4,8 +4,8 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import hybrid_mesher as hm   # noqa: E402
-import mesh_check            # noqa: E402
+from aerolab.mesh import hybrid_mesher as hm   # noqa: E402
+from aerolab.mesh import mesh_check            # noqa: E402
 
 CASES = [("2412", 1e6, 0.0, 120), ("0012", 3e6, 8.0, 120), ("4415", 5e5, 4.0, 120),
          ("0012", 1e7, 0.0, 120), ("6409", 2e5, 2.0, 120), ("0006", 1e5, 0.0, 120),
@@ -29,6 +29,6 @@ def test_airfoil_mesh(tmp_path, naca, re, alpha, n_side):
 
 
 def test_first_cell_height_yplus_scaling():
-    from geometry import first_cell_height
+    from aerolab.mesh.geometry import first_cell_height
     assert first_cell_height(1e6, 2.0) == pytest.approx(2 * first_cell_height(1e6, 1.0))
     assert first_cell_height(1e7) < first_cell_height(1e6)

@@ -1,6 +1,6 @@
 # Free transition near stall: fixed (2026-10-09)
 
-Free-transition (e^N) polars used to diverge near stall (NACA 2412, Re 2.2e6, α ≥ 14°), and the wing tool reran those angles fully turbulent. Three causes, all in the RANS ↔ transition coupling (`src/transition.py`), plus two convergence-test tweaks (`src/polar.py`):
+Free-transition (e^N) polars used to diverge near stall (NACA 2412, Re 2.2e6, α ≥ 14°), and the wing tool reran those angles fully turbulent. Three causes, all in the RANS ↔ transition coupling (`src/aerolab/physics/transition.py`), plus two convergence-test tweaks (`src/aerolab/airfoil/polar.py`):
 
 | # | Cause | Effect | Fix |
 |---|---|---|---|

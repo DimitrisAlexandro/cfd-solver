@@ -1,6 +1,6 @@
 # Learned laminar-separation-bubble length (Eppler 387, LTPT)
 
-K* = the Mayle constant (Re_l = K Re_theta,s^0.7) at which the RANS drag equals the measured drag; a Gaussian process of log K* on the state of the laminar layer at separation (log Re_theta,s, H_s, x_sep, log Re). Leave-one-out: K predicted from the other cases, the drag at that K interpolated from the case's own K scan. Reproduce: `python src/bubble_ml.py scan` then `fit`.
+K* = the Mayle constant (Re_l = K Re_theta,s^0.7) at which the RANS drag equals the measured drag; a Gaussian process of log K* on the state of the laminar layer at separation (log Re_theta,s, H_s, x_sep, log Re). Leave-one-out: K predicted from the other cases, the drag at that K interpolated from the case's own K scan. Reproduce: `python src/run.py bubble_ml scan` then `fit`.
 
 | Re | α | K* | K predicted (LOO) | Cd LTPT | Cd, K = 1000 | Cd, learned K | error K=1000 | error learned |
 |---|---|---|---|---|---|---|---|---|
