@@ -3,7 +3,7 @@ without VTK/PyVista (numpy only), and rendered as matplotlib / plotly figures.
 
   find_results(root)            every viewable result under cases/
   Case2D(folder)                a 2D case: mesh, cell fields, walls, history
-  Case3D(file)                  a 3D wing solution (fields_a*.npz from fv3d.wing3d)
+  Case3D(file)                  a 3D wing solution (fields_a*.npz from aerolab.fv3d.wing3d)
 
 2D cases are the solver's VTU output (results.vtu, else mesh.vtu); 3D cases are the
 npz files fv3d.wing3d writes next to wing3d.json.

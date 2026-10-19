@@ -8,10 +8,10 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from fv3d import meshgen3d as G  # noqa: E402
-from fv3d import native as N  # noqa: E402
-from fv3d.mesh3d import FVMesh3D  # noqa: E402
-from fv3d.solver3d import Solver3D  # noqa: E402
+from aerolab.fv3d import meshgen3d as G  # noqa: E402
+from aerolab.fv3d import native as N  # noqa: E402
+from aerolab.fv3d.mesh3d import FVMesh3D  # noqa: E402
+from aerolab.fv3d.solver3d import Solver3D  # noqa: E402
 
 LIN = np.array([2.0, -3.0, 0.5])
 
@@ -119,8 +119,8 @@ def _cavity3d(n, Re):
 
 
 def test_one_layer_extrusion_reproduces_the_2d_cavity():
-    from fvmesh import FVMesh, rect_quad
-    from simple_solver import SimpleSolver
+    from aerolab.core.fvmesh import FVMesh, rect_quad
+    from aerolab.core.simple_solver import SimpleSolver
     n, Re = 16, 100.0
     m3, s3 = _cavity3d(n, Re)
     pts, cells, patches = rect_quad(n, n)
@@ -137,7 +137,7 @@ def test_one_layer_extrusion_reproduces_the_2d_cavity():
 
 
 def test_wing_mesh_is_valid_and_resolves_the_wall():
-    from fv3d.wingmesh import wing_mesh
+    from aerolab.fv3d.wingmesh import wing_mesh
     pm, info = wing_mesh("naca0012", semi_span=1.0, level=0.25, re=1e6, farfield=6.0, taper=0.6,
                          sweep_c4=15.0, twist=-2.0)
     m = FVMesh3D(pm)
@@ -151,7 +151,7 @@ def test_wing_mesh_is_valid_and_resolves_the_wall():
 
 
 def test_wing_runs_a_few_stable_iterations():
-    from fv3d.wingmesh import wing_mesh
+    from aerolab.fv3d.wingmesh import wing_mesh
     pm, info = wing_mesh("naca0012", semi_span=1.0, level=0.25, re=1e6, farfield=6.0)
     m = FVMesh3D(pm)
     a = math.radians(4.0)

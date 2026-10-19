@@ -1,7 +1,7 @@
 """3D-1 validation: the 3D finite-volume core (SIMPLEC + SA, C++ kernels).
 
-    python -m fv3d.validate_core3d            # all cases (~1 h on 2 cores)
-    python -m fv3d.validate_core3d --cases duct,sphere
+    python src/run.py validate_core3d            # all cases (~1 h on 2 cores)
+    python src/run.py validate_core3d --cases duct,sphere
 
 Cases
   cavity   lid-driven cavity Re 100 as a one-cell-thick extrusion with symmetry
@@ -23,17 +23,17 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
-from fv3d import meshgen3d as G  # noqa: E402
-from fv3d.mesh3d import FVMesh3D  # noqa: E402
-from fv3d.solver3d import Solver3D  # noqa: E402
+from aerolab.fv3d import meshgen3d as G  # noqa: E402
+from aerolab.fv3d.mesh3d import FVMesh3D  # noqa: E402
+from aerolab.fv3d.solver3d import Solver3D  # noqa: E402
 
 
 def case_cavity(n=32, Re=100.0):
-    from fvmesh import FVMesh, rect_quad
-    from simple_solver import SimpleSolver
+    from aerolab.core.fvmesh import FVMesh, rect_quad
+    from aerolab.core.simple_solver import SimpleSolver
     pm = G.box(n, n, 1, lz=1.0 / n, names={"xmin": "left", "xmax": "right", "ymin": "bottom",
                                           "ymax": "top", "zmin": "front", "zmax": "back"})
     m3 = FVMesh3D(pm)
@@ -56,8 +56,8 @@ def case_cavity(n=32, Re=100.0):
 
 
 def case_airfoil(level=0.7):
-    import polar
-    from simple_solver import SimpleSolver
+    from aerolab.airfoil import polar
+    from aerolab.core.simple_solver import SimpleSolver
     Re, a = 6e6, 10.0
     fvm, mesh, patches, bcs, U, turb, info = polar.make_case("tmr0012", Re, a, level)
     s2 = SimpleSolver(fvm, bcs, 1 / Re, turbulence="sa", U0=U)
@@ -138,7 +138,7 @@ def main(argv=None):
     ap.add_argument("--cases", default="cavity,airfoil,duct,sphere")
     ap.add_argument("--out", default=str(ROOT / "validation"))
     a = ap.parse_args(argv)
-    from fv3d import native
+    from aerolab.fv3d import native
     out = {"native": native.status(), "cases": {}}
     o = Path(a.out)
     o.mkdir(parents=True, exist_ok=True)

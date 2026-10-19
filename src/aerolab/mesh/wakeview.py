@@ -358,7 +358,7 @@ def plan_figure(wk, field="loss", x1=6.0, offset=0.0, mode="max"):
 def planes_figure(wk, ds=(0.5, 1.5, 3.0, 5.0), field="loss", height=640, cut=0.06):
     """the wing and planes normal to the free stream behind it, wake only (values above
     a threshold), coloured by field"""
-    import postview as V
+    from aerolab.mesh import postview as V
     fig = V.surface_figure(wk.case, "Cp", height=height)
     fig.data[0].update(showscale=False, opacity=1.0)
     planes = [wk.plane(d, nt=121, nz=161, half=0.6 + 0.15 * d) for d in ds]
@@ -560,7 +560,7 @@ def _iso(vol, field, level, color, opacity, name, smooth=0.8, show_legend=True):
 def wake_scene(wk, vol, layers, x_end=6.0, height=720, levels=None, lines=None):
     """the wing, the wake as isosurfaces (nested, translucent shells for a cloud),
     streamlines and the mesh in one scene"""
-    import postview as V
+    from aerolab.mesh import postview as V
     levels = levels or {}
     fig = V.surface_figure(wk.case, "Cp", height=height)
     fig.data[0].update(showscale=False, colorscale="Greys", opacity=1.0, name="wing", showlegend=True)

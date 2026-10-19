@@ -1,7 +1,7 @@
 """3D-2 validation: RANS (SA) wings against the vortex lattice.
 
-    python -m fv3d.validate_wing3d                 # all cases (hours on 2 cores)
-    python -m fv3d.validate_wing3d --quick         # rectangular wing, alpha 4 only
+    python src/run.py validate_wing3d                 # all cases (hours on 2 cores)
+    python src/run.py validate_wing3d --quick         # rectangular wing, alpha 4 only
 
 Cases
   rect   rectangular NACA 0012 wing, AR 6, Re 3e6: alpha 0, 4, 8
@@ -22,10 +22,10 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "src"))
 
-from fv3d import wing3d  # noqa: E402
+from aerolab.fv3d import wing3d  # noqa: E402
 
 CASES = {
     "rect": dict(semi_span=3.0, taper=1.0, sweep_c4=0.0, twist=0.0, alphas=(0.0, 4.0, 8.0), level=0.4),
@@ -42,8 +42,8 @@ def section_polar(out_dir, re=3e6, alphas=(-4, -2, 0, 2, 4, 6, 8, 10, 12), level
         d = json.loads(f.read_text())
         if d.get("re") == re and d.get("level") == level:
             return d
-    import polar
-    from simple_solver import SimpleSolver
+    from aerolab.airfoil import polar
+    from aerolab.core.simple_solver import SimpleSolver
     rows = []
     for a in alphas:
         fvm, mesh, patches, bcs, U, turb, info = polar.make_case("naca0012", re, a, level)
@@ -62,7 +62,7 @@ def section_polar(out_dir, re=3e6, alphas=(-4, -2, 0, 2, 4, 6, 8, 10, 12), level
 
 def vlm(case, alpha, sec):
     """vortex lattice with the 2D RANS section polar (nonlinear lift curve)"""
-    import wing as W
+    from aerolab.aircraft import wing as W
     b = 2 * case["semi_span"]
     wg = W.Wing(b, 1.0, case["taper"], sweep=case["sweep_c4"], twist=case["twist"], n_half=40)
     rows = sec["rows"]

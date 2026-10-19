@@ -79,7 +79,7 @@ def _wall_loop(wall_edges):
 def _fill_airfoil(P2, wall_edges, h):
     """triangles inside the airfoil loop (wall nodes kept; our CDT), size h.
     Returns (new points, triangles in global node numbering)."""
-    from cdt2d import CDT
+    from aerolab.mesh.cdt2d import CDT
     loop = _wall_loop(wall_edges)
     P = P2[loop]
     x0, y0 = P.min(0) - 0.5
@@ -171,8 +171,8 @@ def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedr
     dihedral in degrees. tip_airfoil: not yet (same section along the span)."""
     if tip_airfoil not in (None, airfoil):
         raise NotImplementedError("one section along the span for now")
-    import airfoil_geom as ag
-    import validate_naca0012_sa as v
+    from aerolab.airfoil import airfoil_geom as ag
+    from aerolab.validation import validate_naca0012_sa as v
     wall, _ = ag.load_airfoil(airfoil, n_side=int(round(160 * level)))
     # the section mesh carries a wake band covering the run's angles (one mesh for all)
     m2 = v.airfoil_mesh(level, 0.0, wall=wall, re=re, farfield=farfield, wake_alphas=list(wake_alphas),

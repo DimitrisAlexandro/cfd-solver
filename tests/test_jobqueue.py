@@ -96,9 +96,9 @@ def test_interrupted_job_is_requeued(q):
 
 def test_thread_limits_reach_the_job(q):
     jid = JQ.submit("test", "env", [script(q, "import os; print('T', os.environ['OMP_NUM_THREADS'], "
-                                               "os.environ['NUMBA_NUM_THREADS'])")], q)
+                                               "os.environ['NUMBA_NUM_THREADS'], os.environ['AEROLAB_THREADS'])")], q)
     drain(JQ.Worker(slots=1, threads=3, log=lambda *a: None))
-    assert "T 3 3" in (JQ.JOBS / f"{jid}.log").read_text()
+    assert "T 3 3 3" in (JQ.JOBS / f"{jid}.log").read_text()
 
 
 def test_legacy_record(q):
