@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import aircraft as A  # noqa: E402
-import sizing as SZ  # noqa: E402
-import weight_balance as WB  # noqa: E402
+from aerolab.aircraft import aircraft as A  # noqa: E402
+from aerolab.aircraft import sizing as SZ  # noqa: E402
+from aerolab.aircraft import weight_balance as WB  # noqa: E402
 
 G0 = 9.80665
 

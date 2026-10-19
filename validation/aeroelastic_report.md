@@ -1,6 +1,6 @@
 # Aeroelasticity: validation
 
-Reproduce with `python src/validate_aeroelastic.py`.
+Reproduce with `python src/run.py validate_aeroelastic`.
 
 ## Unsteady aerodynamics
 
