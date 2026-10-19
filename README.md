@@ -88,6 +88,10 @@ docker compose up -d --build  # http://<server>:8501
 - MUMPS, the faster adjoint solver, is built into the image. `--build-arg MUMPS=0` leaves it
   out; the adjoint then uses SuperLU and gives the same results, more slowly.
 - Worker settings go in `.env`: `AEROLAB_WORKER_SLOTS`, `AEROLAB_JOB_THREADS`, `AEROLAB_JOB_MEM_GB`.
+- The 3D solver's C++ kernel is compiled while the image is built, tuned to the CPU of the
+  machine that builds it. To build an image that runs on other machines, set
+  `AEROLAB_NATIVE_MARCH=x86-64-v2` in `.env`. Without a compiler the 3D solver still runs, on
+  its slower numpy fallback; the build log says which one you got.
 
 A fresh install starts with CFD section polars of the NACA 2412 (clean and with 10°/20° flaps)
 and the NACA 0012 (`data/wing_polars`), so the aircraft tools use CFD sections from the start.
@@ -119,6 +123,75 @@ python run.py performance ../cases/aircraft/demo_trainer.json --power 75 --fuel 
 Exports for other tools: JSBSim `<aerodynamics>` XML, AVL geometry + mass
 files, XFOIL-format polars (XFLR5), Excel/CSV/JSON tables, Nastran
 FORCE/MOMENT load sets, VTK flow fields (ParaView).
+
+## 3D RANS solver (in house, no OpenFOAM)
+
+`src/aerolab/fv3d/` is a 3D finite-volume RANS solver with the same discretisation as the
+validated 2D one: cell-centred on polyhedral meshes (OpenFOAM-style faces / owner /
+neighbour), collocated SIMPLEC with Rhie-Chow, Spalart-Allmaras, least-squares and
+Green-Gauss gradients exact for linear fields on any cell shape (skewed, tapered,
+warped faces), and the heavy loops in C++ (assembly, limiter, Gauss-Seidel, multigrid
+preconditioned CG, SA source) - built automatically with `g++` on first use
+(`sudo apt install build-essential` on WSL/Ubuntu; without a compiler it falls back to
+numpy, slower).
+
+```bash
+cd src
+python run.py wing3d --semi-span 3 --taper 0.5 --sweep 20 --twist -2 --re 3e6 \
+       --alpha 0,4,8 --level 0.4 --out ../cases/wing3d_demo      # half wing, SA
+python run.py validate_core3d     # 3D-1: cavity / airfoil consistency with 2D, duct, sphere
+python run.py validate_wing3d     # 3D-2: wings against the vortex lattice
+```
+
+The wing mesher sweeps the validated 2D hybrid airfoil mesh (y+ < 1 boundary
+layer) through spanwise stations with taper, sweep, twist and dihedral, closes the
+tip with a flat cap and relaxes the wall layers beyond the tip. A graded wake band
+10 chords long follows the free stream at the run's angles, and the spanwise spacing
+is capped around the tip vortex. Outputs: CL, CD (pressure/friction), Cm, span
+loading c_l c(eta).
+
+Rectangular, tapered, swept and twisted wings converge. Against the vortex lattice, CL
+is within 2 %:
+
+- taper 0.5, sweep 20°, twist −2°, AR 8: α 4 CL 0.2561 vs 0.2574;
+- span loading within about 1 % from root to tip.
+
+Results and limits: `validation/solver3d.md`, `validation/wing3d_report.md`,
+`validation/core3d_report.md`.
+
+With `--out`, every angle also saves its full flow field (`fields_a<alpha>.npz`).
+
+## Results viewer
+
+The app's **Data → Results viewer** page opens every result under `cases/`, newest first:
+
+- **2D** runs (single cases and each angle of a polar): any field (p, U, ν_t, vorticity,
+  mesh quality) with view presets (full, near, leading edge, trailing edge, wake) or a
+  custom window, cell edges, streamlines; the mesh alone; wall Cp / Cf / y+;
+  convergence; case details.
+- **3D** wings: rotatable surface coloured by Cp or Cf, with surface and symmetry-plane
+  mesh; a span cut through any layer (field or mesh); a crossflow plane x = const
+  (tip vortex: streamwise vorticity with in-plane velocity arrows); span loading and
+  CL history.
+- **Wake** (2D and 3D): the flow behind the body.
+  - 2D: the velocity-deficit field with virtual rake lines, u/U∞ and total-pressure-loss
+    profiles at each station, and the drag recovered from the wake (Betz wake-rake
+    formula) against the surface-force drag.
+  - 3D, the whole wake in one scene: the wing, the turbulence (nested shells of the SA eddy
+    viscosity ν_t/ν, or an estimated turbulence intensity), the wake sheet (total-pressure
+    loss), the tip vortex (Q-criterion), streamlines winding round it, and the mesh the wake
+    passes through (on the wake surface and the symmetry plane). Isosurfaces are computed
+    on the server (marching cubes, scikit-image), so only triangles reach the browser.
+  - 3D: the wake seen from above (sheet and tip vortex), planes behind the wing in 3D,
+    and a Betz / Maskell wake survey: profile drag (total-pressure loss) + induced drag
+    (½∫ψξ, crossflow kinetic energy) against the surface CD and CL²/(πAR), shed
+    circulation against the root circulation, spanwise profile drag, and the tip-vortex
+    path, peak vorticity and core radius downstream.
+  - On the AR 6 wing at α 4: wake CD 0.0140 vs surface 0.0149, induced 0.0045 vs vortex
+    lattice 0.0048 just behind the wing, shed circulation 0.179 vs root 0.174; further
+    downstream numerical diffusion of the coarser wake mesh lowers the induced drag.
+
+The readers (`src/aerolab/mesh/postview.py`, `src/aerolab/mesh/wakeview.py`) need numpy, scipy and matplotlib only.
 
 ## Validation
 

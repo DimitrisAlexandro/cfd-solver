@@ -10,7 +10,11 @@
 #                   queued again when it comes back
 # Both mount the same cases volume (results and the job queue in cases/_jobs).
 x-aerolab: &aerolab
-  build: .
+  build:
+    context: .
+    args:
+      MUMPS: ${AEROLAB_MUMPS:-1}                    # 0: leave MUMPS out (adjoint uses SuperLU)
+      NATIVE_MARCH: ${AEROLAB_NATIVE_MARCH:-native}  # CPU target of the 3D C++ kernel
   image: aerolab
   restart: unless-stopped
   volumes:

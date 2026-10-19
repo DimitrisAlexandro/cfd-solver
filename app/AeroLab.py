@@ -50,7 +50,8 @@ def P(file, title, default=False):
 # sections follow the workflow; page titles (and so the URLs) are unchanged
 nav = st.navigation({
     "": [P("Home.py", "Overview", default=True), P("tools/23_Projects.py", "Projects"),
-         P("tools/10_Jobs_and_results.py", "Runs")],
+         P("tools/10_Jobs_and_results.py", "Runs"),
+         P("tools/26_Results_viewer.py", "Results viewer")],
     "Airfoil": [P("tools/1_Airfoil_analysis.py", "Airfoil polar"),
                 P("tools/2_Multi_element.py", "Multi-element airfoil"),
                 P("tools/5_Inverse_design.py", "Inverse design"),
