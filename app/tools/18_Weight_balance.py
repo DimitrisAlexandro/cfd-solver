@@ -9,8 +9,8 @@ import aircraft_views as AV
 import common as C
 import ui
 
-import aircraft as A
-import weight_balance as WB
+from aerolab.aircraft import aircraft as A
+from aerolab.aircraft import weight_balance as WB
 
 C.page_setup()
 ui.header("Weight and balance", "Component masses and positions, loading cases and the c.g. envelope, "

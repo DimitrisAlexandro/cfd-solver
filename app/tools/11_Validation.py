@@ -40,10 +40,20 @@ items = [
      "trust_and_projects.md"),
     ("Basic solver: cavity, cylinder, unsteady", ["cavity_profiles.png", "cylinder_flow.png",
                                                   "unsteady_cylinder_forces.png"], "unsteady_report.txt"),
+    ("Discrete adjoint: gradients vs finite differences, adjoint shape design, error estimation",
+     ["adjoint_fd_check.png", "adjoint_design_naca0012.png"], "adjoint_report.md"),
+    ("Amplification-factor transport (local transition model) vs e^N and XFOIL",
+     ["aft_validation.png"], "aft_report.md"),
+    ("Swept-wing transition: attachment line, crossflow, Tollmien-Schlichting",
+     ["swept_transition.png"], "swept_transition_report.md"),
+    ("Field inversion and machine learning (SA near stall, NACA 0012)",
+     ["fiml_naca0012.png"], "fiml_report.md"),
+    ("Learned laminar-separation-bubble length (Eppler 387, LTPT)", [], "bubble_ml_report.md"),
+    ("Gaussian-process polar surrogate with uncertainty", [], "surrogate_report.md"),
 ]
 for title, imgs, rep in items:
     have = [i for i in imgs if (C.VAL / i).exists()]
-    if not have:
+    if not have and not (C.VAL / rep).exists():
         continue
     with st.expander(title):
         for i in have:

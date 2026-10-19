@@ -10,8 +10,8 @@ import common as C
 import ui
 import views
 
-import project as PR
-import trust as T
+from aerolab.workflow import project as PR
+from aerolab.workflow import trust as T
 
 C.page_setup()
 ui.header("Projects", "A design as a dependency graph. Change any input and see what is out of date and why; "
@@ -21,8 +21,8 @@ ui.header("Projects", "A design as a dependency graph. Change any input and see 
 STATE = {"up to date": "green", "stale": "orange", "not run": "gray", "running": "blue", "failed": "red"}
 CHOICES = {"category": ["normal", "utility", "aerobatic"], "transition": ["free", "off", "fixed"]}
 try:
-    import drag_buildup as _D
-    import wing_structure as _W
+    from aerolab.aircraft import drag_buildup as _D
+    from aerolab.aircraft import wing_structure as _W
     CHOICES["gear"] = list(_D.GEAR_PRESETS)
     CHOICES["material"] = list(_W.MATERIALS)
 except Exception:                                      # noqa: BLE001
@@ -43,7 +43,7 @@ def aircraft_files():
 
 def prerun(path, variant):
     """pre-run checks of the variant: per analysis, with 'compute section polars' actions"""
-    import preflight as PF
+    from aerolab.workflow import preflight as PF
     try:
         pre = PF.check_project(PR.Project.load(path), variant)
     except Exception as e:                                     # noqa: BLE001
@@ -85,7 +85,7 @@ def prerun(path, variant):
 projects = PR.Project.list()
 top1, top2 = st.columns([4, 1], vertical_alignment="bottom")
 with top2.popover("New project", width="stretch"):
-    import templates as TP
+    from aerolab.workflow import templates as TP
     nm = st.text_input("Name", placeholder="Trainer study")
     kinds = TP.ORDER + ["custom", "section", "empty"]
     tpl = st.radio("Start from", kinds, horizontal=False,
@@ -158,7 +158,7 @@ with tab_g:
         override = blocked and st.checkbox("Run anyway", False, key=f"ovr{sel}{variant}",
                                            help="The checks found an error. Run only if you know why it doesn't apply.")
         c1, c2 = st.columns(2)
-        running = jk in st.session_state and C.get_job(st.session_state[jk])["status"] == "running"
+        running = jk in st.session_state and C.get_job(st.session_state[jk])["status"] in C.ACTIVE
         if c1.button(f"Run what's out of date ({len(plan)})", type="primary",
                      disabled=not plan or running or (blocked and not override),
                      width="stretch", help="Runs the stale and never-run analyses in dependency order"):
@@ -267,7 +267,7 @@ with tab_e:
                             ovs[f_] = PR._parse_value(v_)
                     new["overrides"] = ovs
                     try:                                   # catch bad paths before they reach a run
-                        import aircraft as A
+                        from aerolab.aircraft import aircraft as A
                         base = A.demo_aircraft().to_dict() if new["source"] == "demo" else \
                             json.loads(Path(new["source"]).read_text())
                         base = json.loads(json.dumps(base, default=list))
@@ -417,7 +417,7 @@ with tab_c:
 
 # ----------------------------------------------------------------------
 with tab_r:
-    import report as RP
+    from aerolab.workflow import report as RP
     st.markdown("A report collects the results with their inputs, confidence levels, the evidence and limits "
                 "of every tool and the validation references. Stale results are marked as such.")
     c1, c2 = st.columns(2, gap="large")

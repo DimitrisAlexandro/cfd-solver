@@ -15,7 +15,7 @@ C.page_setup()
 ui.header("Shape optimizer", "Minimum drag at your design lift. Smooth CST changes to the shape, "
                              "every candidate solved with RANS, a surrogate model steering the "
                              "search; the winner is re-checked on the validated mesh.")
-import cst
+from aerolab.airfoil import cst
 
 setup, info = st.columns([5, 6], gap="large")
 with setup:

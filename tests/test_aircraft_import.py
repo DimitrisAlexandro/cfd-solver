@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import aircraft as A  # noqa: E402
-import aircraft_import as AI  # noqa: E402
+from aerolab.aircraft import aircraft as A  # noqa: E402
+from aerolab.aircraft import aircraft_import as AI  # noqa: E402
 
 AVL = """Test glider
 #Mach
@@ -106,7 +106,7 @@ g = 9.81
 
 def clarky():
     """a cambered section in Selig order (NACA 4412 outline stands in for a Clark Y)"""
-    import airfoil_geom as ag
+    from aerolab.airfoil import airfoil_geom as ag
     o = ag.sharp_outline("naca4412")
     return ("clark y\n" + "\n".join(f"{x:.6f} {y:.6f}" for x, y in o) + "\n").encode()
 
@@ -145,7 +145,7 @@ def test_avl_import(tmp_path):
 
 
 def test_avl_roundtrip(tmp_path):
-    import aero_database as D
+    from aerolab.aircraft import aero_database as D
     ac = A.demo_aircraft()
     D.write_avl(ac, tmp_path)
     b, _ = AI.read_files({"a.avl": (tmp_path / "aircraft.avl").read_bytes(),
@@ -170,8 +170,8 @@ def test_json_import():
 
 
 def test_avl_roundtrip_kinks(tmp_path):
-    import aero_database as D
-    import validate_aircraft as VA
+    from aerolab.aircraft import aero_database as D
+    from aerolab.validation import validate_aircraft as VA
     ac = VA.test_cranked()
     D.write_avl(ac, tmp_path)                 # also writes sections at the control edges
     b, _ = AI.read_files({"a.avl": (tmp_path / "aircraft.avl").read_bytes()}, tmp_path)

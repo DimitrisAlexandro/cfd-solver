@@ -6,15 +6,15 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from fvmesh import FVMesh, rect_quad  # noqa: E402
-from simple_solver import SimpleSolver  # noqa: E402
-from compressible import CompressibleSolver  # noqa: E402
+from aerolab.core.fvmesh import FVMesh, rect_quad  # noqa: E402
+from aerolab.core.simple_solver import SimpleSolver  # noqa: E402
+from aerolab.core.compressible import CompressibleSolver  # noqa: E402
 
 NAMES = ("lower", "outlet", "upper", "inlet")
 
 
 def _channel():
-    import validate_channel as vch
+    from aerolab.validation import validate_channel as vch
     m = FVMesh(*rect_quad(30, 10, 0, 3, -vch.H, vch.H, names=vch.NAMES))
     bcs = {"wallB": {"type": "wall"}, "wallT": {"type": "wall"},
            "inlet": {"type": "inlet", "U": vch.profile}, "outlet": {"type": "outlet"}}
@@ -62,7 +62,7 @@ def test_density_correction_stable_m05():
 
 @pytest.mark.parametrize("mach", [0.5, 0.675])
 def test_ni_bump(mach):
-    import validate_bump as vb
+    from aerolab.validation import validate_bump as vb
     r, s, _ = vb.run(mach, nx=60, ny=20, max_iter=3000, tol=1e-6)
     assert r["converged"]
     if mach == 0.5:                     # subsonic: symmetric, isentropic, M_max ~ 0.69
@@ -77,8 +77,8 @@ def test_ni_bump(mach):
 
 def test_naca0012_euler_transonic():
     """NACA 0012, M 0.8, alpha 1.25, Euler (coarse): Cl ~0.35, Cd ~0.022"""
-    import validate_naca0012_sa as v
-    import validate_transonic as vt
+    from aerolab.validation import validate_naca0012_sa as v
+    from aerolab.validation import validate_transonic as vt
     mesh = vt.euler_mesh(v.tmr0012(120), 1.25, level=0.6)
     fvm, bcs, U = vt.fv_case(mesh, 1.25)
     r, s, w = vt.solve(fvm, bcs, U, 1.25, 0.8, max_iter=2500)
@@ -89,7 +89,7 @@ def test_naca0012_euler_transonic():
 
 def test_polar_point_compressible():
     """polar tool: mach > 0 runs the compressible solver (RANS, warm start)"""
-    import polar as pl
+    from aerolab.airfoil import polar as pl
     r, st = pl.run_point("naca0012", 3e6, 2.0, level=0.7, mach=0.7, transition="off")
     # the 10-chord wake band resolves the weak shedding of the blunt trailing edge: the
     # polar tool then reports the mean of a small oscillation (its documented status),

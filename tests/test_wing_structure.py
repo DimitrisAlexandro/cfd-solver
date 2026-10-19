@@ -8,8 +8,8 @@ import pytest
 from scipy.optimize import brentq
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import aircraft as A  # noqa: E402
-import wing_structure as WS  # noqa: E402
+from aerolab.aircraft import aircraft as A  # noqa: E402
+from aerolab.aircraft import wing_structure as WS  # noqa: E402
 
 
 # ---------------------------------------------------------------- closed forms
@@ -125,7 +125,7 @@ def test_deflection_uniform_moment():
 def test_demo_chain_plausible():
     ac = A.demo_aircraft()
     an = A.Analysis(ac, 60.0, 0.0, None)
-    import loads as LD
+    from aerolab.aircraft import loads as LD
     res = LD.run(ac, 60.0, "normal", 0.0, None, None, log=lambda *a: None)
     r = WS.run(ac, res, log=lambda *a: None)
     assert 0.06 * ac.mass < r["wing_mass"] < 0.16 * ac.mass                 # light aircraft: ~8-13 % MTOW
