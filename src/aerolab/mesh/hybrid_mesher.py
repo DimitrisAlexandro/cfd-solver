@@ -26,20 +26,47 @@ from aerolab.mesh.cdt2d import CDT
 from aerolab.mesh.geometry import circle, first_cell_height, naca4
 
 
-def make_size_fn(h_near, grad, h_far, wake_length, wake_h, wake_grad, alpha_deg):
+def make_size_fn(h_near, grad, h_far, wake_length, wake_h, wake_grad, alpha_deg,
+                 wake=None, te=(1.0, 0.0)):
+    """cell size at (x, y): fine near the body, coarse at the far field, and refined
+    along the wake.
+
+    wake=None: the original strip (|n| < 0.05 + 0.15 s, s < wake_length, sharp edges).
+    wake=dict: a graded wake band that follows the free stream from the trailing edge
+        alphas   angles the wake must cover (one mesh for several angles: 3D wings)
+        width    (w0, w1): core half-width w0 + w1 s, size h_c(s) inside it
+        cross    size growth per unit distance outside the core (smooth, no edge)
+        h_c(s) = wake_h + wake_grad min(s, L) + grad max(s - L, 0),  L = wake_length
+    """
     ca, sa = math.cos(math.radians(alpha_deg)), math.sin(math.radians(alpha_deg))
+    tx, ty = te
+    if wake is not None:
+        dirs = [(math.cos(math.radians(a)), math.sin(math.radians(a)))
+                for a in (wake.get("alphas") or [alpha_deg])]
+        w0, w1 = wake.get("width", (0.04, 0.06))
+        gn = wake.get("cross", 0.25)
+        L = wake_length
 
     def size(x, y):
         # distance to the chord line (0,0)-(1,0)
         cx = min(max(x, 0.0), 1.0)
         d = math.hypot(x - cx, y)
         h = h_near + grad * d
-        # wake: a strip leaving the TE along the freestream direction
-        xs, ys = x - 1.0, y
-        s = xs * ca + ys * sa             # along-wake coordinate
-        n = abs(-xs * sa + ys * ca)       # cross-wake distance
-        if 0.0 < s < wake_length and n < 0.05 + 0.15 * s:
-            h = min(h, wake_h + wake_grad * s)
+        xs, ys = x - tx, y - ty
+        if wake is None:
+            # wake: a strip leaving the TE along the freestream direction
+            s = xs * ca + ys * sa             # along-wake coordinate
+            n = abs(-xs * sa + ys * ca)       # cross-wake distance
+            if 0.0 < s < wake_length and n < 0.05 + 0.15 * s:
+                h = min(h, wake_h + wake_grad * s)
+            return min(h, h_far)
+        for c, sn in dirs:
+            s = xs * c + ys * sn
+            if s <= 0.0:
+                continue
+            n = abs(-xs * sn + ys * c)
+            hc = wake_h + wake_grad * min(s, L) + grad * max(s - L, 0.0)
+            h = min(h, hc + gn * max(0.0, n - (w0 + w1 * s)))
         return min(h, h_far)
     return size
 
@@ -48,7 +75,8 @@ def build_mesh(naca="2412", n_side=120, reynolds=1e6, yplus=1.0, growth=1.15,
                n_layers=60, farfield_radius=20.0, n_farfield=64,
                h_near=0.02, grad=0.12, wake_length=5.0, wake_h=0.01,
                wake_grad=0.03, alpha_deg=0.0, min_angle=25.0, seed_offset=0.87,
-               wall=None, h1=None, label=None, bl_ar_cap=1.0, verbose=True, size_scale=None):
+               wall=None, h1=None, label=None, bl_ar_cap=1.0, verbose=True, wake=None,
+               size_scale=None):
     """wall: optional (M,2) closed loop spanning roughly x in [0,1] (any body);
     default is the NACA airfoil. h1: optional first-layer height (default
     from y+ and Re, which assumes a turbulent boundary layer).
@@ -118,8 +146,9 @@ def build_mesh(naca="2412", n_side=120, reynolds=1e6, yplus=1.0, growth=1.15,
                 cdt._insert_at(px, py, t, check_encroach=True)
 
     # 4) refinement ---------------------------------------------------------
+    te = tuple(wall[int(np.argmax(wall[:, 0]))]) if wake is not None else (1.0, 0.0)
     size = make_size_fn(h_near, grad, 2 * math.pi * R / n_farfield,
-                        wake_length, wake_h, wake_grad, alpha_deg)
+                        wake_length, wake_h, wake_grad, alpha_deg, wake=wake, te=te)
     if size_scale is not None:
         base = size
         size = lambda x, y: base(x, y) * size_scale(x, y)

@@ -13,3 +13,4 @@ pandas
 openpyxl
 python-docx      # Word reports
 reportlab        # PDF reports
+scikit-image     # results viewer: wake isosurfaces

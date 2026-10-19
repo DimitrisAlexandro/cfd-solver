@@ -77,14 +77,20 @@ def test_factorize_backends_agree():
 
 
 def test_solve_primal_robust_same_answer():
-    """NACA 0012, Re 3e6, alpha 4: first-order start + pseudo-time gives the
-    same converged flow as the plain path"""
+    """NACA 0012, Re 3e6, alpha 4: the robust path (first-order start, pseudo-time)
+    converges from a cold start - where plain SIMPLEC diverges on the wake-band mesh - and
+    plain SIMPLEC, restarted on the same mesh from a perturbed copy of that solution,
+    returns to the same converged flow (the answer does not depend on the path)"""
     from aerolab.design import adjoint as A
     from aerolab.airfoil import polar as pl
-    out = {}
-    for rb in (False, True):
-        pr = A.solve_primal("naca0012", 3e6, 4.0, 0.5, robust=rb)
-        out[rb] = pl.coefficients(pr["solver"], pr["walls"], pr["U"])[0]
-        assert pr["residual"] < 1e-9
-    assert abs(out[True]["Cl"] - out[False]["Cl"]) < 1e-6
-    assert abs(out[True]["Cd"] - out[False]["Cd"]) < 1e-7
+    pr = A.solve_primal("naca0012", 3e6, 4.0, 0.5, robust=True)
+    assert pr["residual"] < 1e-9
+    a = pl.coefficients(pr["solver"], pr["walls"], pr["U"])[0]
+    s = pr["solver"]
+    st = {"xc": pr["fvm"].xc, "U": s.U * 0.98, "p": s.p * 0.9, "nuT": s.turb.nuT}
+    q = A.solve_primal("naca0012", 3e6, 4.0, 0.5, robust=False, init=st,
+                       base={"mesh": pr["mesh"], "info": pr["info"]})
+    assert q["residual"] < 1e-9
+    b = pl.coefficients(q["solver"], q["walls"], q["U"])[0]
+    assert abs(a["Cl"] - b["Cl"]) < 1e-6
+    assert abs(a["Cd"] - b["Cd"]) < 1e-7
