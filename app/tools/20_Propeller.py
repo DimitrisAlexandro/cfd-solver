@@ -9,9 +9,9 @@ import aircraft_views as AV
 import common as C
 import ui
 
-import aircraft as A
-import propeller as P
-import wing as W
+from aerolab.aircraft import aircraft as A
+from aerolab.aircraft import propeller as P
+from aerolab.aircraft import wing as W
 
 C.page_setup()
 ui.header("Propeller and engine", "Minimum-induced-loss propeller design (Adkins & Liebeck), blade element "
@@ -62,7 +62,7 @@ with setup:
                             index=["fixed_pitch", "constant_speed"].index(spec0.get("mode", "fixed_pitch")),
                             format_func=lambda m: m.replace("_", " "))
         secs = ["generic"] + [a for a in ("naca4412", "naca2412", "naca0012") if
-                              __import__("design_wing_sizing").cached_polars(a, C.POLAR_CACHE, 0.0)]
+                              __import__("aerolab.design.design_wing_sizing", fromlist=["x"]).cached_polars(a, C.POLAR_CACHE, 0.0)]
         sec = c3.selectbox("Section", secs, help="generic: Clark-Y-like analytic polar; others: CFD polars "
                                                   "from the polar library")
 

@@ -12,6 +12,9 @@ ui.header("Runs", "Every analysis started from this app, newest first. Runs cont
                   "browser is closed.")
 
 jobs = C.list_jobs()
+if any(j["status"] == "queued" for j in jobs) and not C.worker_alive():
+    st.warning("Runs are queued but no worker is running. The app starts one itself; on a server "
+               "start the `aerolab-worker` service (docker compose up -d).")
 tab1, tab2 = st.tabs(["Runs", "Open a result folder"])
 with tab1:
     if not jobs:
@@ -19,8 +22,8 @@ with tab1:
     for j in jobs:
         when = time.strftime("%d %b %H:%M", time.localtime(j["started"]))
         with st.expander(f"{ui.status_md(j['status'])} {j['title']}, {when}",
-                         expanded=j["status"] == "running"):
-            if j["status"] == "running":
+                         expanded=j["status"] in C.ACTIVE):
+            if j["status"] in C.ACTIVE:
                 views.live_job(j["id"], j["kind"])
             else:
                 c1, c2, _ = st.columns([1, 1, 4])

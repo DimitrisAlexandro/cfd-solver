@@ -1,16 +1,16 @@
 # Phase 6 — Quasi-3D wing analysis (2026-10-08)
 
-Branch `phase6-wing` (on top of `phase5-compressible`). New: `src/wing.py`, `src/validate_wing.py`, `tests/test_wing.py` (5 tests). No new dependencies.
+Branch `phase6-wing` (on top of `phase5-compressible`). New: `src/aerolab/aircraft/wing.py`, `src/aerolab/validation/validate_wing.py`, `tests/test_wing.py` (5 tests). No new dependencies.
 
 ## What it does
 `wing.py` turns your CFD section polars into wing aerodynamics in seconds:
 
 ```bash
 cd src
-python wing.py --airfoil naca2412 --span 10 --root-chord 1.6 --tip-chord 0.8 \
+python run.py wing --airfoil naca2412 --span 10 --root-chord 1.6 --tip-chord 0.8 \
                --sweep 5 --dihedral 3 --twist -2 --speed 40 --alpha=-4:20:1
-python wing.py --airfoil naca2412 --tip-airfoil naca0012 ...      # different tip section
-python wing.py --polar ../cases/myfoil/polar.json ... --re 3e6     # reuse an airfoil.py polar
+python run.py wing --airfoil naca2412 --tip-airfoil naca0012 ...      # different tip section
+python run.py wing --polar ../cases/myfoil/polar.json ... --re 3e6     # reuse an airfoil.py polar
 ```
 Output folder: `wing.png` (C_L–α, drag polar with the induced part, C_m, span loading vs elliptic, local c_l vs section c_l,max, planform with stalled strips), `report.txt`, `wing_polar.csv`, `wing.json` (all span distributions — for the app).
 

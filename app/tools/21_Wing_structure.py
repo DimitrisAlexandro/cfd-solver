@@ -13,8 +13,8 @@ import common as C
 import ui
 import views
 
-import aircraft as A
-import wing_structure as WS
+from aerolab.aircraft import aircraft as A
+from aerolab.aircraft import wing_structure as WS
 
 C.page_setup()
 ui.header("Wing structure", "First-pass wing box from the flight loads: spar caps, webs, skins and ribs, the "

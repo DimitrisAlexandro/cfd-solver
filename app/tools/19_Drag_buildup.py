@@ -9,8 +9,8 @@ import aircraft_views as AV
 import common as C
 import ui
 
-import aircraft as A
-import drag_buildup as DB
+from aerolab.aircraft import aircraft as A
+from aerolab.aircraft import drag_buildup as DB
 
 C.page_setup()
 ui.header("Drag buildup", "Parasite drag component by component: skin friction with laminar runs and "

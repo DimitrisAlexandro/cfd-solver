@@ -10,7 +10,7 @@ A **pressure-based compressible solver** on the same meshes, discretisation and 
 - far field: point vortex with Prandtl–Glauert scaling + isentropic outlet pressure; total-pressure inlets for internal flows;
 - Euler mode (`inviscid=True`): slip walls, μ = 0.
 
-In the polar tool: `python airfoil.py polar <airfoil> --re R --mach M ...` now runs this solver (`--prandtl-glauert` keeps the old incompressible + correction). Above M 0.4 transition is fully turbulent or fixed (`--xtr`); free e^N transition only below M 0.4 (incompressible stability theory, now on the isentropic edge velocity). Output fields add Mach, ρ, T and total-pressure loss.
+In the polar tool: `python src/run.py airfoil polar <airfoil> --re R --mach M ...` now runs this solver (`--prandtl-glauert` keeps the old incompressible + correction). Above M 0.4 transition is fully turbulent or fixed (`--xtr`); free e^N transition only below M 0.4 (incompressible stability theory, now on the isentropic edge velocity). Output fields add Mach, ρ, T and total-pressure loss.
 
 ## Validation
 | case | quantity | this solver | reference |

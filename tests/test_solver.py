@@ -6,10 +6,10 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from fvmesh import FVMesh, rect_quad, rect_tri  # noqa: E402
-import validate_channel as vch                  # noqa: E402
-import validate_cavity as vca                   # noqa: E402
-import validate_cylinder as vcy                 # noqa: E402
+from aerolab.core.fvmesh import FVMesh, rect_quad, rect_tri  # noqa: E402
+from aerolab.validation import validate_channel as vch                  # noqa: E402
+from aerolab.validation import validate_cavity as vca                   # noqa: E402
+from aerolab.validation import validate_cylinder as vcy                 # noqa: E402
 
 
 @pytest.mark.parametrize("mk", [lambda: rect_quad(12, 9), lambda: rect_tri(0.08)])

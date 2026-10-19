@@ -8,9 +8,9 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import aeroelastic as AE  # noqa: E402
-import aircraft as A  # noqa: E402
-import wing_structure as WS  # noqa: E402
+from aerolab.aircraft import aeroelastic as AE  # noqa: E402
+from aerolab.aircraft import aircraft as A  # noqa: E402
+from aerolab.aircraft import wing_structure as WS  # noqa: E402
 
 
 def uniform_beam(L=6.096, c=1.8288, m=35.71, EI=9.77e6, GJ=0.987e6, xea=0.33, xcg=0.43, Iea=8.64, n_el=30,
@@ -144,7 +144,7 @@ def test_divergence_3d_vs_strip_and_sweep():
 
 def test_aileron_mass_balance_and_flexible_loads():
     ac = A.demo_aircraft()
-    import loads as LD
+    from aerolab.aircraft import loads as LD
     res = LD.run(ac, 60.0, "normal", 0.0, None, None, log=lambda *a: None)
     st = WS.size(ac, res)
     unbal = {"freq_hz": 15.0, "mass_per_area": 4.0, "cg_aft_hinge": 0.30, "gyration": 0.30}

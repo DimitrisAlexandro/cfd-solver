@@ -28,7 +28,7 @@ with setup:
             V = c1.number_input("Speed (m/s)", 1.0, 400.0, 40.0)
             ch = c2.number_input("Chord (m)", 0.01, 20.0, 1.0)
             alt = c3.number_input("Altitude (m)", 0.0, 15000.0, 0.0, 100.0)
-            import wing as W
+            from aerolab.aircraft import wing as W
             rho, mu, a_snd, T, _ = W.isa(alt)
             re, mach = rho * V * ch / mu, V / a_snd
             st.caption(f"Re {C.fmt_re(re)}, M {mach:.3f} (ISA)")
@@ -60,14 +60,21 @@ with setup:
                          "separated layer; use it for very clean, low-Re cases only.") else "auto"
 
         ui.step("Transition")
-        tr = st.segmented_control("Transition model", ["free (e^N)", "fixed trip", "fully turbulent"],
+        tr = st.segmented_control("Transition model", ["free (e^N)", "free (AFT transport)", "fixed trip",
+                                                       "fully turbulent"],
                                   default="free (e^N)", label_visibility="collapsed",
                                   help="Free: laminar boundary layer with the e^N envelope method. "
-                                       "Fixed: tripped at the given x/c.")
+                                       "AFT transport: the same envelope criterion as local transport "
+                                       "equations on the CFD mesh (no surface marching; no separation "
+                                       "bubbles - use e^N at low Re). Fixed: tripped at the given x/c.")
         tr = tr or "free (e^N)"
         c1, c2, c3 = st.columns(3)
         ncrit = c1.number_input("N_crit", 1.0, 14.0, 9.0, 0.5, disabled=not tr.startswith("free"),
                                 help="9 for an average wind tunnel, 11–12 for a quiet tunnel or clean flight")
+        tu = c1.number_input("or turbulence level Tu (%)", 0.0, 3.0, 0.0, 0.01,
+                             disabled=not tr.startswith("free"),
+                             help="> 0: N_crit from Mack's relation N_crit = -8.43 - 2.4 ln(Tu) "
+                                  "(overrides N_crit). 0.07 % ~ N_crit 9.")
         xu = c2.number_input("Trip x/c, upper", 0.0, 1.0, 0.05, disabled=not tr.startswith("fixed"))
         xl = c3.number_input("Trip x/c, lower", 0.0, 1.0, 0.05, disabled=not tr.startswith("fixed"))
 
@@ -147,6 +154,10 @@ if go_:
         args += ["--transition", "off"]
     else:
         args += ["--ncrit", ncrit]
+        if "AFT" in tr:
+            args += ["--transition", "aft"]
+        if tu > 0:
+            args += ["--tu", f"{tu:g}"]
     if regime != "auto":
         args += ["--regime", regime]
     if mach > 0:

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import validate_unsteady as vu   # noqa: E402
+from aerolab.validation import validate_unsteady as vu   # noqa: E402
 
 
 def test_bdf2_second_order_in_time():
@@ -27,8 +27,8 @@ def test_bdf2_second_order_in_time():
 
 def test_transient_converges_to_steady():
     """A long transient run of a steady flow must end on the steady solution."""
-    from fvmesh import FVMesh, rect_quad
-    from simple_solver import SimpleSolver
+    from aerolab.core.fvmesh import FVMesh, rect_quad
+    from aerolab.core.simple_solver import SimpleSolver
     m = FVMesh(*rect_quad(20, 20))
     bcs = {"top": {"type": "wall", "U": (1.0, 0.0)}, "bottom": {"type": "wall"},
            "left": {"type": "wall"}, "right": {"type": "wall"}}
@@ -52,8 +52,8 @@ def test_shedding_stats_on_synthetic_signal():
 
 def test_transient_case_files(tmp_path):
     pytest.importorskip("pyvista")
-    import case
-    import viewer
+    from aerolab.mesh import case
+    from aerolab.mesh import viewer
     out = tmp_path / "tr"
     case.main(["run", "cylinder", "--re", "100", "--refine", "0.5", "--transient", "--dt", "0.2",
                "--t-end", "3", "--write-every", "1", "--no-png", "--out", str(out)])

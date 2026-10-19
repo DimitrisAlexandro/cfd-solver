@@ -7,8 +7,8 @@ import pytest
 from scipy.spatial import Delaunay
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from cdt2d import CDT                     # noqa: E402
-from predicates import incircle, orient2d  # noqa: E402
+from aerolab.mesh.cdt2d import CDT                     # noqa: E402
+from aerolab.mesh.predicates import incircle, orient2d  # noqa: E402
 
 
 def build(points, loops, tags=None):
