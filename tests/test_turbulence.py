@@ -8,8 +8,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import turbulence as sa  # noqa: E402
-from fvmesh import FVMesh, rect_quad  # noqa: E402
+from aerolab.core import turbulence as sa  # noqa: E402
+from aerolab.core.fvmesh import FVMesh, rect_quad  # noqa: E402
 
 
 def test_constants():
@@ -40,8 +40,8 @@ def test_wall_distance_channel():
 def test_flat_plate_coarse():
     """TMR flat plate, coarsest grid: converges, Cf(0.97) within 2 % of the
     incompressible SA reference 0.002729, laminar Blasius limit exact."""
-    import validate_flatplate as vf
-    from simple_solver import SimpleSolver
+    from aerolab.validation import validate_flatplate as vf
+    from aerolab.core.simple_solver import SimpleSolver
     r = vf.run(0.5, tol=1e-7, max_iter=3000, verbose=False)
     assert r["converged"]
     assert abs(r["cf97"] / vf.REF_CF_INCOMP - 1) < 0.02
@@ -53,7 +53,7 @@ def test_flat_plate_coarse():
 
 
 def test_turbulent_airfoil_case_mesh(tmp_path):
-    import case
+    from aerolab.mesh import case
     out = tmp_path / "n0012"
     case.main(["mesh", "naca", "--naca", "tmr", "--re", "6e6", "--refine", "0.5",
                "--out", str(out)])
@@ -67,8 +67,8 @@ def test_venkat_limiter():
     """Limiter (threshold 0.1 U_ref): inactive for small smooth variations,
     clips an O(U_ref) spurious extremum;
     by default only triangles are limited (quads keep psi = 1)."""
-    from fvmesh import rect_tri
-    from simple_solver import SimpleSolver
+    from aerolab.core.fvmesh import rect_tri
+    from aerolab.core.simple_solver import SimpleSolver
     m = FVMesh(*rect_tri(1 / 16))
     bcs = {k: {"type": "wall"} for k in ("bottom", "right", "left")}
     bcs["top"] = {"type": "wall", "U": (1.0, 0.0)}          # velocity scale U_ref = 1

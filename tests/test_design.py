@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import airfoil_geom as ag  # noqa: E402
-import cst  # noqa: E402
+from aerolab.airfoil import airfoil_geom as ag  # noqa: E402
+from aerolab.airfoil import cst  # noqa: E402
 
 VAL = Path(__file__).resolve().parents[1] / "validation"
 
@@ -23,7 +23,7 @@ def test_cst_fit(spec):
 
 def test_inverse_design_recovers_naca2412():
     """target: NACA 2412 Cp at alpha 3; start: NACA 0012 -> the 2412 shape"""
-    import design_inverse as DI
+    from aerolab.design import design_inverse as DI
     x, cp, side, shape = DI.target_from_airfoil("naca2412", 3.0)
     s0 = cst.fit(ag.sharp_outline("naca0012"), 8)[:2]
     r = DI.design(x, cp, side, 3.0, s0)
@@ -33,7 +33,7 @@ def test_inverse_design_recovers_naca2412():
 
 def test_inverse_design_follows_a_modified_target():
     """less suction near the leading edge -> the design has it (smooth shape)"""
-    import design_inverse as DI
+    from aerolab.design import design_inverse as DI
     x, cp, side, shape = DI.target_from_airfoil("naca2412", 4.0)
     up = side == 1
     cp_t = cp.copy()
@@ -48,8 +48,8 @@ def test_inverse_design_follows_a_modified_target():
 
 def test_wing_sizing_stall_requirement():
     """the sized wing really stalls at the requested speed"""
-    import design_wing_sizing as WS
-    import wing as W
+    from aerolab.design import design_wing_sizing as WS
+    from aerolab.aircraft import wing as W
     pol = json.loads((VAL / "phase3_n2412_polar.json").read_text())
     sp = W.SpanPolars([(pol["re"], W.SectionPolar.from_results(pol["results"]))])
     rho_c, mu_c, a_c, _, _ = W.isa(1500.0)
@@ -61,7 +61,7 @@ def test_wing_sizing_stall_requirement():
 
 
 def test_drag_rise_criteria():
-    import design_drag_rise as DR
+    from aerolab.design import design_drag_rise as DR
     M = np.arange(0.5, 0.86, 0.04)
     Cd = 0.009 + 0.5 * np.maximum(M - 0.7, 0) ** 2
     res = [{"mach": m, "Cd": c} for m, c in zip(M, Cd)]
@@ -78,7 +78,7 @@ def test_drag_rise_criteria():
 
 
 def test_optimizer_shape_is_smooth_and_exact_at_zero():
-    import design_optimize as DO
+    from aerolab.design import design_optimize as DO
     s = DO.Shape("naca2412", n_var=4)
     au, al = s.coeffs(np.zeros(8))
     assert np.allclose(au, s.au0) and np.allclose(al, s.al0)

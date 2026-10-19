@@ -7,10 +7,10 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import aircraft as A  # noqa: E402
-import drag_buildup as D  # noqa: E402
-import propeller as P  # noqa: E402
-import wing as W  # noqa: E402
+from aerolab.aircraft import aircraft as A  # noqa: E402
+from aerolab.aircraft import drag_buildup as D  # noqa: E402
+from aerolab.aircraft import propeller as P  # noqa: E402
+from aerolab.aircraft import wing as W  # noqa: E402
 
 
 # ---------------------------------------------------------------- drag buildup

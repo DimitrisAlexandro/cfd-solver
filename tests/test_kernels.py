@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import kernels  # noqa: E402
+from aerolab.core import kernels  # noqa: E402
 
 pytestmark = pytest.mark.skipif(not kernels.HAVE_NUMBA, reason="numba not installed")
 
@@ -15,9 +15,9 @@ pytestmark = pytest.mark.skipif(not kernels.HAVE_NUMBA, reason="numba not instal
 @pytest.fixture(scope="module")
 def naca():
     """A coarse NACA 0012 SA case run for 25 iterations (non-trivial fields)."""
-    import validate_naca0012_sa as v
-    from fvmesh import FVMesh
-    from simple_solver import SimpleSolver
+    from aerolab.validation import validate_naca0012_sa as v
+    from aerolab.core.fvmesh import FVMesh
+    from aerolab.core.simple_solver import SimpleSolver
     a = 8.0
     mesh = v.airfoil_mesh(0.6, a)
     U = (math.cos(math.radians(a)), math.sin(math.radians(a)))
@@ -72,7 +72,7 @@ def test_momentum_coeffs(naca):
 
 
 def test_csr_pattern(naca):
-    from linsolve import csr
+    from aerolab.core.linsolve import csr
     m = naca.m
     n, own, nei = m.ncells, m.own, m.nei
     rng = np.random.default_rng(1)
@@ -100,7 +100,7 @@ def test_sgs_matches_pyamg(naca):
 
 
 def test_sa_source(naca):
-    import turbulence as tb
+    from aerolab.core import turbulence as tb
     s = naca
     T = s.turb
     gu, gv = s.gU
@@ -116,7 +116,7 @@ def test_sa_source(naca):
 
 def test_coupled_matvec_matches_assembled(naca):
     """the matrix-free block product of the coupled solver = its assembled matrix"""
-    import coupled
+    from aerolab.core import coupled
     m = naca.m
     n = m.ncells
     rng = np.random.default_rng(3)

@@ -8,9 +8,9 @@ import pytest
 import scipy.sparse as sp
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from fvmesh import FVMesh, rect_quad  # noqa: E402
-from simple_solver import SimpleSolver  # noqa: E402
-import validate_cavity as vca  # noqa: E402
+from aerolab.core.fvmesh import FVMesh, rect_quad  # noqa: E402
+from aerolab.core.simple_solver import SimpleSolver  # noqa: E402
+from aerolab.validation import validate_cavity as vca  # noqa: E402
 
 
 def cavity(au=0.9, cfl=None, n=21):
@@ -62,7 +62,7 @@ def test_solve_robust_rolls_back_after_a_blow_up(reference):
 
 
 def test_factorize_backends_agree():
-    adjoint = pytest.importorskip("adjoint")
+    adjoint = pytest.importorskip("aerolab.design.adjoint")
     rng = np.random.default_rng(1)
     n = 400
     A = sp.random(n, n, 0.02, random_state=2, format="csr") + sp.diags(rng.uniform(1, 3, n))
@@ -79,8 +79,8 @@ def test_factorize_backends_agree():
 def test_solve_primal_robust_same_answer():
     """NACA 0012, Re 3e6, alpha 4: first-order start + pseudo-time gives the
     same converged flow as the plain path"""
-    import adjoint as A
-    import polar as pl
+    from aerolab.design import adjoint as A
+    from aerolab.airfoil import polar as pl
     out = {}
     for rb in (False, True):
         pr = A.solve_primal("naca0012", 3e6, 4.0, 0.5, robust=rb)

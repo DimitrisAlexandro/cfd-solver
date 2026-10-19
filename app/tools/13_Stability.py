@@ -11,7 +11,7 @@ import common as C
 import ui
 import views
 
-import aircraft as A
+from aerolab.aircraft import aircraft as A
 
 C.page_setup()
 ui.header("Stability and control", "Trim, neutral point, stability and control derivatives, hinge "

@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-import polar as pl  # noqa: E402
-import transition as T  # noqa: E402
+from aerolab.airfoil import polar as pl  # noqa: E402
+from aerolab.physics import transition as T  # noqa: E402
 
 
 def test_regime_switch():
@@ -40,7 +40,7 @@ def test_bubble_length_models():
 
 
 def _case(re, alpha=4.0):
-    from simple_solver import SimpleSolver
+    from aerolab.core.simple_solver import SimpleSolver
     fvm, mesh, patches, bcs, U, turb, info = pl.make_case(str(Path(__file__).resolve().parents[1] /
                                                               "validation" / "reference" / "e387.dat"),
                                                           re, alpha, level=0.6)

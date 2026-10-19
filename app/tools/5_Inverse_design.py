@@ -13,8 +13,8 @@ C.page_setup()
 ui.header("Inverse design", "Give the pressure distribution you want and get the airfoil that "
                             "produces it. CST shape matched with the panel method in seconds; "
                             "check the result with a viscous polar.")
-import cst
-import design_inverse as DI
+from aerolab.airfoil import cst
+from aerolab.design import design_inverse as DI
 
 
 @st.cache_data
