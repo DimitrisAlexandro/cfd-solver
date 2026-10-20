@@ -100,7 +100,7 @@ and the NACA 0012 (`data/wing_polars`), so the aircraft tools use CFD sections f
 
 | Group | Page | Command line |
 |---|---|---|
-| Analysis | Airfoil polar (incl. plain flaps, compressible), Multi-element, Wing | `src/aerolab/airfoil/airfoil.py`, `src/aerolab/aircraft/wing.py` |
+| Analysis | Airfoil polar (incl. plain flaps, compressible), Multi-element, Wing, Wing 3D CFD | `src/aerolab/airfoil/airfoil.py`, `src/aerolab/aircraft/wing.py`, `src/aerolab/fv3d/wing3d.py` |
 | Aircraft | Aircraft model (3D), Weight and balance, Drag buildup, Propeller and engine, Stability and control, Aero database, Flight loads, Performance | `src/aerolab/aircraft/aircraft.py`, `src/aerolab/aircraft/weight_balance.py`, `src/aerolab/aircraft/drag_buildup.py`, `src/aerolab/aircraft/propeller.py`, `src/aerolab/aircraft/aero_database.py`, `src/aerolab/aircraft/loads.py`, `src/aerolab/aircraft/performance.py` |
 | Design | Conceptual sizing, Inverse design, Shape optimizer, Wing sizing, Drag rise | `src/aerolab/aircraft/sizing.py`, `src/aerolab/design/design_*.py` |
 | Workspace | Projects (templates, pre-run checks, dependency graph, variants, comparison, reports) | `src/aerolab/workflow/project.py`, `src/aerolab/workflow/templates.py`, `src/aerolab/workflow/preflight.py`, `src/aerolab/workflow/report.py` |
@@ -139,9 +139,24 @@ numpy, slower).
 cd src
 python run.py wing3d --semi-span 3 --taper 0.5 --sweep 20 --twist -2 --re 3e6 \
        --alpha 0,4,8 --level 0.4 --out ../cases/wing3d_demo      # half wing, SA
+python run.py wing3d --airfoil naca2412 --tip-airfoil naca0012 --semi-span 3 --taper 0.5 \
+       --alpha 0,4 --level 0.4 --out ../cases/wing3d_tip                # root -> tip section
 python run.py validate_core3d     # 3D-1: cavity / airfoil consistency with 2D, duct, sphere
 python run.py validate_wing3d     # 3D-2: wings against the vortex lattice
 ```
+
+**In the app:** Wing and aircraft → **Wing 3D CFD**. The wing comes from a saved aircraft (its main
+wing or a tail, including an aircraft imported from STL or AVL) or is entered by hand, in metres with a
+speed and altitude. The page converts it to root chords and the root-chord Reynolds number and queues
+the run (it keeps going when the browser is closed). The results show CL, CD, Cm and the span
+loading next to the vortex lattice of the same wing, the method the aircraft pages use.
+A wing with panel breaks is solved as one straight panel from root to tip.
+
+**Root and tip sections.** `--tip-airfoil` changes the section linearly from root to tip. The
+tip's wall points are matched to the root's one to one (both are repanelled alike). Each wall-layer
+column moves with its wall point and turns with the wall, so it stays normal to the new surface
+and the y+ ~ 1 rows keep their heights. The rest of the section mesh follows by Laplace
+interpolation. Sections too different to morph (a cell would invert) are refused before the run.
 
 The wing mesher sweeps the validated 2D hybrid airfoil mesh (y+ < 1 boundary
 layer) through spanwise stations with taper, sweep, twist and dihedral, closes the
