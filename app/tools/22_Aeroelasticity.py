@@ -297,3 +297,5 @@ with tabs[6]:
         "**Limits.** Incompressible (M < 0.3); clamped root (no fuselage freedom); wing only (no tail, engine, "
         "tab flutter); linear structure and aerodynamics; no structural damping (conservative). A screening tool — "
         "certification needs measured modes (ground vibration test) and a flutter analysis on them.")
+
+views.workflow_footer("tools/22_Aeroelasticity.py")

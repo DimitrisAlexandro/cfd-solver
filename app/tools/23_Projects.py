@@ -75,7 +75,7 @@ def prerun(path, variant):
                 C.start_job("aero_db", f"Section polars {C.display_name(af)} Re {C.fmt_re(re_)}",
                             ["aero_database.py", "sections", "--airfoil", af, "--re", f"{re_:.3g}",
                              "--mach", "0.0", "--alpha=-6:22:2", "--polar-dir", C.POLAR_CACHE, "--out", out], out)
-                st.success("Started: follow it on the Runs page.")
+                st.success("Started: follow it under Results → Runs.")
     return pre
 
 

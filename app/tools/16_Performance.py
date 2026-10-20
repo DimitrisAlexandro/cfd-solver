@@ -31,7 +31,7 @@ with setup:
         pmodel = st.segmented_control(
             "Propulsion model", ["Saved with the aircraft (BEMT)", "Simple fixed-pitch model"],
             default="Saved with the aircraft (BEMT)" if has_bemt else "Simple fixed-pitch model",
-            help="BEMT: the engine and propeller saved on the Propeller page or by Conceptual sizing")
+            help="BEMT: the engine and propeller saved on the Propeller and engine page or by Sizing")
         use_bemt = pmodel == "Saved with the aircraft (BEMT)"
         if use_bemt and not has_bemt:
             st.warning("This aircraft has no saved propulsion: design one on the Propeller page.")
@@ -193,3 +193,5 @@ if olds:
         st.session_state["pf_open"] = str(pk.parent)
     if st.session_state.get("pf_open"):
         show(st.session_state["pf_open"])
+
+views.workflow_footer("tools/16_Performance.py")

@@ -8,6 +8,7 @@ import streamlit as st
 import aircraft_views as AV
 import common as C
 import ui
+import views
 
 from aerolab.aircraft import aircraft as A
 from aerolab.aircraft import drag_buildup as DB
@@ -143,3 +144,5 @@ with tabs[2]:
         "- **Check**: equivalent skin-friction method, CD0 = Cfe S_wet / S with Cfe = 0.0055 (light single).\n\n"
         "Validation: a Cessna 172-like geometry (strut-braced, fixed gear with wheel fairings, riveted metal) "
         "gives CD0 0.027 against 0.027–0.031 quoted for the type.")
+
+views.workflow_footer("tools/19_Drag_buildup.py")

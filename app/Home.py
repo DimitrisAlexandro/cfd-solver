@@ -10,82 +10,95 @@ C.page_setup()
 ui.header("AeroLab", "Airfoil and wing aerodynamics with your own mesher and RANS solver. "
                      "Each analysis runs in the background; results stay in cases/.")
 
+GUIDE = [
+    ("Choose or design the airfoil", "tools/30_Airfoil_polar.py", "Airfoil polar",
+     "run the polar of a candidate airfoil at your Reynolds number (first: Polar estimate for a quick look; "
+     "Airfoil optimiser to improve one)"),
+    ("Size the aircraft", "tools/33_Sizing.py", "Sizing",
+     "requirements in, a first aircraft out; or import your own on Aircraft model (STL, AVL)"),
+    ("Refine the model", "tools/12_Aircraft_model.py", "Aircraft model",
+     "surfaces, controls, fuselage; then Weight and balance, Drag buildup, Propeller and engine"),
+    ("Check it flies", "tools/13_Stability.py", "Stability and control",
+     "trim, static margin, flight modes; then Performance"),
+    ("Check it holds", "tools/15_Loads.py", "Flight loads",
+     "V–n diagram and wing loads; then Wing structure and Aeroelasticity"),
+    ("Confirm with CFD", "tools/27_Wing_3D.py", "Wing 3D CFD",
+     "3D RANS of the wing next to the fast method the aircraft pages use"),
+]
+
 TOOLS = {
-    "Workspace": [
-        ("tools/23_Projects.py", "Projects",
-         "A design as a dependency graph: change an input, see what is out of date and why, recompute only "
-         "that, and compare variants side by side.", "about 1 min per variant"),
-        ("tools/24_Confidence.py", "Confidence",
-         "Every result is rated against the validated envelope: expected uncertainty, reasons, grid "
-         "convergence index.", "instant"),
+    "Airfoil": [
+        ("tools/30_Airfoil_polar.py", "Airfoil polar",
+         "Cl, Cd, Cm against α with RANS; Cp, Cf and flow fields. Free or fixed transition, low-Re bubbles, "
+         "compressible. Also: check the geometry and mesh first.", "10–30 min"),
+        ("tools/31_Airfoil_optimiser.py", "Airfoil optimiser",
+         "Minimum drag at your design lift, with thickness and Cm limits: fast (adjoint) or thorough (RANS "
+         "search).", "10 min – 1 h"),
+        ("tools/32_Polar_estimate.py", "Polar estimate",
+         "Instant Cl and Cd of any airfoil from every polar computed so far, with an uncertainty band.", "instant"),
     ],
-    "Analysis": [
-        ("tools/1_Airfoil_analysis.py", "Airfoil polar",
-         "Cl, Cd, Cm against α; Cp, Cf and flow fields. Free or fixed transition, laminar separation "
-         "bubbles at low Re (UAV / model scale), compressible with shocks.", "10–30 min"),
-        ("tools/2_Multi_element.py", "Multi-element airfoil",
-         "Slat, main and flap on one mesh; forces per element.", "5–10 min per angle"),
+    "Wing": [
         ("tools/3_Wing.py", "Wing",
          "Vortex lattice on CFD section polars: CL–α to stall, drag polar, span loading.",
          "seconds with cached polars"),
         ("tools/27_Wing_3D.py", "Wing 3D CFD",
-         "3D RANS of a half wing, from a saved aircraft or entered: CL, CD, Cm and span loading against "
-         "the vortex lattice.", "1–3 h per angle"),
+         "3D RANS of a half wing, from a saved aircraft or entered: CL, CD, Cm and span loading.", "1–3 h per angle"),
     ],
-    "Aircraft": [
+    "Aircraft (in this order)": [
+        ("tools/33_Sizing.py", "Sizing",
+         "Whole aircraft from the requirements (constraint diagram, weights, mission), or the wing only.",
+         "seconds – 5 min"),
         ("tools/12_Aircraft_model.py", "Aircraft model",
-         "Wing, tails, fin, control surfaces, fuselage, mass and c.g., in 3D.", "instant"),
+         "Wing, tails, fin, controls, fuselage, mass and c.g., in 3D; import STL or AVL.", "instant"),
         ("tools/18_Weight_balance.py", "Weight and balance",
-         "Component masses, loading diagram, scissor plot for tail sizing, landing-gear checks.", "seconds"),
+         "Component masses, loading diagram, scissor plot for tail sizing, landing gear.", "seconds"),
         ("tools/19_Drag_buildup.py", "Drag buildup",
          "CD0 component by component: friction, form factors, gear, cooling, leakage.", "instant"),
         ("tools/20_Propeller.py", "Propeller and engine",
-         "Minimum-induced-loss blade design, BEMT maps, fixed pitch or constant speed; piston, "
-         "turboprop or electric.", "seconds"),
+         "Propeller design and maps; piston, turboprop or electric.", "seconds"),
         ("tools/13_Stability.py", "Stability and control",
-         "Trim, neutral point, all derivatives, hinge moments, flight modes and responses.", "seconds"),
-        ("tools/14_Aero_database.py", "Aero database",
-         "Coefficient tables over α, β, Mach and controls; JSBSim, AVL, Excel; section polar matrices.",
-         "1–3 min (aircraft)"),
-        ("tools/15_Loads.py", "Flight loads",
-         "V–n diagram, load cases, shear, bending and torsion along the span, Nastran export.",
+         "Trim, neutral point, derivatives, hinge moments, flight modes and responses.", "seconds"),
+        ("tools/16_Performance.py", "Performance",
+         "Speeds, climb, ceilings, range, endurance, glide, takeoff and landing.", "about 1 min"),
+    ],
+    "Structure": [
+        ("tools/15_Loads.py", "Flight loads", "V–n diagram, load cases, shear, bending and torsion along the span.",
          "about 30 s"),
         ("tools/21_Wing_structure.py", "Wing structure",
-         "Wing box from the flight loads: caps, webs, skins, mass, stiffness, deflection, divergence, "
-         "aileron reversal and a flutter estimate.", "instant"),
-        ("tools/22_Aeroelasticity.py", "Aeroelasticity",
-         "Wing modes, 3D unsteady aerodynamics, p-k flutter with aileron flutter and mass balance, "
-         "divergence, reversal, flexible loads.", "seconds"),
-        ("tools/16_Performance.py", "Performance",
-         "Speeds, climb, ceilings, range, endurance, glide, takeoff and landing distances.", "about 1 min"),
+         "Wing box from the loads: mass, stiffness, deflection, divergence, flutter estimate.", "instant"),
+        ("tools/22_Aeroelasticity.py", "Aeroelasticity", "Wing modes and p-k flutter, divergence, reversal.",
+         "seconds"),
     ],
-    "Design": [
-        ("tools/17_Conceptual_sizing.py", "Conceptual sizing",
-         "Requirements in, aircraft out: constraint diagram, mission fuel or battery, Class I/II weights, "
-         "geometry, gear and propulsion, verified with the performance tool.", "seconds"),
-        ("tools/5_Inverse_design.py", "Inverse design",
-         "Pressure distribution in, airfoil shape out.", "seconds"),
-        ("tools/6_Optimizer.py", "Shape optimizer",
-         "Minimum drag at your design Cl, with thickness and Cm limits.", "about 1 h"),
-        ("tools/7_Wing_sizing.py", "Wing sizing",
-         "Mass, speeds and span limit in; area, aspect ratio, taper and twist out.",
-         "about 5 min"),
-        ("tools/8_Drag_rise.py", "Drag rise",
-         "Mach sweep at fixed lift: drag-divergence Mach, shock growth.", "about 45 min"),
+    "Results and trust": [
+        ("tools/34_Results.py", "Results", "Every run, every polar and every flow field in one place.", ""),
+        ("tools/35_Trust.py", "Validation and confidence",
+         "How far a result can be trusted, and the solver against wind-tunnel data.", ""),
+        ("tools/23_Projects.py", "Projects",
+         "A design as a dependency graph: see what is out of date, recompute only that, compare variants "
+         "side by side.", ""),
     ],
-    "Data": [
-        ("tools/4_Geometry_preview.py", "Geometry check",
-         "Thickness, trailing edge, inviscid Cp and the CFD mesh before a run.", "instant"),
-        ("tools/9_Polar_library.py", "Polar library", "Overlay and download every polar computed.", ""),
-        ("tools/10_Jobs_and_results.py", "Runs", "Progress, logs and results of every run.", ""),
-        ("tools/11_Validation.py", "Validation",
-         "Comparisons with wind-tunnel data and reference codes.", ""),
+    "Advanced": [
+        ("tools/25_Research.py", "Research",
+         "Shape sensitivity (adjoint), mesh accuracy, swept-wing transition, machine learning.", ""),
+        ("tools/8_Drag_rise.py", "Drag rise", "Transonic: drag-divergence Mach at fixed lift.", "about 45 min"),
+        ("tools/2_Multi_element.py", "Multi-element airfoil", "Slat, main and flap on one mesh.",
+         "5–10 min per angle"),
+        ("tools/5_Inverse_design.py", "Inverse design", "Pressure distribution in, airfoil shape out.", "seconds"),
+        ("tools/14_Aero_database.py", "Aero database",
+         "Coefficient tables for flight simulators (JSBSim, AVL, Excel).", "1–3 min"),
     ],
 }
 
 jobs = C.list_jobs()
 left, right = st.columns([7, 4], gap="large")
 with left:
+    st.markdown("#### Design an aircraft, step by step")
+    for i, (what, page, title, text) in enumerate(GUIDE, 1):
+        c1, c2 = st.columns([2.1, 6.6], vertical_alignment="center")
+        c1.markdown(f"**{i}. {what}**")
+        c2.page_link(page, label=f"{title}: {text}")
+    st.caption("Each aircraft page ends with a link to the next step. Everything runs in the background: "
+               "follow it in the sidebar or on Results.")
     for group, rows in TOOLS.items():
         st.markdown(f"#### {group}")
         for page, title, text, t in rows:
@@ -110,4 +123,4 @@ with right:
                     f"<span style='color:{ui.GRAPHITE};font-size:0.8rem'>{when}</span>",
                     unsafe_allow_html=True)
     if jobs:
-        st.page_link("tools/10_Jobs_and_results.py", label="All runs")
+        st.page_link("tools/34_Results.py", label="All runs", query_params={"view": "Runs"})
