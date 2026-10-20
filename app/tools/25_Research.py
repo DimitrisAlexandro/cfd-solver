@@ -206,27 +206,31 @@ with tab_p:
             "similar airfoils.")
     st.caption("Gaussian process over every polar in the library; mean and +-2 sd (calibrated by "
                "leaving polars out). Retrain after adding polars: `python src/run.py surrogate train`.")
-    c1, c2, c3 = st.columns(3)
-    spec = c1.text_input("Airfoil", "naca2412", key="p_spec")
+    spec, _ = views.airfoil_picker("p", "Airfoil", allow_flap=True)
+    c2, c3 = st.columns(2)
     re = c2.number_input("Reynolds number", 5e4, 3e7, 3e6, format="%.3g", key="p_re")
     turb = c3.checkbox("Fully turbulent", False)
-    try:
-        sg = SG.Surrogate.load() if SG.MODEL.exists() else SG.Surrogate.train()
-        al = np.arange(-4, 16.5, 0.5)
-        p = sg.predict(spec, re, al, 0.0 if turb else 1.0)
-        a_next, _, _ = sg.suggest(spec, re, free=0.0 if turb else 1.0)
-        cols = st.columns(2)
-        for col, k, lab in ((cols[0], "Cl", "Cl"), (cols[1], "Cd", "Cd")):
-            fig = go.Figure([
-                go.Scatter(x=np.r_[al, al[::-1]], y=np.r_[p[k] + 2 * p[k + "_sd"], (p[k] - 2 * p[k + "_sd"])[::-1]],
-                           fill="toself", line=dict(width=0), name="+-2 sd", opacity=0.3),
-                go.Scatter(x=al, y=p[k], name="mean")])
-            fig.update_layout(xaxis_title="alpha (deg)", yaxis_title=lab, height=340)
-            ui.plot(fig, key=f"sg_{k}", container=col)
-        st.info(f"Most useful next CFD run for this airfoil and Re: α {a_next:g}° (the most uncertain point; "
-                f"the model is trained on {sg.n} points from {len(sg.sources)} polars).")
-    except Exception as e:
-        st.warning(f"Surrogate unavailable: {e}")
+    if spec is None:
+        st.info("Upload the airfoil's .dat file to see its estimate.")
+    else:
+        spec = C.airfoil_file(spec)
+        try:
+            sg = SG.Surrogate.load() if SG.MODEL.exists() else SG.Surrogate.train()
+            al = np.arange(-4, 16.5, 0.5)
+            p = sg.predict(spec, re, al, 0.0 if turb else 1.0)
+            a_next, _, _ = sg.suggest(spec, re, free=0.0 if turb else 1.0)
+            cols = st.columns(2)
+            for col, k, lab in ((cols[0], "Cl", "Cl"), (cols[1], "Cd", "Cd")):
+                fig = go.Figure([
+                    go.Scatter(x=np.r_[al, al[::-1]], y=np.r_[p[k] + 2 * p[k + "_sd"], (p[k] - 2 * p[k + "_sd"])[::-1]],
+                               fill="toself", line=dict(width=0), name="+-2 sd", opacity=0.3),
+                    go.Scatter(x=al, y=p[k], name="mean")])
+                fig.update_layout(xaxis_title="alpha (deg)", yaxis_title=lab, height=340)
+                ui.plot(fig, key=f"sg_{k}", container=col)
+            st.info(f"Most useful next CFD run for this airfoil and Re: α {a_next:g}° (the most uncertain point; "
+                    f"the model is trained on {sg.n} points from {len(sg.sources)} polars).")
+        except Exception as e:
+            st.warning(f"Surrogate unavailable: {e}")
 
 # ----------------------------------------------------------------------
 with tab_f:
