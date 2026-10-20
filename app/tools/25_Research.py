@@ -52,6 +52,65 @@ tab_g, tab_d, tab_m, tab_s, tab_p, tab_f, tab_b = st.tabs(
     ["Adjoint gradients", "Adjoint design", "Mesh accuracy", "Swept-wing transition", "Polar surrogate",
      "Learned SA correction", "Learned bubble model"])
 
+GOALS = {"Lower drag (Cd)": ("Cd", 1.0), "More lift (Cl)": ("Cl", -1.0),
+         "More nose-up moment (Cm)": ("Cm", -1.0)}
+
+
+def shape_push(spec, grads, goal, order=8, step=0.001):
+    """the surface change of steepest improvement within the shape parameters: dA = -s g
+    (s = +1 to lower the quantity), so each surface moves up by -s C(x) sum_j g_j B_j(x)
+    (the adjoint's shape variables: d y = C(x) B_j(x), C = sqrt(x)(1 - x)). Scaled to move
+    the surface at most `step` chords, with the linear change of every coefficient."""
+    from aerolab.airfoil import cst
+    key, s = GOALS[goal]
+    g = np.array(grads[key])
+    k = order + 1
+    o = C.raw_outline(spec)
+    i = int(np.argmin(o[:, 0]))
+    sides = {"upper": o[:i + 1][::-1], "lower": o[i:]}          # each from the leading edge back
+    x = 0.5 * (1 - np.cos(np.linspace(0.06, 0.97, 22) * np.pi))
+
+    def dy(gs, xx):
+        return np.sqrt(xx) * (1 - xx) * (cst.bernstein(xx, order) @ gs)
+    xf = np.linspace(0.0, 1.0, 400)
+    peak = max(np.abs(dy(g[:k], xf)).max(), np.abs(dy(g[k:], xf)).max(), 1e-300)
+    t = step / peak
+    dA = -s * t * g
+    change = {o_: float(np.dot(grads[o_], dA)) for o_ in grads}
+    out = {"change": change, "sides": {}}
+    for j, (name, P) in enumerate(sides.items()):
+        gs = g[:k] if name == "upper" else g[k:]
+        ys = np.interp(x, P[:, 0], P[:, 1])
+        out["sides"][name] = {"x": x, "y": ys, "d": -s * dy(gs, x) / peak, "outline": P,
+                              "d_full": -s * dy(gs, P[:, 0].clip(0, 1)) / peak}
+    return out
+
+
+def push_figure(spec, res):
+    """airfoil with arrows: which way to push each part of the surface"""
+    fig = go.Figure()
+    for name, sd in res["sides"].items():
+        P = sd["outline"]
+        fig.add_scatter(x=P[:, 0], y=P[:, 1], mode="lines", line=dict(color=ui.INK, width=2),
+                        name="airfoil", showlegend=name == "upper", hoverinfo="skip")
+        fig.add_scatter(x=P[:, 0], y=P[:, 1] + 0.025 * sd["d_full"], mode="lines",
+                        line=dict(color=ui.GRAPHITE, width=1.5, dash="dot"),
+                        name="new shape (exaggerated)", showlegend=name == "upper", hoverinfo="skip")
+        outward = 1.0 if name == "upper" else -1.0
+        for x, y, d in zip(sd["x"], sd["y"], sd["d"]):
+            if abs(d) < 0.08:
+                continue
+            col = "#C2571A" if d * outward > 0 else "#1D4E89"
+            fig.add_annotation(x=x, y=y + 0.07 * d, ax=x, ay=y, xref="x", yref="y", axref="x", ayref="y",
+                               showarrow=True, arrowhead=2, arrowsize=1.0, arrowwidth=2, arrowcolor=col, text="")
+    for lab, col in (("push out (thicker here)", "#C2571A"), ("pull in (thinner here)", "#1D4E89")):
+        fig.add_scatter(x=[None], y=[None], mode="lines", line=dict(color=col, width=3), name=lab)
+    fig.update_layout(xaxis=dict(title="x/c", range=[-0.05, 1.05]),
+                      yaxis=dict(title="y/c", scaleanchor="x", range=[-0.2, 0.22]), height=430,
+                      legend=dict(orientation="h", y=-0.2))
+    return fig
+
+
 # ----------------------------------------------------------------------
 with tab_g:
     explain("Runs the CFD once for your airfoil, then one extra *adjoint* solve. Together they give the "
@@ -61,11 +120,12 @@ with tab_g:
             "about 2.",
             "To see which part of the airfoil to change to cut drag or add lift, and how sensitive the airfoil "
             "is to the angle and Re, before redesigning it by hand.",
-            "The table gives the change per degree of angle and per unit of Re. In the bar chart, a tall bar "
-            "is a part of the surface where a small change matters a lot. Making a coefficient bigger moves the "
-            "surface **up** there (thicker on the upper surface, thinner on the lower). For Cd, a **negative** "
-            "bar means moving the surface up there **lowers** the drag; a positive bar, moving it down. "
-            "Coefficient 0 is at the leading edge, 8 at the trailing edge.")
+            "The table gives the change per degree of angle and per unit of Re. The drawing shows the airfoil "
+            "with arrows: which way to move each part of the surface to reach your goal (lower drag, more lift "
+            "or more nose-up moment), and how strongly; orange pushes the surface out, blue pulls it in, and "
+            "the longest arrows mark where the shape matters most. Next to it: what a small move (0.1 % of "
+            "the chord) would change, and the side effects on the other coefficients. The raw gradient of the "
+            "18 shape coefficients is in the box below the drawing.")
     st.caption("dCl, dCd, dCm with respect to the angle of attack, the Reynolds number and all 18 CST "
                "shape coefficients, for one flow solution + one adjoint solve. Fully turbulent or fixed "
                "transition (a free-transition location is frozen in the adjoint).")
@@ -98,14 +158,43 @@ with tab_g:
                     for k in ("Cl", "Cd", "Cm")]
             st.dataframe(rows, hide_index=True)
             if "d_dcst" in g:
-                obj = st.radio("Shape gradient of", ["Cd", "Cl", "Cm"], horizontal=True)
-                v = np.array(g["d_dcst"][obj])
-                k = len(v) // 2
-                fig = go.Figure([go.Bar(x=list(range(k)), y=v[:k], name="upper surface"),
-                                 go.Bar(x=list(range(k)), y=v[k:], name="lower surface")])
-                fig.update_layout(xaxis_title="CST coefficient (0 = leading edge)",
-                                  yaxis_title=f"d{obj}/dA", barmode="group", height=360)
-                ui.plot(fig, key="adj_cst")
+                goal = st.radio("I want", list(GOALS), horizontal=True, key="adj_goal")
+                pr = shape_push(g["airfoil"], g["d_dcst"], goal, g.get("cst_order", 8))
+                ch = pr["change"]
+                c1, c2 = st.columns([3, 1])
+                ui.plot(push_figure(g["airfoil"], pr), key="adj_push", container=c1)
+                with c2:
+                    st.markdown("**If the surface moves this way, by at most 0.1 % of the chord:**")
+                    st.metric("Cd", f"{1e4 * ch['Cd']:+.2f} counts", f"{100 * ch['Cd'] / g['Cd']:+.2f} %",
+                              delta_color="inverse")
+                    st.metric("Cl", f"{ch['Cl']:+.4f}", f"{100 * ch['Cl'] / g['Cl']:+.2f} %" if g["Cl"] else None)
+                    st.metric("Cm", f"{ch['Cm']:+.4f}", delta_color="off")
+                    sd = pr["sides"]
+                    name, j = max(((n, int(np.argmax(np.abs(v["d"])))) for n, v in sd.items()),
+                                  key=lambda t: abs(sd[t[0]]["d"][t[1]]))
+                    st.caption(f"Biggest effect: the {name} surface near x/c = {sd[name]['x'][j]:.2f}. "
+                               "Linear estimate at the same angle of attack (1 drag count = 0.0001).")
+                key_, _ = GOALS[goal]
+                others = [o_ for o_ in ("Cd", "Cl") if o_ != key_]
+                if any(ch[o_] * (1 if o_ == "Cd" else -1) > 0 for o_ in others):
+                    st.caption("Note the side effect: at a fixed angle this change also makes "
+                               + " and ".join({"Cd": "the drag higher", "Cl": "the lift lower"}[o_] for o_ in others
+                                              if ch[o_] * (1 if o_ == "Cd" else -1) > 0)
+                               + "." + (" Adjoint design does the trade-off for you: it lowers the drag while "
+                                        "holding the lift you need." if key_ in ("Cd", "Cl") else ""))
+                st.caption("Arrows: which way to move each part of the surface, and how strongly (longer = more "
+                           "effect). Orange pushes the surface out of the airfoil, blue pulls it in. The dotted line "
+                           "is the new shape, exaggerated so it is visible. The movement is the steepest improvement "
+                           "the 18 shape parameters can make; it changes the airfoil smoothly, not point by point.")
+                with st.expander("Raw shape gradient (the 18 CST coefficients)"):
+                    obj = st.radio("Gradient of", ["Cd", "Cl", "Cm"], horizontal=True, key="adj_raw")
+                    v = np.array(g["d_dcst"][obj])
+                    k = len(v) // 2
+                    fig = go.Figure([go.Bar(x=list(range(k)), y=v[:k], name="upper surface"),
+                                     go.Bar(x=list(range(k)), y=v[k:], name="lower surface")])
+                    fig.update_layout(xaxis_title="CST coefficient (0 = leading edge)",
+                                      yaxis_title=f"d{obj}/dA", barmode="group", height=320)
+                    ui.plot(fig, key="adj_cst")
 
 # ----------------------------------------------------------------------
 with tab_d:
