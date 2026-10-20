@@ -28,6 +28,9 @@ TOOLS = {
         ("tools/3_Wing.py", "Wing",
          "Vortex lattice on CFD section polars: CL–α to stall, drag polar, span loading.",
          "seconds with cached polars"),
+        ("tools/27_Wing_3D.py", "Wing 3D CFD",
+         "3D RANS of a half wing, from a saved aircraft or entered: CL, CD, Cm and span loading against "
+         "the vortex lattice.", "1–3 h per angle"),
     ],
     "Aircraft": [
         ("tools/12_Aircraft_model.py", "Aircraft model",

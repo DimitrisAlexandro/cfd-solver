@@ -246,6 +246,7 @@ def upload_panel():
         with left:
             st.success(f"Saved {st.session_state.pop('acup_saved')}. It is now the selected aircraft on "
                        "every aircraft page; check and complete it on the Edit tab.")
+            st.page_link("tools/27_Wing_3D.py", label="Run 3D CFD of its wing")
     if not ups:
         with right:
             st.info("Upload an aircraft to preview it here before saving.")

@@ -13,7 +13,9 @@ Method
   3. The 2D mesh is swept through spanwise levels. At each level the section is
      scaled to the local chord, twisted about its quarter chord, and offset for sweep
      and dihedral; the transform is applied fully near the wing and blended smoothly
-     to zero at the far field, so the outer boundary stays a fixed cylinder.
+     to zero at the far field, so the outer boundary stays a fixed cylinder. With a
+     tip section the section shape itself also changes linearly along the span
+     (tip_morph).
   4. Spanwise spacing: geometric clustering at the tip from both sides (first layer
      `tip_first` x tip chord), uniform-ish inboard, growing outboard to the far field.
 
@@ -131,10 +133,7 @@ def relax_map(P2, cells, n_bl, M, wall_edges, match=0.6):
     thicknesses change by a bounded factor from one spanwise level to the next.
     BL cell k*M + i = [node(k, i), node(k+1, i), node(k+1, i+1), ...]."""
     K = n_bl // M
-    T = np.empty((K + 1, M), np.int64)
-    T[0] = [cells[i][0] for i in range(M)]
-    for k in range(K):
-        T[k + 1] = [cells[k * M + i][1] for i in range(M)]
+    T = _columns(cells, n_bl, M)
     X = P2[T]
     s0 = np.r_[np.zeros((1, M)), np.cumsum(np.linalg.norm(np.diff(X, axis=0), axis=2), axis=0)]
     # local wall-panel length at each wall node (mean of its two panels)
@@ -163,16 +162,89 @@ def relax_map(P2, cells, n_bl, M, wall_edges, match=0.6):
     return R
 
 
+def _columns(cells, n_bl, M):
+    """node ids of the boundary-layer columns, (K + 1, M): row 0 on the wall"""
+    K = n_bl // M
+    T = np.empty((K + 1, M), np.int64)
+    T[0] = [cells[i][0] for i in range(M)]
+    for k in range(K):
+        T[k + 1] = [cells[k * M + i][1] for i in range(M)]
+    return T
+
+
+def signed_areas(P, cells):
+    """signed area of every 2D cell (polygons of any size)"""
+    out = np.empty(len(cells))
+    by_n = {}
+    for i, c in enumerate(cells):
+        by_n.setdefault(len(c), []).append(i)
+    for n, idx in by_n.items():
+        C = np.array([cells[i] for i in idx])
+        x, y = P[C, 0], P[C, 1]
+        out[idx] = 0.5 * np.sum(x * np.roll(y, -1, 1) - np.roll(x, -1, 1) * y, axis=1)
+    return out
+
+
+def tip_morph(P2, cells, n_bl, M, wall_root, wall_tip, farfield_edges):
+    """node displacements (n, 2) that turn the root section mesh into the tip section's.
+    The two wall loops are repanelled alike (same points per side, same x spacing), so
+    wall point i of the root goes to wall point i of the tip. Every boundary-layer
+    column moves with its wall node and turns with the wall (by the change of the
+    wall's tangent angle there), so it stays normal to the tip wall and the y+ ~ 1 rows
+    keep their heights: columns moved without turning leave the first-row faces up to
+    ~6 deg off the cell-centre line at the leading edge, and the run diverged there.
+    The rest of the mesh, the tip-cap fill included, follows by a graph-Laplace
+    interpolation that is zero on the far field."""
+    from scipy.sparse import coo_matrix
+    from scipy.sparse.linalg import spsolve
+    from scipy.spatial import cKDTree
+    if len(wall_root) != len(wall_tip):
+        raise ValueError("root and tip sections are not repanelled alike")
+    n = len(P2)
+    T = _columns(cells, n_bl, M)
+    dist, j = cKDTree(wall_root).query(P2[T[0]])
+    if dist.max() > 1e-8:
+        raise ValueError("the section mesh's wall does not lie on the root section")
+    def tangent_angle(L):
+        d = np.roll(L, -1, 0) - np.roll(L, 1, 0)
+        return np.arctan2(d[:, 1], d[:, 0])
+    phi = np.angle(np.exp(1j * (tangent_angle(wall_tip) - tangent_angle(wall_root))))[j]
+    ca, sa = np.cos(phi), np.sin(phi)
+    D = np.zeros((n, 2))
+    fixed = np.zeros(n, bool)
+    for k in range(T.shape[0]):
+        r = P2[T[k]] - wall_root[j]                        # offset from the wall node, turned by phi
+        D[T[k]] = wall_tip[j] + np.c_[ca * r[:, 0] - sa * r[:, 1], sa * r[:, 0] + ca * r[:, 1]] - P2[T[k]]
+        fixed[T[k]] = True
+    fixed[np.unique(np.asarray(farfield_edges).ravel())] = True    # D = 0 there
+    a, b = [], []
+    for c in cells:
+        for p, q in zip(c, c[1:] + c[:1]):
+            a.append(p)
+            b.append(q)
+    a, b = np.array(a), np.array(b)
+    A = coo_matrix((np.ones(2 * len(a)), (np.r_[a, b], np.r_[b, a])), shape=(n, n)).tocsr()
+    A.data[:] = 1.0                                        # edges shared by two cells count once
+    L = (coo_matrix((np.asarray(A.sum(1)).ravel(), (np.arange(n), np.arange(n))), shape=(n, n)) - A).tocsr()
+    free = np.where(~fixed)[0]
+    if len(free):
+        Lff = L[free][:, free].tocsc()
+        rhs = -(L[free][:, fixed] @ D[fixed])
+        D[free] = np.c_[spsolve(Lff, rhs[:, 0]), spsolve(Lff, rhs[:, 1])]
+    return D
+
+
 def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedral=0.0, twist=0.0,
               tip_airfoil=None, re=3e6, level=0.5, farfield=12.0, tip_first=0.01, growth=1.3,
               blend=(0.5, None), tip_relax=2, verbose=False, wake_alphas=(0.0, 8.0), vortex_band=0.3, tip_smooth=0.5):
     """polymesh dict of a half wing + info dict (reference area, MAC, span stations).
     twist: tip incidence relative to the root (deg, nose up +, linear); sweep_c4 and
-    dihedral in degrees. tip_airfoil: not yet (same section along the span)."""
-    if tip_airfoil not in (None, airfoil):
-        raise NotImplementedError("one section along the span for now")
+    dihedral in degrees. tip_airfoil: the tip section (None = the root's); the
+    section shape changes linearly from root to tip (tip_morph)."""
     from aerolab.airfoil import airfoil_geom as ag
     from aerolab.validation import validate_naca0012_sa as v
+    if tip_airfoil in ("", airfoil):
+        tip_airfoil = None
     wall, _ = ag.load_airfoil(airfoil, n_side=int(round(160 * level)))
     # the section mesh carries a wake band covering the run's angles (one mesh for all)
     m2 = v.airfoil_mesh(level, 0.0, wall=wall, re=re, farfield=farfield, wake_alphas=list(wake_alphas),
@@ -185,10 +257,19 @@ def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedr
     we = np.asarray(m2["patches"]["airfoil"])
     h_fill = 0.8 * float(np.median(np.linalg.norm(P2[we[:, 0]] - P2[we[:, 1]], axis=1)))
     fillP, fill = _fill_airfoil(P2, we, h_fill)
-    tipQ = relax_map(P2, cells, m2["n_bl"], np.asarray(m2["layers"]).shape[1], we)
+    M = np.asarray(m2["layers"]).shape[1]
+    tipQ = relax_map(P2, cells, m2["n_bl"], M, we)
     P2 = np.vstack([P2, fillP])
     cells += fill
     edge_patch = {(min(a, b), max(a, b)): "farfield" for a, b in m2["patches"]["farfield"]}
+    D = None
+    if tip_airfoil is not None:
+        wall_t, _ = ag.load_airfoil(tip_airfoil, n_side=int(round(160 * level)))
+        D = tip_morph(P2, cells, m2["n_bl"], M, wall, wall_t, m2["patches"]["farfield"])
+        for Q in (P2, tipQ(1.0, P2)):                        # the tip section, plain and relaxed
+            if np.any(signed_areas(Q + D, cells) * np.sign(signed_areas(Q, cells)) <= 0):
+                raise ValueError(f"the tip section {tip_airfoil} is too different from the root section "
+                                 f"{airfoil} to morph the mesh between them")
 
     # spanwise levels
     ct = taper
@@ -235,6 +316,8 @@ def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedr
             eta = 1.0 + (L / semi_span) * (1.0 - math.exp(-(zl - semi_span) / L))
         c, xq, yq, th = section(eta)
         Q = tipQ(min(max(l - itip, 0) / tip_relax, 1.0), P2)
+        if D is not None:
+            Q = Q + min(eta, 1.0) * D                       # root -> tip section shape
         dx, dy = Q[:, 0] - 0.25, Q[:, 1]
         ca, sa = math.cos(th), math.sin(th)
         X = xq + c * (ca * dx + sa * dy)                    # nose-up twist rotates LE upward
@@ -248,7 +331,7 @@ def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedr
     cell_l, cell_c2 = np.nonzero(active)                   # 3D cell -> (layer, 2D cell), as extrude numbers them
     S_half = semi_span * (1 + ct) / 2
     mac = 2.0 / 3.0 * (1 + ct + ct * ct) / (1 + ct)
-    info = {"airfoil": airfoil, "semi_span": semi_span, "taper": ct, "sweep_c4": sweep_c4, "dihedral": dihedral,
+    info = {"airfoil": airfoil, "tip_airfoil": tip_airfoil or airfoil, "semi_span": semi_span, "taper": ct, "sweep_c4": sweep_c4, "dihedral": dihedral,
             "twist": twist, "re_root": re, "level": level, "farfield": farfield, "S_half": S_half, "mac": mac,
             "aspect_ratio": (2 * semi_span) ** 2 / (2 * S_half), "z_levels": z.tolist(), "itip": itip,
             "cells_2d": len(cells), "layers": K, "x_ref": 0.25, "chord": lambda zz: 1.0 + (ct - 1.0) * np.clip(zz / semi_span, 0, 1),

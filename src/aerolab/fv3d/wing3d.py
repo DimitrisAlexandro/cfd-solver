@@ -1,9 +1,11 @@
 """3D RANS of a wing: mesh, solve, forces and span loading.
 
     python src/run.py wing3d --airfoil naca0012 --semi-span 3 --re 3e6 --alpha 0,4,8 --level 0.5 --out ../cases/wing3d_demo
+    python src/run.py wing3d --airfoil naca2412 --tip-airfoil naca0012 --taper 0.5 ...   (root -> tip section)
 
-Outputs (out/): wing3d.json (CL, CD, Cm, per angle: span loading, residual history),
-report.txt. Coefficients on the half-wing planform area (= full-wing coefficients).
+Outputs (out/): wing3d.json (CL, CD, Cm, per angle: span loading, residual history, and
+the vortex lattice of the same wing for comparison), report.txt. Coefficients on the
+half-wing planform area (= full-wing coefficients).
 """
 import argparse
 import json
@@ -132,14 +134,38 @@ def converged(hist, force_tol):
             and band < 0.02 * max(abs(m(b, "CL")), 0.3))
 
 
+def vlm_reference(airfoil, tip_airfoil, semi_span, taper, sweep_c4, dihedral, twist, re, alphas,
+                  polar_dir=None):
+    """the aircraft pages' method for the same wing: vortex lattice with section polars
+    (cached CFD polars of the sections when polar_dir has them, else the thin-airfoil
+    estimate) -> {"source", "results": [{alpha, CL, CD, CDi, Cm, eta, cl, clc}]}"""
+    from aerolab.aircraft import aircraft as A
+    from aerolab.aircraft import wing as W
+    b = 2 * semi_span
+    sf = A.Surface("wing", b, 1.0, taper, sweep=sweep_c4, dihedral=dihedral, twist=twist,
+                   airfoil=airfoil, tip_airfoil=tip_airfoil)
+    pol, src = A.surface_polars(sf, polar_dir, 0.0, re, ar=b * b / sf.area)
+    wg = W.Wing(b, 1.0, taper, sweep=sweep_c4, dihedral=dihedral, twist=twist, n_half=40)
+    rows = []
+    for a in alphas:
+        r = W.solve(wg, a, polars=pol, re_strip=re * wg.c, x_ref=0.0)     # root quarter chord, as above
+        sp = r["span"]
+        half = sp["eta"] > 0
+        rows.append({"alpha": a, "CL": float(r["CL"]), "CD": float(r["CD"]), "CDi": float(r["CDi"]),
+                     "Cm": float(r["Cm"]),
+                     "eta": sp["eta"][half].tolist(), "cl": sp["cl"][half].tolist(),
+                     "clc": sp["cl_c"][half].tolist()})
+    return {"source": src, "results": rows}
+
+
 def run(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedral=0.0, twist=0.0, re=3e6,
         alphas=(0.0, 4.0, 8.0), level=0.5, farfield=12.0, max_iter=3000, tol=1e-6, force_tol=1e-3,
-        out=None, log=print, start_2d=True):
+        out=None, log=print, start_2d=True, tip_airfoil=None, polar_dir=None):
     t0 = time.time()
     # the wake band covers the run's angles (the wake leaves along each free stream)
     wa = (min(min(alphas), 0.0), max(max(alphas), 0.0))
-    pm, info = wing_mesh(airfoil, semi_span, taper, sweep_c4, dihedral, twist, re=re, level=level,
-                         farfield=farfield, wake_alphas=wa)
+    pm, info = wing_mesh(airfoil, semi_span, taper, sweep_c4, dihedral, twist, tip_airfoil=tip_airfoil, re=re,
+                         level=level, farfield=farfield, wake_alphas=wa)
     m = FVMesh3D(pm)
     q = m.quality()
     log(f"[wing3d] mesh {m.ncells} cells ({info['layers']} spanwise layers), {time.time() - t0:.1f}s; "
@@ -187,11 +213,17 @@ def run(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedral=0.0
     info_out = {k: v for k, v in info.items()
                 if k not in ("chord", "section", "z_levels", "section_mesh", "cell_layer", "cell_2d", "z_cell", "cells2")}
     out_d = {"info": info_out, "mesh": q, "results": res}
+    try:
+        out_d["vlm"] = vlm_reference(airfoil, tip_airfoil, semi_span, taper, sweep_c4, dihedral, twist, re,
+                                     alphas, polar_dir)
+    except Exception as e:                                   # noqa: BLE001  (the comparison is optional)
+        log(f"[wing3d] no vortex-lattice comparison: {e}")
     if out:
         o = Path(out)
         o.mkdir(parents=True, exist_ok=True)
         (o / "wing3d.json").write_text(json.dumps(out_d, indent=1))
-        lines = [f"3D RANS (SA) half wing: {airfoil}, AR {info['aspect_ratio']:.2f}, taper {taper:g}, sweep {sweep_c4:g}, "
+        sec = airfoil if info["tip_airfoil"] == airfoil else f"{airfoil} -> {info['tip_airfoil']}"
+        lines = [f"3D RANS (SA) half wing: {sec}, AR {info['aspect_ratio']:.2f}, taper {taper:g}, sweep {sweep_c4:g}, "
                  f"dihedral {dihedral:g}, twist {twist:g}; Re {re:.3g} (root chord); {m.ncells} cells", "",
                  "alpha      CL        CD       CDp       Cm     iterations  status"]
         lines += [f"{r['alpha']:5.1f}  {r['CL']:8.4f}  {r['CD']:8.5f}  {r['CDp']:8.5f}  {r['Cm']:+8.4f}  {r['iterations']:6d}  "
@@ -203,6 +235,8 @@ def run(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedral=0.0
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--airfoil", default="naca0012")
+    ap.add_argument("--tip-airfoil", default=None, help="tip section (default: the root's)")
+    ap.add_argument("--polar-dir", default=None, help="cached section polars for the vortex-lattice comparison")
     ap.add_argument("--semi-span", type=float, default=3.0, help="in root chords")
     ap.add_argument("--taper", type=float, default=1.0)
     ap.add_argument("--sweep", type=float, default=0.0, help="quarter-chord sweep (deg)")
@@ -229,7 +263,8 @@ def main(argv=None):
     except ImportError:
         pass
     run(a.airfoil, a.semi_span, a.taper, a.sweep, a.dihedral, a.twist, a.re,
-        [float(x) for x in a.alpha.split(",")], a.level, a.farfield, a.max_iter, out=a.out)
+        [float(x) for x in a.alpha.split(",")], a.level, a.farfield, a.max_iter, out=a.out,
+        tip_airfoil=a.tip_airfoil, polar_dir=a.polar_dir)
 
 
 if __name__ == "__main__":
