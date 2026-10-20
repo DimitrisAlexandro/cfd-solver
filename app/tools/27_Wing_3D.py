@@ -183,7 +183,7 @@ for sec in (root, tip):
     if sec is not None:
         try:
             from aerolab.airfoil import airfoil_geom as ag
-            ag.load_airfoil(sec, n_side=48)
+            ag.load_airfoil(C.airfoil_file(sec), n_side=48)
         except Exception as e:                       # noqa: BLE001
             problems.append(f"Section {Path(str(sec)).name} cannot be meshed: {e}")
 if not 0.5 <= 0.5 * span / cr <= 30:
