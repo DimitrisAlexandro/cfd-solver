@@ -363,6 +363,15 @@ python run.py validate_aeroelastic      # Theodorsen limit, Goland wing (137 m/s
 
 ## Research tools: adjoint, transition physics, machine learning
 
+**In the app:** Research → Adjoint, transition, ML. Each tab starts with a "What is this?" guide.
+- Adjoint gradients and adjoint design.
+- **Mesh accuracy:** the real mesh error of one result, from a solve on the 4× finer nested mesh,
+  with a map of where the error comes from; or a goal-oriented adaptation study against uniform refinement.
+- **Swept-wing transition:** for one section, or along a whole wing from a saved aircraft.
+- **Polar surrogate:** with buttons to retrain it on this machine's polars (the model is saved in
+  `cases/_surrogate/`) and to test it, leaving one polar out at a time.
+- Results of the learned SA correction and of the learned laminar-bubble model.
+
 **Discrete adjoint** (`src/aerolab/design/adjoint.py`): the exact gradient of Cl, Cd or Cm with respect to every
 design variable for one extra linear solve. The converged state is the root of a residual that
 mirrors the solver term by term (the quantities the solver lags between iterations — Rhie–Chow
