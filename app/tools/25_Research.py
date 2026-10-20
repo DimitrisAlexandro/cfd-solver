@@ -129,19 +129,19 @@ with tab_g:
     st.caption("dCl, dCd, dCm with respect to the angle of attack, the Reynolds number and all 18 CST "
                "shape coefficients, for one flow solution + one adjoint solve. Fully turbulent or fixed "
                "transition (a free-transition location is frozen in the adjoint).")
-    with st.form("adj_grad"):
-        c1, c2, c3, c4 = st.columns(4)
-        spec = c1.text_input("Airfoil", "naca0012")
-        re = c2.number_input("Reynolds number", 1e5, 5e7, 3e6, format="%.3g")
-        alpha = c3.number_input("Angle of attack (deg)", -10.0, 15.0, 2.0)
-        level = c4.selectbox("Mesh level", [0.5, 0.7, 1.0], index=0,
-                             help="The adjoint's sparse LU grows faster than linearly: ~1 min at 0.5, "
-                                  "~2 min at 0.7, several minutes at 1.0")
-        go_ = st.form_submit_button("Compute gradients", type="primary")
+    spec, sname = views.airfoil_picker("g", "Airfoil")
+    c2, c3, c4 = st.columns(3)
+    re = c2.number_input("Reynolds number", 1e5, 5e7, 3e6, format="%.3g")
+    alpha = c3.number_input("Angle of attack (deg)", -10.0, 15.0, 2.0)
+    level = c4.selectbox("Mesh level", [0.5, 0.7, 1.0], index=0,
+                         help="The adjoint's sparse LU grows faster than linearly: ~1 min at 0.5, "
+                              "~2 min at 0.7, several minutes at 1.0")
+    go_ = st.button("Compute gradients", type="primary", disabled=spec is None, key="g_go")
     if go_:
-        out = C.CASES / f"adjoint_{spec}_Re{re:.0e}_a{alpha:g}".replace("+", "")
+        stem = _re.sub(r"[^A-Za-z0-9]+", "_", str(sname))[:30]
+        out = C.CASES / f"adjoint_{stem}_Re{re:.0e}_a{alpha:g}".replace("+", "")
         out.mkdir(parents=True, exist_ok=True)
-        jid = C.start_job("adjoint", f"adjoint gradients {spec} alpha {alpha:g}",
+        jid = C.start_job("adjoint", f"adjoint gradients {C.display_name(sname)} alpha {alpha:g}",
                           ["adjoint.py", "gradient", spec, "--re", f"{re:.6g}", "--alpha", f"{alpha:g}",
                            "--level", level, "--out", out / "adjoint.json"], out)
         st.session_state["adj_job"] = jid
@@ -212,25 +212,24 @@ with tab_d:
     st.caption("Minimum drag at a target lift: SLSQP with adjoint gradients over all 18 CST coefficients "
                "and the angle of attack, every design a deformation of one mesh, then a check on the "
                "validated mesh. ~1 min per design iteration at mesh level 0.5.")
-    with st.form("adj_des"):
-        c1, c2, c3, c4 = st.columns(4)
-        spec = c1.text_input("Start airfoil", "naca0012", key="d_spec")
-        re = c2.number_input("Reynolds number", 1e5, 5e7, 3e6, format="%.3g", key="d_re")
-        cl = c3.number_input("Target Cl", 0.0, 1.5, 0.5, key="d_cl")
-        tmin = c4.number_input("Minimum t/c (0 = keep the start)", 0.0, 0.3, 0.0, key="d_t")
-        c1, c2 = st.columns(2)
-        iters = c1.slider("Outer iterations", 2, 30, 12)
-        cm = c2.number_input("Minimum Cm (blank = none)", -1.0, 1.0, value=None, key="d_cm")
-        go_d = st.form_submit_button("Optimise", type="primary")
+    spec, dname = views.airfoil_picker("d", "Start airfoil")
+    c2, c3, c4 = st.columns(3)
+    re = c2.number_input("Reynolds number", 1e5, 5e7, 3e6, format="%.3g", key="d_re")
+    cl = c3.number_input("Target Cl", 0.0, 1.5, 0.5, key="d_cl")
+    tmin = c4.number_input("Minimum t/c (0 = keep the start)", 0.0, 0.3, 0.0, key="d_t")
+    c1, c2 = st.columns(2)
+    iters = c1.slider("Outer iterations", 2, 30, 12)
+    cm = c2.number_input("Minimum Cm (blank = none)", -1.0, 1.0, value=None, key="d_cm")
+    go_d = st.button("Optimise", type="primary", disabled=spec is None, key="d_go")
     if go_d:
-        out = C.CASES / f"design_adjoint_{spec}_cl{cl:g}"
+        out = C.CASES / f"design_adjoint_{_re.sub(r'[^A-Za-z0-9]+', '_', str(dname))[:30]}_cl{cl:g}"
         args = ["design_adjoint.py", "--start", spec, "--re", f"{re:.6g}", "--cl", f"{cl:g}",
                 "--iters", iters, "--out", out]
         if tmin > 0:
             args += ["--t-min", f"{tmin:g}"]
         if cm is not None:
             args += ["--cm-min", f"{cm:g}"]
-        st.session_state["des_job"] = C.start_job("adjoint_design", f"adjoint design {spec} Cl {cl:g}", args, out)
+        st.session_state["des_job"] = C.start_job("adjoint_design", f"adjoint design {C.display_name(dname)} Cl {cl:g}", args, out)
     jid = st.session_state.get("des_job")
     if jid:
         views.live_job(jid, "adjoint_design")
