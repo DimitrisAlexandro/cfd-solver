@@ -7,6 +7,7 @@ import streamlit as st
 import aircraft_views as AV
 import common as C
 import ui
+import views
 
 from aerolab.aircraft import aircraft as A
 
@@ -203,3 +204,5 @@ with tab_edit:
         AV.select(out)
         st.success(f"Saved {out.name}.")
         st.rerun()
+
+views.workflow_footer("tools/12_Aircraft_model.py")

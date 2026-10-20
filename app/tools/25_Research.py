@@ -15,10 +15,13 @@ import ui
 import views
 
 C.page_setup()
-ui.header("Research tools", "Advanced tools beyond the everyday airfoil and aircraft pages: which way to "
-                            "change an airfoil's shape, an automatic airfoil optimiser, where the flow turns "
-                            "turbulent on a swept wing, instant polar estimates without CFD, and a "
-                            "machine-learning correction of the turbulence model.")
+# ONLY = one tool of this page, run on its own by another page (Airfoil optimiser, Polar estimate)
+ONLY = globals().get("ONLY")
+if not ONLY:
+    ui.header("Research tools", "Advanced tools beyond the everyday pages: which way to change an airfoil's "
+                                "shape, how accurate a result is on its mesh, where the flow turns turbulent on a "
+                                "swept wing, and machine-learning corrections of the CFD models. The airfoil "
+                                "optimiser and the polar estimate are under Airfoil.")
 sys.path.insert(0, str(C.SRC))
 
 
@@ -30,8 +33,8 @@ def explain(what, when, read):
 
 # four sections; only the chosen one is built (the others would recompute on every click)
 SECTIONS = {
-    "Airfoil design": ("Shape an airfoil for your needs and get fast polar estimates.",
-                       ["Adjoint gradients", "Adjoint design", "Polar surrogate"]),
+    "Shape sensitivity": ("Which way should the airfoil's shape change? The optimiser that uses this is under "
+                          "Airfoil → Airfoil optimiser.", ["Adjoint gradients"]),
     "Mesh accuracy": ("How much would a result change on a finer mesh, and where does the error come from?",
                       ["Mesh accuracy"]),
     "Transition": ("Where does the low-drag laminar flow end, on a section or a whole swept wing?",
@@ -53,13 +56,19 @@ GUIDE = {
                               "data?", "results only"),
     "Learned bubble model": ("Can machine learning fix the low-Re laminar-bubble model's drag?", "results only"),
 }
-section = st.segmented_control("Section", list(SECTIONS), default="Airfoil design", key="r_section",
-                               label_visibility="collapsed") or "Airfoil design"
-blurb, names = SECTIONS[section]
-st.caption(blurb + "  " + "  ·  ".join(f"**{n}**: {GUIDE[n][0]} *({GUIDE[n][1]})*" for n in names))
-st.caption("For a normal airfoil polar use Airfoil → Airfoil polar; for wings and aircraft the Wing and "
-           "aircraft pages. These tools are for going further.")
-tabs = dict(zip(names, st.tabs(names) if len(names) > 1 else [st.container()]))
+if ONLY:
+    ui.header(ONLY, GUIDE[ONLY][0])
+    tabs = {ONLY: st.container()}
+else:
+    if st.session_state.get("r_section") not in SECTIONS:      # a section name from an older layout
+        st.session_state.pop("r_section", None)
+    section = st.segmented_control("Section", list(SECTIONS), default="Shape sensitivity", key="r_section",
+                                   label_visibility="collapsed") or "Shape sensitivity"
+    blurb, names = SECTIONS[section]
+    st.caption(blurb + "  " + "  ·  ".join(f"**{n}**: {GUIDE[n][0]} *({GUIDE[n][1]})*" for n in names))
+    st.caption("For a normal airfoil polar use Airfoil → Airfoil polar; for wings and aircraft the Wing and "
+               "aircraft pages. These tools are for going further.")
+    tabs = dict(zip(names, st.tabs(names) if len(names) > 1 else [st.container()]))
 
 GOALS = {"Lower drag (Cd)": ("Cd", 1.0), "More lift (Cl)": ("Cl", -1.0),
          "More nose-up moment (Cm)": ("Cm", -1.0)}
@@ -177,8 +186,8 @@ def gradient_view(g, key=""):
             st.caption("Note the side effect: at a fixed angle this change also makes "
                        + " and ".join({"Cd": "the drag higher", "Cl": "the lift lower"}[o_] for o_ in others
                                       if ch[o_] * (1 if o_ == "Cd" else -1) > 0)
-                       + "." + (" Adjoint design does the trade-off for you: it lowers the drag while "
-                                "holding the lift you need." if key_ in ("Cd", "Cl") else ""))
+                       + "." + (" The airfoil optimiser (Airfoil → Airfoil optimiser) does the trade-off for "
+                                "you: it lowers the drag while holding the lift you need." if key_ in ("Cd", "Cl") else ""))
         st.caption("Arrows: which way to move each part of the surface, and how strongly (longer = more "
                    "effect). Orange pushes the surface out of the airfoil, blue pulls it in. The dotted line "
                    "is the new shape, exaggerated so it is visible. The movement is the steepest improvement "
@@ -678,7 +687,7 @@ if "Polar surrogate" in tabs:
                                "kind of airfoil, Re or flap is under-represented: run a polar of it and retrain.")
             elif (SG.ROOT / "validation" / "surrogate_report.md").exists():
                 st.caption("No test run on this machine yet. The test from the AeroLab validation "
-                           "(validation/surrogate_report.md) is on the Validation page.")
+                           "(validation/surrogate_report.md) is under Trust → Validation and confidence → Validation.")
 
 # ----------------------------------------------------------------------
 if "Learned SA correction" in tabs:

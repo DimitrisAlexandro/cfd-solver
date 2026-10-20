@@ -322,7 +322,7 @@ if res and vj:
             sl = json.loads((out / "sl" / "performance.json").read_text())
             cr = json.loads((out / "cruise" / "performance.json").read_text())
         except FileNotFoundError:
-            st.error("A verification run failed; its log is on the Runs page.")
+            st.error("A verification run failed; its log is under Results → Runs.")
         else:
             rq = res["requirements"]
             V = np.array(cr["curves"]["V"])
