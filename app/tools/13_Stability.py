@@ -199,3 +199,5 @@ with tabs[4]:
                 flat[f"{k}_{name}"] = v
     c2.download_button("Download derivatives (CSV)", pd.Series(flat).to_csv(header=["value"]),
                        file_name="derivatives.csv", width="stretch")
+
+views.workflow_footer("tools/13_Stability.py")
