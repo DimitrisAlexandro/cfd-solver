@@ -47,35 +47,33 @@ def P(file, title, default=False):
     return st.Page(str(HERE / file), title=title, default=default, url_path=url)
 
 
-# sections follow the workflow; page titles (and so the URLs) are unchanged
+# sections in the order of a design: airfoil -> wing -> aircraft -> structure; then results,
+# the specialist tools and the trust pages. Pages with several tools switch between the
+# original tool pages (views.subpages).
 nav = st.navigation({
-    "": [P("Home.py", "Overview", default=True), P("tools/23_Projects.py", "Projects"),
-         P("tools/10_Jobs_and_results.py", "Runs"),
-         P("tools/26_Results_viewer.py", "Results viewer")],
-    "Airfoil": [P("tools/1_Airfoil_analysis.py", "Airfoil polar"),
-                P("tools/2_Multi_element.py", "Multi-element airfoil"),
-                P("tools/5_Inverse_design.py", "Inverse design"),
-                P("tools/6_Optimizer.py", "Shape optimizer"),
-                P("tools/8_Drag_rise.py", "Drag rise"),
-                P("tools/9_Polar_library.py", "Polar library"),
-                P("tools/4_Geometry_preview.py", "Geometry check")],
-    "Wing and aircraft": [P("tools/3_Wing.py", "Wing"),
-                          P("tools/27_Wing_3D.py", "Wing 3D CFD"),
-                          P("tools/7_Wing_sizing.py", "Wing sizing"),
-                          P("tools/17_Conceptual_sizing.py", "Conceptual sizing"),
-                          P("tools/12_Aircraft_model.py", "Aircraft model"),
-                          P("tools/18_Weight_balance.py", "Weight and balance"),
-                          P("tools/19_Drag_buildup.py", "Drag buildup"),
-                          P("tools/20_Propeller.py", "Propeller and engine"),
-                          P("tools/13_Stability.py", "Stability and control"),
-                          P("tools/14_Aero_database.py", "Aero database"),
-                          P("tools/15_Loads.py", "Flight loads"),
-                          P("tools/21_Wing_structure.py", "Wing structure"),
-                          P("tools/22_Aeroelasticity.py", "Aeroelasticity"),
-                          P("tools/16_Performance.py", "Performance")],
-    "Research": [P("tools/25_Research.py", "Adjoint, transition, ML")],
-    "Trust": [P("tools/11_Validation.py", "Validation"),
-              P("tools/24_Confidence.py", "Confidence")],
+    "Start": [P("Home.py", "Overview", default=True), P("tools/23_Projects.py", "Projects")],
+    "Airfoil": [P("tools/30_Airfoil_polar.py", "Airfoil polar"),
+                P("tools/31_Airfoil_optimiser.py", "Airfoil optimiser"),
+                P("tools/32_Polar_estimate.py", "Polar estimate")],
+    "Wing": [P("tools/3_Wing.py", "Wing"),
+             P("tools/27_Wing_3D.py", "Wing 3D CFD")],
+    "Aircraft": [P("tools/33_Sizing.py", "Sizing"),
+                 P("tools/12_Aircraft_model.py", "Aircraft model"),
+                 P("tools/18_Weight_balance.py", "Weight and balance"),
+                 P("tools/19_Drag_buildup.py", "Drag buildup"),
+                 P("tools/20_Propeller.py", "Propeller and engine"),
+                 P("tools/13_Stability.py", "Stability and control"),
+                 P("tools/16_Performance.py", "Performance")],
+    "Structure": [P("tools/15_Loads.py", "Flight loads"),
+                  P("tools/21_Wing_structure.py", "Wing structure"),
+                  P("tools/22_Aeroelasticity.py", "Aeroelasticity")],
+    "Results": [P("tools/34_Results.py", "Results")],
+    "Advanced": [P("tools/25_Research.py", "Research"),
+                 P("tools/8_Drag_rise.py", "Drag rise"),
+                 P("tools/2_Multi_element.py", "Multi-element airfoil"),
+                 P("tools/5_Inverse_design.py", "Inverse design"),
+                 P("tools/14_Aero_database.py", "Aero database")],
+    "Trust": [P("tools/35_Trust.py", "Validation and confidence")],
 })
 
 
@@ -91,7 +89,7 @@ def _run_monitor():
         st.markdown(f"**Runs** :blue-badge[{run} running] :violet-badge[{que} queued]")
         for j in [j for j in jobs if j["status"] in C.ACTIVE][:4]:
             st.caption(f"{'▶' if j['status'] == 'running' else '…'} {j['title'][:38]}")
-        st.page_link(str(HERE / "tools/10_Jobs_and_results.py"), label="Open Runs")
+        st.page_link(str(HERE / "tools/34_Results.py"), label="Open Runs", query_params={"view": "Runs"})
     if not alive and (que or os.environ.get("AEROLAB_EMBEDDED_WORKER", "1") == "0"):
         st.caption(":orange-badge[worker not running]")
 

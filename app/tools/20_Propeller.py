@@ -8,6 +8,7 @@ import streamlit as st
 import aircraft_views as AV
 import common as C
 import ui
+import views
 
 from aerolab.aircraft import aircraft as A
 from aerolab.aircraft import propeller as P
@@ -203,3 +204,5 @@ if dres:
         st.dataframe(pd.DataFrame({"r (m)": dres["prop"]["r"], "chord (m)": dres["prop"]["chord"],
                                    "β (deg)": dres["prop"]["beta"]}), hide_index=True, width="stretch",
                      column_config={k: st.column_config.NumberColumn(format="%.4f") for k in ("r (m)", "chord (m)", "β (deg)")})
+
+views.workflow_footer("tools/20_Propeller.py")

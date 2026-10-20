@@ -241,3 +241,5 @@ with tabs[5]:
         "forms, Hodges & Pierce's typical-section flutter (U/bω_α ≈ 2.2).\n\n"
         "This is a conceptual sizing: it does not check skin buckling between stringers, joints, cut-outs, "
         "fatigue, or the fuselage carry-through.")
+
+views.workflow_footer("tools/21_Wing_structure.py")

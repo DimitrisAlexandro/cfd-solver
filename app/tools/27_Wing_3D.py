@@ -76,7 +76,7 @@ def wing3d_results(out):
             fg.update_layout(title=title, xaxis_title="α (deg)", yaxis_title=yl, height=330)
             ui.plot(fg, container=col, key=f"w3{key}{out}")
         if src:
-            st.caption(f"Vortex lattice: the method of the Wing and aircraft pages, with {src} section polars. "
+            st.caption(f"Vortex lattice: the method of the Wing and Aircraft pages, with {src} section polars. "
                        "The CFD resolves the tip vortex, the boundary layer and the section shape between root and "
                        "tip directly; a large difference in CL slope points at the section polars, in CD at the "
                        "friction and profile drag the lattice takes from them.")
@@ -101,14 +101,15 @@ def wing3d_results(out):
                 fg.add_scatter(x=v["eta"], y=v["cl"], mode="lines", name="vortex lattice", line=dict(dash="dash"))
             fg.update_layout(title="Section lift", xaxis_title="η = 2y/b", yaxis_title="c_l", height=360)
             ui.plot(fg, container=c2, key=f"w3c{out}")
-            st.caption("Where the local c_l peaks is where the wing stalls first. The Results viewer shows the "
+            st.caption("Where the local c_l peaks is where the wing stalls first. Results → Flow fields shows the "
                        "surface pressure, flow cuts and the tip vortex of this run.")
     with t3:
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch",
                      column_config={k_: st.column_config.NumberColumn(format="%.5f" if "CD" in k_ else "%.4f")
                                     for k_ in rows[0] if k_.startswith(("CL", "CD", "Cm"))})
         views.downloads(out, ["wing3d.json", "report.txt"], key=f"w3d{out}")
-    st.page_link("tools/26_Results_viewer.py", label="Flow fields in the Results viewer")
+    st.page_link("tools/34_Results.py", label="Flow fields of this run (Results → Flow fields)",
+                 query_params={"view": "Flow fields"})
 
 
 setup, preview = st.columns([5, 6], gap="large")

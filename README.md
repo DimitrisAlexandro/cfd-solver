@@ -22,7 +22,20 @@ a separate worker process, a few at a time:
 - Locally the app starts the worker itself.
 - Runs keep going when the browser is closed or the app is restarted.
 - A run cut off by a restart of the worker is queued again when the worker comes back.
-- The sidebar shows running and queued runs; **Runs** lists all of them.
+- The sidebar shows running and queued runs; **Results → Runs** lists all of them.
+
+**App menu**, in the order of a design:
+- **Start:** Overview, with a step-by-step guide; Projects.
+- **Airfoil:** Airfoil polar (with a geometry and mesh check), Airfoil optimiser (fast adjoint or
+  thorough RANS search), Polar estimate.
+- **Wing:** Wing (vortex lattice), Wing 3D CFD.
+- **Aircraft:** Sizing → Aircraft model → Weight and balance → Drag buildup → Propeller and engine →
+  Stability and control → Performance.
+- **Structure:** Flight loads → Wing structure → Aeroelasticity. Each aircraft and structure page ends
+  with a link to the next step.
+- **Results:** runs, polars and flow fields.
+- **Advanced:** Research, Drag rise, Multi-element airfoil, Inverse design, Aero database.
+- **Trust:** Validation and confidence.
 
 Settings (environment variables):
 - `AEROLAB_WORKER_SLOTS`: parallel runs (default: half the cores).
@@ -145,7 +158,7 @@ python run.py validate_core3d     # 3D-1: cavity / airfoil consistency with 2D, 
 python run.py validate_wing3d     # 3D-2: wings against the vortex lattice
 ```
 
-**In the app:** Wing and aircraft → **Wing 3D CFD**. The wing comes from a saved aircraft (its main
+**In the app:** Wing → **Wing 3D CFD**. The wing comes from a saved aircraft (its main
 wing or a tail, including an aircraft imported from STL or AVL) or is entered by hand, in metres with a
 speed and altitude. The page converts it to root chords and the root-chord Reynolds number and queues
 the run (it keeps going when the browser is closed). The results show CL, CD, Cm and the span
@@ -178,7 +191,7 @@ With `--out`, every angle also saves its full flow field (`fields_a<alpha>.npz`)
 
 ## Results viewer
 
-The app's **Data → Results viewer** page opens every result under `cases/`, newest first:
+The app's **Results → Flow fields** page opens every result under `cases/`, newest first:
 
 - **2D** runs (single cases and each angle of a polar): any field (p, U, ν_t, vorticity,
   mesh quality) with view presets (full, near, leading edge, trailing edge, wake) or a
@@ -334,7 +347,7 @@ python run.py validate_lowre            # Eppler 387 at Re 1e5, 2e5, 3e5 vs NASA
 
 ## Wing structure (first pass)
 
-Aircraft → **Wing structure** (`src/aerolab/aircraft/wing_structure.py`) sizes the wing box for every case of a Flight
+Structure → **Wing structure** (`src/aerolab/aircraft/wing_structure.py`) sizes the wing box for every case of a Flight
 loads run: spar caps, webs, skins and ribs (aluminium 2024-T3 / 7075-T6, CFRP or GFRP), the wing mass
 against Raymer's Class II estimate, EI and GJ, deflection and twist, divergence and aileron-reversal
 speeds and a flutter estimate (typical section with Theodorsen aerodynamics) against CS-23.629's 1.2 V_D.
@@ -347,7 +360,7 @@ python run.py wing_structure ../cases/aircraft/demo_trainer.json ../cases/loads_
 
 ## Aeroelasticity
 
-Aircraft → **Aeroelasticity** (`src/aerolab/aircraft/aeroelastic.py`), after saving the wing structure with the aircraft:
+Structure → **Aeroelasticity** (`src/aerolab/aircraft/aeroelastic.py`), after saving the wing structure with the aircraft:
 wing modes (beam finite elements, with the aileron as a rigid surface on a hinge spring), 3D unsteady
 aerodynamics (frequency-domain vortex-ring lattice), **p-k flutter** for symmetric and antisymmetric
 modes including **aileron flutter** and a mass-balance sweep, and static aeroelasticity on the same
@@ -363,12 +376,13 @@ python run.py validate_aeroelastic      # Theodorsen limit, Goland wing (137 m/s
 
 ## Research tools: adjoint, transition physics, machine learning
 
-**In the app:** Research → Adjoint, transition, ML. Each tab starts with a "What is this?" guide.
-- Adjoint gradients and adjoint design.
+**In the app:** Advanced → Research, in four sections; each tool starts with a "What is this?" guide.
+Adjoint design is under Airfoil → Airfoil optimiser (fast), the polar surrogate under Airfoil → Polar estimate.
+- Adjoint gradients, drawn as arrows on the airfoil.
 - **Mesh accuracy:** the real mesh error of one result, from a solve on the 4× finer nested mesh,
   with a map of where the error comes from; or a goal-oriented adaptation study against uniform refinement.
 - **Swept-wing transition:** for one section, or along a whole wing from a saved aircraft.
-- **Polar surrogate:** with buttons to retrain it on this machine's polars (the model is saved in
+- **Polar surrogate** (Airfoil → Polar estimate): with buttons to retrain it on this machine's polars (the model is saved in
   `cases/_surrogate/`) and to test it, leaving one polar out at a time.
 - Results of the learned SA correction and of the learned laminar-bubble model.
 

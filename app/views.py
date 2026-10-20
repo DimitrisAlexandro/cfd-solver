@@ -14,6 +14,49 @@ import ui
 NAMES = {"tmr0012": "NACA 0012, sharp TE (NASA TMR)",
          "../validation/reference/rae2822.dat": "RAE 2822 (transonic)"}
 
+TOOLS_DIR = Path(__file__).parent / "tools"
+
+# the aircraft design workflow, in order: every page in it ends with a link to the next
+WORKFLOW = [("tools/33_Sizing.py", "Sizing"), ("tools/12_Aircraft_model.py", "Aircraft model"),
+            ("tools/18_Weight_balance.py", "Weight and balance"), ("tools/19_Drag_buildup.py", "Drag buildup"),
+            ("tools/20_Propeller.py", "Propeller and engine"), ("tools/13_Stability.py", "Stability and control"),
+            ("tools/16_Performance.py", "Performance"), ("tools/15_Loads.py", "Flight loads"),
+            ("tools/21_Wing_structure.py", "Wing structure"), ("tools/22_Aeroelasticity.py", "Aeroelasticity")]
+
+
+def subpages(options, key):
+    """one page, several tools: a switch on top runs the chosen tool's own page script
+    unchanged. options: {label: (script in tools/, one-line purpose, globals for the
+    script or None)}. A link with ?view=<label> opens that tool."""
+    import runpy
+    labels = list(options)
+    q = st.query_params.get("view")
+    if q in options:
+        st.session_state[key] = q
+        del st.query_params["view"]
+    if st.session_state.get(key) not in options:
+        st.session_state[key] = labels[0]
+    choice = st.segmented_control("Tool", labels, key=key, label_visibility="collapsed") or labels[0]
+    st.caption("  ·  ".join(f"**{lab}**: {options[lab][1]}" for lab in labels))
+    script, _, g = options[choice]
+    runpy.run_path(str(TOOLS_DIR / script), init_globals=dict(g or {}), run_name="__main__")
+
+
+def workflow_footer(page):
+    """'Step i of n' and links to the previous and next page of the aircraft workflow"""
+    pages = [p for p, _ in WORKFLOW]
+    if page not in pages:
+        return
+    i = pages.index(page)
+    st.divider()
+    c1, c2, c3 = st.columns([2, 3, 2], vertical_alignment="center")
+    if i > 0:
+        c1.page_link(WORKFLOW[i - 1][0], label=f"← {WORKFLOW[i - 1][1]}")
+    c2.caption(f"Aircraft design, step {i + 1} of {len(WORKFLOW)}: "
+               + " → ".join(f"**{n}**" if j == i else n for j, (_, n) in enumerate(WORKFLOW)))
+    if i + 1 < len(WORKFLOW):
+        c3.page_link(WORKFLOW[i + 1][0], label=f"Next: {WORKFLOW[i + 1][1]} →")
+
 
 def airfoil_picker(key="af", label="Airfoil", allow_flap=False):
     """library section, any NACA 4/5-digit code, or an uploaded .dat;
