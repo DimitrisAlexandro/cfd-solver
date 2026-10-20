@@ -8,6 +8,7 @@ the surrogate says where its next RANS run would teach it the most.
     python src/run.py surrogate predict naca2412 --re 3e6 --alpha 0:12:2
     python src/run.py surrogate suggest naca4415 --re 2e6      (where to run RANS next)
     python src/run.py surrogate validate                      (leave-one-polar-out)
+    python src/run.py surrogate train --out DIR / validate --out DIR   (+ train.json / validate.json)
 
 Inputs (scaled to unit variance):
     alpha, log10 Re, t/c, x/c of max thickness, max camber, x/c of max
@@ -20,8 +21,11 @@ marginal likelihood (L-BFGS-B, several restarts) - Rasmussen & Williams
 the +-2 sigma band is a prediction interval for a new RANS result; the
 standard deviations are then calibrated by leave-one-polar-out validation
 (a GP fitted to a handful of polars is over-confident away from them).
-Training data: data/wing_polars/*.json, cases/**/polar.json and the saved
-validation polars (validation/transition_*.json); only converged points.
+Training data: data/wing_polars/*.json, the results folder's polars (AEROLAB_CASES,
+default cases/: **/polar.json and the wing tool's section cache wing_polars/) and
+the saved validation polars (validation/transition_*.json); only converged points.
+`train` saves the model in the results folder (_surrogate/surrogate_model.json);
+until then the model shipped in data/ is used (model_path()).
 Use: a fast first look at an airfoil before running RANS, a cheap objective
 for design studies, and active learning (suggest = the angle / Re of the
 largest predictive standard deviation).
@@ -30,6 +34,7 @@ largest predictive standard deviation).
 import argparse
 import json
 import math
+import os
 import re as _re
 from pathlib import Path
 
@@ -41,7 +46,14 @@ from aerolab.airfoil import airfoil_geom as ag
 from aerolab.airfoil import cst
 
 ROOT = Path(__file__).resolve().parents[3]
-MODEL = ROOT / "data" / "surrogate_model.json"
+MODEL = ROOT / "data" / "surrogate_model.json"                 # shipped with the code
+CASES = Path(os.environ.get("AEROLAB_CASES", ROOT / "cases"))
+USER_MODEL = CASES / "_surrogate" / "surrogate_model.json"     # retrained on this machine's polars
+
+
+def model_path():
+    """the retrained model if there is one, else the shipped one"""
+    return USER_MODEL if USER_MODEL.exists() else MODEL
 FEATURES = ["alpha", "log10_re", "t", "x_t", "camber", "x_camber", "le", "flap_cf_x_delta",
             "flap_delta", "free_transition"]
 
@@ -84,14 +96,19 @@ def _rows(spec, re, results, free):
 
 def collect():
     rows, sources = [], []
-    for f in sorted((ROOT / "data" / "wing_polars").glob("*.json")):
+    seen = set()
+    cache = sorted((ROOT / "data" / "wing_polars").glob("*.json")) + sorted((CASES / "wing_polars").glob("*.json"))
+    for f in cache:
+        if f.name in seen:                  # the app copies the shipped polars into its cache
+            continue
+        seen.add(f.name)
         m = _re.match(r"(.+)_Re([0-9.e+]+)_M([0-9.]+)_L([0-9.]+)_(\w+)\.json", f.name)
         if not m or float(m.group(3)) > 0.3:
             continue
         rows += _rows(m.group(1), float(m.group(2)), json.loads(f.read_text()),
                       1.0 if m.group(5) == "free" else 0.0)
         sources.append(f.name)
-    for f in sorted(list((ROOT / "cases").rglob("polar.json")) +
+    for f in sorted(list(CASES.rglob("polar.json")) +
                     list((ROOT / "validation").glob("transition_*.json"))):
         try:
             d = json.loads(f.read_text())
@@ -110,7 +127,7 @@ def collect():
         except Exception:
             continue
         rows += _rows(spec, d["re"], d["results"], free)
-        sources.append(str(f.relative_to(ROOT)))
+        sources.append(str(f.relative_to(ROOT)) if f.is_relative_to(ROOT) else str(f))
     return rows, sources
 
 
@@ -229,14 +246,16 @@ class Surrogate:
         i = int(np.argmax(score))
         return float(alphas[i]), p, score
 
-    def save(self, path=MODEL):
-        Path(path).write_text(json.dumps({"n": self.n, "sources": self.sources, "features": FEATURES,
+    def save(self, path=None):
+        path = Path(path or USER_MODEL)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"n": self.n, "sources": self.sources, "features": FEATURES,
                                           "calibration": self.calib,
                                           "gps": {k: g.to_json() for k, g in self.gps.items()}}))
 
     @classmethod
-    def load(cls, path=MODEL):
-        d = json.loads(Path(path).read_text())
+    def load(cls, path=None):
+        d = json.loads(Path(path or model_path()).read_text())
         return cls({k: GP.from_json(v) for k, v in d["gps"].items()}, d["sources"], d["n"],
                    d.get("calibration"))
 
@@ -300,8 +319,8 @@ def main(argv=None):
     from aerolab.airfoil.airfoil import parse_alpha
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("train")
-    sub.add_parser("validate")
+    for name in ("train", "validate"):
+        sub.add_parser(name).add_argument("--out", help="folder for a summary (train.json / validate.json)")
     for name in ("predict", "suggest"):
         p = sub.add_parser(name)
         p.add_argument("airfoil")
@@ -313,18 +332,28 @@ def main(argv=None):
         if argv[i] == "--alpha" and argv[i + 1][:1] == "-":
             argv[i:i + 2] = [f"--alpha={argv[i + 1]}", ""]
     a = ap.parse_args([x for x in argv if x != ""])
+    t0 = __import__("time").time()
     if a.cmd == "train":
         rows, sources = collect()
         sg = Surrogate.train(rows, sources)
         cal = sg.calibrate(rows)
         sg.save()
-        print(f"[surrogate] {sg.n} points from {len(sg.sources)} polars -> {MODEL}; "
+        print(f"[surrogate] {sg.n} points from {len(sg.sources)} polars -> {USER_MODEL}; "
               f"sd calibration " + ", ".join(f"{k} x{v:.2f}" for k, v in cal.items()))
+        if a.out:
+            Path(a.out).mkdir(parents=True, exist_ok=True)
+            (Path(a.out) / "train.json").write_text(json.dumps(
+                {"points": sg.n, "sources": sg.sources, "calibration": cal, "model": str(USER_MODEL),
+                 "time_s": __import__("time").time() - t0}, indent=1))
         return
     if a.cmd == "validate":
-        validate()
+        res = validate()
+        if a.out:
+            Path(a.out).mkdir(parents=True, exist_ok=True)
+            (Path(a.out) / "validate.json").write_text(json.dumps(
+                {"polars": res, "time_s": __import__("time").time() - t0}, indent=1))
         return
-    sg = Surrogate.load() if MODEL.exists() else Surrogate.train()
+    sg = Surrogate.load() if model_path().exists() else Surrogate.train()
     free = 0.0 if a.turbulent else 1.0
     if a.cmd == "predict":
         p = sg.predict(a.airfoil, a.re, parse_alpha(a.alpha), free)

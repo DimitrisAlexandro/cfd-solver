@@ -337,6 +337,12 @@ def main(argv=None):
     if a.cmd == "estimate":
         e = estimate(a.airfoil, a.re, a.alpha, a.level, transition=a.transition, check=a.check)
         if a.out:
+            # the indicator map on the coarse cells (fine contributions summed per parent), for plots
+            m = e["_primal"]["solver"].m
+            par = e["_fine"]["parent"]
+            np.savez_compressed(Path(a.out).with_name("indicator.npz"), xc=m.xc,
+                                quad=np.asarray(m.nverts) == 4,
+                                **{f"eta_{k}": np.bincount(par, v, m.ncells) for k, v in e["_eta"].items()})
             Path(a.out).write_text(json.dumps({k: v for k, v in e.items() if not k.startswith("_")},
                                               indent=1, default=float))
     else:
