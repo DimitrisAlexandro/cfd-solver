@@ -11,10 +11,33 @@ import ui
 import views
 
 C.page_setup()
-ui.header("Research tools", "Adjoint gradients and adjoint shape design, swept-wing transition, and the "
-                            "polar surrogate. Field inversion / machine learning and the learned bubble "
-                            "model run from the command line (src/aerolab/ml/fiml.py, src/aerolab/ml/bubble_ml.py).")
+ui.header("Research tools", "Advanced tools beyond the everyday airfoil and aircraft pages: which way to "
+                            "change an airfoil's shape, an automatic airfoil optimiser, where the flow turns "
+                            "turbulent on a swept wing, instant polar estimates without CFD, and a "
+                            "machine-learning correction of the turbulence model.")
 sys.path.insert(0, str(C.SRC))
+
+
+def explain(what, when, read):
+    """plain-language guide at the top of a tab"""
+    with st.expander("What is this?", expanded=False):
+        st.markdown(f"**What it does.** {what}\n\n**When to use it.** {when}\n\n**How to read the result.** {read}")
+
+
+with st.expander("Which tool do I need?", expanded=True):
+    st.markdown(
+        "| Tab | Question it answers | Time |\n|---|---|---|\n"
+        "| **Adjoint gradients** | *How do lift, drag and moment change if I change the shape, the angle or "
+        "the Reynolds number a little?* | about 1–5 min |\n"
+        "| **Adjoint design** | *Which airfoil shape gives the least drag at the lift I need?* | about 1 min per "
+        "iteration, 10–30 min |\n"
+        "| **Swept-wing transition** | *Where does the laminar (low-drag) flow end on a swept wing?* | instant |\n"
+        "| **Polar surrogate** | *Roughly what polar will this airfoil have, before I spend time on CFD?* | "
+        "instant |\n"
+        "| **Learned SA correction** | *How much better does a machine-learned turbulence correction match "
+        "wind-tunnel data?* | results only (computed from the command line) |")
+    st.caption("For a normal airfoil polar use Airfoil → Airfoil polar; for wings and aircraft the "
+               "Wing and aircraft pages. These tools are for going further.")
 
 tab_g, tab_d, tab_s, tab_p, tab_f = st.tabs(["Adjoint gradients", "Adjoint design",
                                              "Swept-wing transition", "Polar surrogate",
@@ -22,6 +45,18 @@ tab_g, tab_d, tab_s, tab_p, tab_f = st.tabs(["Adjoint gradients", "Adjoint desig
 
 # ----------------------------------------------------------------------
 with tab_g:
+    explain("Runs the CFD once for your airfoil, then one extra *adjoint* solve. Together they give the "
+            "gradient (sensitivity) of Cl, Cd and Cm to the angle of attack, the Reynolds number and 18 "
+            "shape parameters (CST coefficients, 9 on the upper and 9 on the lower surface, from leading to "
+            "trailing edge). Finite differences would need one CFD run per parameter, 20 runs instead of "
+            "about 2.",
+            "To see which part of the airfoil to change to cut drag or add lift, and how sensitive the airfoil "
+            "is to the angle and Re, before redesigning it by hand.",
+            "The table gives the change per degree of angle and per unit of Re. In the bar chart, a tall bar "
+            "is a part of the surface where a small change matters a lot. Making a coefficient bigger moves the "
+            "surface **up** there (thicker on the upper surface, thinner on the lower). For Cd, a **negative** "
+            "bar means moving the surface up there **lowers** the drag; a positive bar, moving it down. "
+            "Coefficient 0 is at the leading edge, 8 at the trailing edge.")
     st.caption("dCl, dCd, dCm with respect to the angle of attack, the Reynolds number and all 18 CST "
                "shape coefficients, for one flow solution + one adjoint solve. Fully turbulent or fixed "
                "transition (a free-transition location is frozen in the adjoint).")
@@ -65,6 +100,17 @@ with tab_g:
 
 # ----------------------------------------------------------------------
 with tab_d:
+    explain("An optimiser changes the airfoil shape (the 18 CST coefficients) and the angle of attack step by "
+            "step to minimise the drag while keeping the lift at your target Cl. The adjoint gradients tell it "
+            "which way to move each time, so a design takes minutes instead of days. Optional limits: a "
+            "minimum thickness (for the spar and structure) and a minimum Cm (to limit the trim drag of the "
+            "tail). The final shape is checked on the validated mesh.",
+            "When you know your cruise lift coefficient and want a better airfoil for it than a catalogue one: "
+            "start from a similar airfoil (e.g. NACA 2412) and set the Cl you fly at.",
+            "Left: the drag (in counts, 1 count = 0.0001) of every design tried, with the lift held at the "
+            "target; middle: the start and optimised shapes, with their drag checked on the validated mesh "
+            "above; right: the shape gradient of the start airfoil. The result is a design point: run a full polar of the new airfoil on "
+            "the Airfoil polar page to check it away from the design Cl.")
     st.caption("Minimum drag at a target lift: SLSQP with adjoint gradients over all 18 CST coefficients "
                "and the angle of attack, every design a deformation of one mesh, then a check on the "
                "validated mesh. ~1 min per design iteration at mesh level 0.5.")
@@ -96,6 +142,21 @@ with tab_d:
 
 # ----------------------------------------------------------------------
 with tab_s:
+    explain("A boundary layer starts laminar (low friction) and turns turbulent at some point. On a swept "
+            "wing there are three ways that can happen, and this tab checks all three on an infinite swept "
+            "wing: (1) the **attachment line**, the line along the leading edge where the flow splits, can "
+            "be turbulent from the start; (2) **crossflow**, the sideways flow sweep creates inside the "
+            "boundary layer, grows waves that trip it; (3) **Tollmien–Schlichting waves**, the usual "
+            "mechanism on straight wings (the e^N method).",
+            "For swept wings (more than about 15–20° of sweep) where laminar flow and drag matter: gliders, "
+            "business jets, laminar-flow research. On a straight wing (sweep near 0) it reduces to the "
+            "ordinary transition prediction of the Airfoil polar page.",
+            "**Transition, upper / lower** is where the flow turns turbulent, as a fraction of the chord "
+            "(0 = leading edge, 1 = trailing edge), and the mechanism that did it. Further aft means more "
+            "laminar flow and less drag. **Attachment line Rbar** is the Reynolds number of the leading-edge "
+            "flow: below ~245 it stays laminar; above ~245 turbulence from the wing root or fuselage spreads "
+            "along it; above ~580 it turns turbulent by itself. In the plot, transition happens where a curve "
+            "reaches the dotted line.")
     st.caption("Infinite swept wing: attachment-line contamination / instability (Poll), crossflow "
                "(Falkner-Skan-Cooke profiles) and Tollmien-Schlichting (e^N). For a whole wing: "
                "`wing.py ... --transition-3d ALPHA`.")
@@ -113,7 +174,9 @@ with tab_s:
         r = stt.analyse(spec, float(sweep), re, alpha, tu or None, None, chi, cont)
     al = r["attachment_line"]
     m1, m2, m3 = st.columns(3)
-    m1.metric("Attachment line Rbar", f"{al['Rbar']:.0f}", al["why"])
+    m1.metric("Attachment line Rbar", f"{al['Rbar']:.0f}", al["why"],
+              help="Below ~245 laminar; 245–580 turbulent if the root or fuselage contaminates it; above ~580 "
+                   "turbulent by itself")
     m2.metric("Transition, upper", f"{r['upper']['x_tr']:.3f} c", r["upper"]["mechanism"])
     m3.metric("Transition, lower", f"{r['lower']['x_tr']:.3f} c", r["lower"]["mechanism"])
     fig = go.Figure()
@@ -130,6 +193,17 @@ with tab_s:
 # ----------------------------------------------------------------------
 with tab_p:
     from aerolab.design import surrogate as SG
+    explain("A statistical model (a Gaussian process) trained on every CFD polar computed so far. From the "
+            "airfoil's shape (thickness, camber, their positions, leading-edge radius, flap) and the Reynolds "
+            "number it predicts Cl and Cd at every angle **instantly**, with an uncertainty band. It also "
+            "says at which angle a new CFD run would teach it the most.",
+            "For a quick first look at an airfoil before spending 15–60 minutes on a CFD polar, and to compare "
+            "many airfoils fast. It is an estimate, not a CFD result.",
+            "The line is the best estimate and the shaded band the range the CFD result would fall in "
+            "(±2 standard deviations, about 95 %). A **narrow band** means the airfoil is similar to polars "
+            "already computed: trust it. A **wide band** means it is unlike them: run the real polar. "
+            "The suggested angle is the most uncertain point; each polar you run makes it better for "
+            "similar airfoils.")
     st.caption("Gaussian process over every polar in the library; mean and +-2 sd (calibrated by "
                "leaving polars out). Retrain after adding polars: `python src/run.py surrogate train`.")
     c1, c2, c3 = st.columns(3)
@@ -149,13 +223,26 @@ with tab_p:
                 go.Scatter(x=al, y=p[k], name="mean")])
             fig.update_layout(xaxis_title="alpha (deg)", yaxis_title=lab, height=340)
             ui.plot(fig, key=f"sg_{k}", container=col)
-        st.info(f"Most informative next RANS run for this airfoil and Re: alpha {a_next:g} deg "
-                f"(trained on {sg.n} points from {len(sg.sources)} polars).")
+        st.info(f"Most useful next CFD run for this airfoil and Re: α {a_next:g}° (the most uncertain point; "
+                f"the model is trained on {sg.n} points from {len(sg.sources)} polars).")
     except Exception as e:
         st.warning(f"Surrogate unavailable: {e}")
 
 # ----------------------------------------------------------------------
 with tab_f:
+    explain("The turbulence model of the CFD (Spalart–Allmaras) is not perfect, especially near stall. "
+            "*Field inversion* finds, for airfoils with wind-tunnel data, the correction to the model's "
+            "turbulence production at every point of the flow that makes the CFD match the measured lift "
+            "and pressures. A neural network then learns that correction from local flow features, so it "
+            "can be applied to airfoils it has never seen. The real test: each airfoil family is predicted "
+            "by a network that was trained **without** it.",
+            "It is a research result to read, not a tool to run here: it shows how far machine learning can "
+            "improve the CFD's lift near stall. It does not change the other pages' results.",
+            "In **Held-out predictions** compare Cl_SA (plain CFD) and Cl_FIML (CFD with the learned "
+            "correction) against cl_exp (wind tunnel): the closer to cl_exp, the better. cp_rms is the "
+            "average pressure error over the surface: smaller is better. **Inversions** are the training "
+            "cases: how closely the inversion itself matched the data (Cl_inv) and how large the correction "
+            "had to be (beta_min, beta_max; 1 = no correction).")
     st.caption("Field inversion of the SA production multiplier against measured lift and pressure "
                "(NACA 0012, NACA 4412, S809, E387), a neural network beta(local flow features), and a "
                "leave-one-airfoil-out test: each family is predicted by a model that never saw it. "
