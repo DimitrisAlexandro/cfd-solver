@@ -147,3 +147,24 @@ def test_surrogate_features_and_flap():
     assert f0[3] == pytest.approx(0.4, abs=0.05)        # its position
     f1 = SG.geometry("naca2412@flap=25c20")
     assert f1[:5] == f0[:5] and f1[6] == pytest.approx(2.0)
+
+
+def test_surrogate_reads_the_results_folder_and_saves_there(tmp_path, monkeypatch):
+    """training data from AEROLAB_CASES (the wing tool's cache too, without the shipped
+    duplicates); the retrained model goes to the results folder and is then preferred"""
+    import shutil
+    shipped = sorted((SG.ROOT / "data" / "wing_polars").glob("*.json"))
+    monkeypatch.setattr(SG, "CASES", tmp_path)
+    monkeypatch.setattr(SG, "USER_MODEL", tmp_path / "_surrogate" / "surrogate_model.json")
+    (tmp_path / "wing_polars").mkdir()
+    shutil.copy(shipped[0], tmp_path / "wing_polars" / shipped[0].name)          # a duplicate: skipped
+    _, base = SG.collect()
+    new = shipped[0].name.replace("_Re", "_Re1", 1)                             # a "new" polar
+    shutil.copy(shipped[0], tmp_path / "wing_polars" / new)
+    rows, sources = SG.collect()
+    assert new in sources and len(sources) == len(base) + 1
+    assert SG.model_path() == SG.MODEL
+    sg = SG.Surrogate.train(rows[:30], sources)
+    sg.save()
+    assert SG.model_path() == SG.USER_MODEL and SG.USER_MODEL.exists()
+    assert SG.Surrogate.load().n == 30
