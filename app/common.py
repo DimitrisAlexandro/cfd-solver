@@ -267,12 +267,18 @@ def field_image(case_dir, field, xlim=(-0.4, 1.6), ylim=(-0.5, 0.5), cmap="turbo
 # ----------------------------------------------------------------------
 # geometry + inviscid preview
 # ----------------------------------------------------------------------
-def raw_outline(spec):
-    from aerolab.airfoil import airfoil_geom as ag
+def airfoil_file(spec):
+    """an airfoil spec as the app process can open it: library files are relative to src/
+    (where the runs start), NACA / TMR codes and absolute paths stay as they are"""
     s = str(spec)
     if not s.lower().startswith(("naca", "tmr")) and not Path(s).is_absolute():
         s = str(SRC / s)
-    return ag.sharp_outline(s)
+    return s
+
+
+def raw_outline(spec):
+    from aerolab.airfoil import airfoil_geom as ag
+    return ag.sharp_outline(airfoil_file(spec))
 
 
 def panel_polar(spec, alphas):
