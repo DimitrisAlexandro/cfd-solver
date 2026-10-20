@@ -50,7 +50,8 @@ DONE = {"polar": "polar.json", "wing": "wing.json", "wing3d": "wing3d.json", "dr
         "optimize": "optimize.json", "inverse": "inverse.json", "sizing": "sizing.json",
         "aero_db": "database_done.json", "loads": "loads.json", "performance": "performance.json",
         "grid_study": "grid_study.json", "project": "run.json", "adjoint": "adjoint.json",
-        "adjoint_design": "design.png"}
+        "adjoint_design": "design.png", "mesh_error": "estimate.json", "mesh_adapt": "adapt.json",
+        "surrogate_train": "train.json", "surrogate_validate": "validate.json"}
 ACTIVE = ("queued", "running")
 
 
