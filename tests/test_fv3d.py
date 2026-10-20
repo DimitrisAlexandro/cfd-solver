@@ -191,3 +191,62 @@ def test_lateral_face_centres_are_level_with_cell_centres():
     phi, phib = lin(m.xc), lin(m.bxf)                       # still exact for linear fields
     g = m.grad_gg(phi, phib, grad_skew=np.tile(LIN, (m.ncells, 1)))
     assert np.abs(g - LIN).max() < 1e-6
+
+
+def test_tip_section_morphs_from_root_to_tip():
+    """tip_airfoil: the section changes linearly from the root's to the tip's; the mesh
+    stays valid and the wall-layer columns stay normal to the morphed wall"""
+    from aerolab.fv3d.wingmesh import wing_mesh
+    pm, info = wing_mesh("naca4415", semi_span=1.0, level=0.25, re=1e6, farfield=6.0, taper=0.6,
+                         tip_airfoil="naca0009")
+    m = FVMesh3D(pm)
+    q = m.quality()
+    assert q["nonortho_max"] < 80.0 and q["clamped"] == 0
+    assert info["tip_airfoil"] == "naca0009"
+    X = m.bxf[m.patch_faces["wing"]]
+    zl = np.array(info["z_levels"])
+    it = info["itip"]
+
+    def t_over_c(lev):
+        s = (X[:, 2] > zl[lev]) & (X[:, 2] < zl[lev + 1])
+        x, y = X[s, 0], X[s, 1]
+        k = np.digitize(x, np.linspace(x.min(), x.max(), 30))
+        return max(np.ptp(y[k == i]) for i in set(k) if (k == i).sum() > 1) / np.ptp(x)
+    assert t_over_c(0) == pytest.approx(0.15, abs=0.01)
+    assert t_over_c(it - 1) == pytest.approx(0.09, abs=0.01)
+    # first-row faces next to the wall: no skewness beyond the plain wing's
+    pm0, _ = wing_mesh("naca4415", semi_span=1.0, level=0.25, re=1e6, farfield=6.0, taper=0.6)
+    m0 = FVMesh3D(pm0)
+    rel = lambda mm: np.percentile(np.linalg.norm(mm.rskew, axis=1) / np.linalg.norm(mm.d, axis=1), 99.9)
+    assert rel(m) < 1.5 * rel(m0)
+
+
+def test_tip_section_far_from_the_root_is_refused():
+    from aerolab.fv3d.wingmesh import wing_mesh
+    with pytest.raises(ValueError):
+        wing_mesh("naca0006", semi_span=1.0, level=0.25, re=1e6, farfield=6.0, tip_airfoil="naca9430")
+
+
+def test_wing_with_tip_section_runs_stable_iterations():
+    """a root -> tip morph that turned the wall-layer columns badly diverged in ~10 iterations"""
+    from aerolab.fv3d.wingmesh import wing_mesh
+    pm, info = wing_mesh("naca2412", semi_span=1.0, level=0.25, re=1e6, farfield=6.0, taper=0.5,
+                         tip_airfoil="naca0012")
+    m = FVMesh3D(pm)
+    a = math.radians(4.0)
+    U = (math.cos(a), math.sin(a), 0.0)
+    s = Solver3D(m, {"wing": {"type": "wall"}, "symmetry": {"type": "symmetry"},
+                     "farfield": {"type": "farfield", "U": U}}, 1e-6, U0=U, turbulence="sa")
+    for _ in range(25):
+        r = s.iterate()
+    assert all(np.isfinite(v) for v in r.values())
+    assert np.linalg.norm(s.U, axis=1).max() < 5.0
+
+
+def test_vortex_lattice_reference_of_a_3d_wing():
+    from aerolab.fv3d import wing3d
+    d = wing3d.vlm_reference("naca2412", "naca0012", 3.0, 0.5, 5.0, 0.0, -2.0, 1e6, (0.0, 4.0))
+    r0, r4 = d["results"]
+    assert d["source"] == "estimated"
+    assert 0.0 < r0["CL"] < r4["CL"] < 0.5                 # camber: lift at 0 deg
+    assert r4["eta"][0] > 0 and len(r4["eta"]) == len(r4["clc"])

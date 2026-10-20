@@ -44,6 +44,7 @@ if st.session_state.get("confirm_delete") == str(path):
         st.session_state.pop("confirm_delete", None)
         st.rerun()
 
+st.page_link("tools/27_Wing_3D.py", label="3D CFD of this aircraft's wing")
 tab_edit, tab_up = st.tabs(["Edit", "Upload your own"])
 
 with tab_up:
