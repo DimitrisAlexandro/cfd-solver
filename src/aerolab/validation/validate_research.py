@@ -354,7 +354,7 @@ def surrogate_section(log=print):
     loo = SG.validate(log=log)
     sg = SG.Surrogate.train(rows, sources)
     cal = sg.calibrate(rows)
-    sg.save()
+    sg.save(SG.MODEL)                       # the shipped model (data/)
     out = {"n": len(rows), "sources": sources, "loo": loo, "calibration": cal}
     (VAL / "surrogate_results.json").write_text(json.dumps(out, indent=1))
     L = ["# Gaussian-process polar surrogate (surrogate.py)", "",
