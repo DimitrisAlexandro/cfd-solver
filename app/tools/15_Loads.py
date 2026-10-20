@@ -156,3 +156,5 @@ if olds:
         st.session_state["ld_open"] = str(pk.parent)
     if st.session_state.get("ld_open"):
         show(st.session_state["ld_open"])
+
+views.workflow_footer("tools/15_Loads.py")
