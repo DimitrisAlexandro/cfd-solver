@@ -46,7 +46,7 @@ HEARTBEAT_STALE_S = 15.0
 MAX_ATTEMPTS = 2                 # an interrupted job is re-queued once
 
 # result file whose presence marks a finished run, per job kind
-DONE = {"polar": "polar.json", "wing": "wing.json", "drag_rise": "drag_rise.json",
+DONE = {"polar": "polar.json", "wing": "wing.json", "wing3d": "wing3d.json", "drag_rise": "drag_rise.json",
         "optimize": "optimize.json", "inverse": "inverse.json", "sizing": "sizing.json",
         "aero_db": "database_done.json", "loads": "loads.json", "performance": "performance.json",
         "grid_study": "grid_study.json", "project": "run.json", "adjoint": "adjoint.json",

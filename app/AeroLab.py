@@ -60,6 +60,7 @@ nav = st.navigation({
                 P("tools/9_Polar_library.py", "Polar library"),
                 P("tools/4_Geometry_preview.py", "Geometry check")],
     "Wing and aircraft": [P("tools/3_Wing.py", "Wing"),
+                          P("tools/27_Wing_3D.py", "Wing 3D CFD"),
                           P("tools/7_Wing_sizing.py", "Wing sizing"),
                           P("tools/17_Conceptual_sizing.py", "Conceptual sizing"),
                           P("tools/12_Aircraft_model.py", "Aircraft model"),
