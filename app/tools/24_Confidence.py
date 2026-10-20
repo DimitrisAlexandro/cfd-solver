@@ -78,7 +78,7 @@ st.dataframe(df.drop(columns=["case"]), hide_index=True, width="stretch",
                             "Cd error": st.column_config.NumberColumn(format="percent"),
                             "note": st.column_config.TextColumn(width="large"),
                             "title": st.column_config.TextColumn(width="medium")})
-st.caption("Reports with the full comparisons are on the Validation page (validation/ in the repository).")
+st.caption("Reports with the full comparisons are on the Validation tab of this page (validation/ in the repository).")
 
 st.markdown("#### Other tools")
 st.dataframe(pd.DataFrame([{"tool": k.replace("_", " ").capitalize(), "level": ui.TRUST[v[0]][1],
