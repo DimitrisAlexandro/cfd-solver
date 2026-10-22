@@ -2,7 +2,7 @@
 import views
 
 views.subpages({
-    "Run a polar": ("1_Airfoil_analysis.py", "Cl, Cd, Cm against α with the RANS solver", None),
-    "Check geometry and mesh": ("4_Geometry_preview.py", "shape, thickness, inviscid Cp and the CFD mesh, "
+    "Run a polar": ("sections/run_polar.py", "Cl, Cd, Cm against α with the RANS solver", None),
+    "Check geometry and mesh": ("sections/geometry_check.py", "shape, thickness, inviscid Cp and the CFD mesh, "
                                 "before spending CFD time", None),
 }, "sub_polar")
