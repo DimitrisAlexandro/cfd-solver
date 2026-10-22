@@ -1,19 +1,9 @@
-numpy
-scipy
-matplotlib
-pyvista
-pytest
-pyamg
-threadpoolctl
-numba
+# Local development: the app's runtime dependencies (app/requirements.txt, the one pinned list)
+# plus the test runner and the optional tools.
+-r app/requirements.txt
+pytest==9.1.1
+pyvista          # optional: offline 3D viewer (python src/run.py viewer ...)
 pypardiso        # optional: coupled solver (MKL PARDISO); Phase 4b
 # python-mumps   # optional: MUMPS for the adjoint (2x+ faster factorisation; SuperLU fallback).
 #                #   needs the MUMPS library: apt install libmumps-seq-dev (Debian/Ubuntu),
 #                #   brew install mumps (macOS) or conda install -c conda-forge python-mumps
-streamlit>=1.50   # app (AeroLab): ./run_app.sh (streamlit run app/AeroLab.py)
-plotly
-pandas
-openpyxl          # Excel export (aero database)
-python-docx      # Word reports
-reportlab        # PDF reports
-scikit-image     # results viewer: wake isosurfaces
