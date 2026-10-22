@@ -10,4 +10,5 @@ results/
 *.png
 *.msh
 .env
-src/aerolab/fv3d/native/build/
+*.egg-info/
+build/

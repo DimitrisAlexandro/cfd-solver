@@ -29,7 +29,11 @@ jobs:
           cache: pip
           cache-dependency-path: app/requirements.txt
       - name: Install
-        run: pip install -r app/requirements.txt pytest
+        run: |
+          pip install -r app/requirements.txt pytest==9.1.1
+          pip install --no-deps -e .
+      - name: aerolab command
+        run: aerolab > /dev/null
       - name: Test
         run: python -m pytest -q --durations=20
 
