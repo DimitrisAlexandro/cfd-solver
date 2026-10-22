@@ -1,7 +1,7 @@
 # Trust layer and project graph (2026-10-12)
 
 Branch `trust-and-projects` (on top of `wing-structure`). New: `src/aerolab/workflow/trust.py`, `src/aerolab/workflow/project.py`,
-`app/tools/23_Projects.py`, `app/tools/24_Confidence.py`, `tests/test_trust.py` (11),
+`app/tools/23_Projects.py`, `app/sections/confidence.py`, `tests/test_trust.py` (11),
 `tests/test_project.py` (6). No new dependencies.
 
 ## 1. Trust layer (`src/aerolab/workflow/trust.py`)

@@ -1,16 +1,17 @@
-# AeroLab on Streamlit Community Cloud (this file, next to the entrypoint app/AeroLab.py, takes
-# precedence over the root requirements.txt). Runtime only; the root file adds the test and
-# offline-viewer tools and the optional MKL solver.
-numpy
-scipy
-matplotlib
-numba
-pyamg
-threadpoolctl
-streamlit>=1.50
-plotly
-pandas
-openpyxl
-python-docx      # Word reports
-reportlab        # PDF reports
-scikit-image     # results viewer: wake isosurfaces
+# The runtime dependencies of AeroLab, pinned to the versions the test suite passes with. This is
+# the one list: Streamlit Community Cloud reads it (next to the entrypoint app/AeroLab.py), the
+# Docker image installs it, pyproject.toml takes the package dependencies from it, and the root
+# requirements.txt adds the test and optional tools on top. Update a pin here, then run the tests.
+numpy==2.5.4
+scipy==1.18.1
+matplotlib==3.11.2
+numba==0.68.0
+pyamg==5.3.0
+threadpoolctl==3.7.0
+streamlit==1.66.1
+plotly==7.1.0
+pandas==3.0.6
+openpyxl==3.1.5        # Excel export (aero database)
+python-docx==1.2.0     # Word reports
+reportlab==5.1.0       # PDF reports
+scikit-image==0.26.0   # results viewer: wake isosurfaces

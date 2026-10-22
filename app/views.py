@@ -14,7 +14,8 @@ import ui
 NAMES = {"tmr0012": "NACA 0012, sharp TE (NASA TMR)",
          "../validation/reference/rae2822.dat": "RAE 2822 (transonic)"}
 
-TOOLS_DIR = Path(__file__).parent / "tools"
+APP_DIR = Path(__file__).parent
+TOOLS_DIR = APP_DIR / "tools"
 
 # the aircraft design workflow, in order: every page in it ends with a link to the next
 WORKFLOW = [("tools/33_Sizing.py", "Sizing"), ("tools/12_Aircraft_model.py", "Aircraft model"),
@@ -26,8 +27,8 @@ WORKFLOW = [("tools/33_Sizing.py", "Sizing"), ("tools/12_Aircraft_model.py", "Ai
 
 def subpages(options, key):
     """one page, several tools: a switch on top runs the chosen tool's own page script
-    unchanged. options: {label: (script in tools/, one-line purpose, globals for the
-    script or None)}. A link with ?view=<label> opens that tool."""
+    unchanged. options: {label: (script in app/, e.g. sections/runs.py, one-line purpose,
+    globals for the script or None)}. A link with ?view=<label> opens that tool."""
     import runpy
     labels = list(options)
     q = st.query_params.get("view")
@@ -39,7 +40,7 @@ def subpages(options, key):
     choice = st.segmented_control("Tool", labels, key=key, label_visibility="collapsed") or labels[0]
     st.caption("  ·  ".join(f"**{lab}**: {options[lab][1]}" for lab in labels))
     script, _, g = options[choice]
-    runpy.run_path(str(TOOLS_DIR / script), init_globals=dict(g or {}), run_name="__main__")
+    runpy.run_path(str(APP_DIR / script), init_globals=dict(g or {}), run_name="__main__")
 
 
 def workflow_footer(page):
