@@ -81,10 +81,34 @@ def airfoil_picker(key="af", label="Airfoil", allow_flap=False):
     return spec, name
 
 
+def uploaded_airfoils():
+    """airfoil files uploaded before, on any page (cases/_uploads), newest first; files that
+    are not coordinate files the solver can read are left out"""
+    from aerolab.airfoil import airfoil_geom as ag
+    d = C.CASES / "_uploads"
+    if not d.is_dir():
+        return []
+    files = [f for f in d.iterdir() if f.is_file() and f.suffix.lower() in (".dat", ".txt")]
+    out = []
+    for f in sorted(files, key=lambda f: -f.stat().st_mtime):
+        try:
+            ag.read_dat(f)
+        except (OSError, ValueError):
+            continue
+        out.append(str(f))
+    return out
+
+
+def _airfoil_label(s):
+    if Path(s).parent == C.CASES / "_uploads":
+        return f"Uploaded: {Path(s).name}"
+    return NAMES.get(s, C.display_name(s))
+
+
 def _airfoil_picker(key="af", label="Airfoil"):
     c1, c2 = st.columns([3, 2])
-    pick = c1.selectbox(label, C.BUILTIN_AIRFOILS + ["NACA code", "Upload .dat file"],
-                        key=key + "pick", format_func=lambda s: NAMES.get(s, C.display_name(s)))
+    pick = c1.selectbox(label, C.BUILTIN_AIRFOILS + uploaded_airfoils() + ["NACA code", "Upload .dat file"],
+                        key=key + "pick", format_func=_airfoil_label)
     if pick == "Upload .dat file":
         up = c2.file_uploader("Selig or Lednicer format", type=["dat", "txt"], key=key + "up")
         if up is None:
