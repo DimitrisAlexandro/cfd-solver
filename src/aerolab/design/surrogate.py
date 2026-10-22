@@ -56,6 +56,15 @@ def model_path():
     return USER_MODEL if USER_MODEL.exists() else MODEL
 FEATURES = ["alpha", "log10_re", "t", "x_t", "camber", "x_camber", "le", "flap_cf_x_delta",
             "flap_delta", "free_transition"]
+# smallest scale of each feature (alpha in degrees, the rest as in geometry()): a feature that
+# hardly varies in the training polars (all of them 12 % thick, say) is scaled by this instead
+# of by its near-zero spread, which would put any other airfoil infinitely far from the data
+FEATURE_SCALE = np.array([2.0, 0.2, 0.02, 0.05, 0.01, 0.1, 0.05, 0.1, 0.5, 0.5])
+
+
+def _scale_floor(D):
+    """FEATURE_SCALE for the surrogate's features; a GP on other inputs keeps the raw spread"""
+    return FEATURE_SCALE if D == len(FEATURE_SCALE) else np.full(D, 1e-9)
 
 
 # ----------------------------------------------------------------------
@@ -162,16 +171,19 @@ class GP:
         return 0.5 * y @ a + np.log(np.diag(L[0])).sum() + 0.5 * len(y) * math.log(2 * math.pi)
 
     def fit(self, X, y, restarts=4, seed=0):
-        self.mx, self.sx = X.mean(0), X.std(0) + 1e-9
+        sd, floor = X.std(0), _scale_floor(X.shape[1])
+        self.mx, self.sx = X.mean(0), np.maximum(sd, floor)
+        flat = sd < 0.1 * floor                 # no information in the data: length scale fixed at 1
         self.my, self.sy = y.mean(), y.std() + 1e-12
         Xs, ys = (X - self.mx) / self.sx, (y - self.my) / self.sy
         D = X.shape[1]
         rng = np.random.default_rng(seed)
         best = None
         for k in range(restarts):
-            th0 = np.r_[np.log(rng.uniform(0.5, 3.0, D)), 0.0, math.log(1e-3 if k else 1e-2)]
+            th0 = np.r_[np.where(flat, 0.0, np.log(rng.uniform(0.5, 3.0, D))), 0.0,
+                        math.log(1e-3 if k else 1e-2)]
             r = minimize(self._nll, th0, args=(Xs, ys), method="L-BFGS-B",
-                         bounds=[(-3, 5)] * D + [(-4, 4), (-14, 1)])
+                         bounds=[(0, 0) if f else (-3, 5) for f in flat] + [(-4, 4), (-14, 1)])
             if best is None or r.fun < best.fun:
                 best = r
         self.theta = best.x
@@ -182,6 +194,18 @@ class GP:
         self.L = cho_factor(K, lower=True)
         self.alpha_ = cho_solve(self.L, ys)
         return self
+
+    def _rescale(self):
+        """move a model scaled by the raw feature spread onto FEATURE_SCALE: the same
+        physical length scales, except that features without spread get length 1"""
+        new = np.maximum(self.sx, FEATURE_SCALE)
+        flat = self.sx < 0.1 * FEATURE_SCALE
+        D = len(new)
+        r = self.sx / new
+        self.Xs = self.Xs * r
+        self.theta = self.theta.copy()
+        self.theta[:D] = np.where(flat, 0.0, self.theta[:D] + np.log(r))
+        self.sx = new
 
     def _hyp(self):
         D = self.Xs.shape[1]
@@ -206,6 +230,8 @@ class GP:
         g.theta = np.array(d["theta"]); g.mx, g.sx = np.array(d["mx"]), np.array(d["sx"])
         g.my, g.sy = d["my"], d["sy"]
         g.Xs, g.ys = np.array(d["Xs"]), np.array(d["ys"])
+        if len(g.sx) == len(FEATURE_SCALE) and np.any(g.sx < FEATURE_SCALE):
+            g._rescale()                         # a model saved before FEATURE_SCALE
         ell, sf2, sn2 = g._hyp()
         g.L = cho_factor(g._k(g.Xs, g.Xs, ell, sf2) + (sn2 + 1e-8) * np.eye(len(g.ys)), lower=True)
         g.alpha_ = cho_solve(g.L, g.ys)

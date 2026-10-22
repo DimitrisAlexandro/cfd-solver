@@ -483,6 +483,11 @@ if "Polar surrogate" in tabs:
                         go.Scatter(x=al, y=p[k], name="mean")])
                     fig.update_layout(xaxis_title="alpha (deg)", yaxis_title=lab, height=340)
                     ui.plot(fig, key=f"sg_{k}", container=col)
+                if float(np.median(p["Cl_sd"])) > 0.5:
+                    st.warning(f"This airfoil is unlike every polar the model has learned from ({len(sg.sources)} "
+                               "polars): the estimate is close to a guess, as the wide band shows. Run a CFD polar "
+                               "of it (Airfoil → Airfoil polar), then **Retrain now** below, and the estimate for "
+                               "this and similar airfoils becomes useful.")
                 st.info(f"Most useful next CFD run for this airfoil and Re: α {a_next:g}° (the most uncertain point; "
                         f"the model is trained on {sg.n} points from {len(sg.sources)} polars).")
             except Exception as e:
