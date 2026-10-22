@@ -34,7 +34,8 @@ def test_menu_pages_exist_and_links_point_to_menu_pages():
     pages = set(menu_pages())
     assert all((APP / p).exists() for p in pages)
     # st.page_link only opens pages of the menu
-    for f in [APP / "Home.py", APP / "views.py", APP / "aircraft_views.py", *APP.glob("tools/*.py")]:
+    for f in [APP / "Home.py", APP / "views.py", APP / "aircraft_views.py",
+              *APP.glob("tools/*.py"), *APP.glob("sections/*.py")]:
         for target in re.findall(r'page_link\(\s*(?:str\(HERE / )?"(tools/[^"]+\.py)"', f.read_text()):
             assert target in pages, f"{f.name} links to {target}, not in the menu"
     import views
