@@ -1,7 +1,0 @@
-<?xml version="1.0"?>
-<VTKFile type="vtkMultiBlockDataSet" version="1.0">
-<vtkMultiBlockDataSet>
-<DataSet index="0" name="cells" file="results.vtu"/>
-<DataSet index="1" name="boundary" file="results_boundary.vtp"/>
-</vtkMultiBlockDataSet>
-</VTKFile>
