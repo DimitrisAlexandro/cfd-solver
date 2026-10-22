@@ -149,6 +149,23 @@ def test_surrogate_features_and_flap():
     assert f1[:5] == f0[:5] and f1[6] == pytest.approx(2.0)
 
 
+def test_surrogate_same_airfoil_from_a_file(tmp_path):
+    """an uploaded NACA 0012 with its own point spacing (features a fraction of a percent
+    off) is predicted like the library NACA 0012, not as an unknown airfoil: the shipped
+    model was trained on 12 %-thick sections only, so the spread of t and x_t is ~0"""
+    x = 0.5 * (1 - np.cos(np.linspace(0, np.pi, 40)))
+    y = 0.6 * (0.2969 * np.sqrt(x) - 0.126 * x - 0.3516 * x**2 + 0.2843 * x**3 - 0.1036 * x**4)
+    pts = np.vstack([np.c_[x, y][::-1], np.c_[x, -y][1:]])
+    f = tmp_path / "my0012.dat"
+    f.write_text("my foil\n" + "\n".join(f"{a:.6f} {b:.6f}" for a, b in pts) + "\n")
+    sg = SG.Surrogate.load()
+    al = np.array([0.0, 4.0, 8.0])
+    ref, mine = sg.predict("naca0012", 3e6, al), sg.predict(str(f), 3e6, al)
+    assert np.allclose(mine["Cl"], ref["Cl"], atol=0.05)
+    assert np.all(mine["Cl_sd"] < 0.5)
+    assert np.ptp(mine["Cl"]) > 0.5                      # follows alpha, not a flat line
+
+
 def test_surrogate_reads_the_results_folder_and_saves_there(tmp_path, monkeypatch):
     """training data from AEROLAB_CASES (the wing tool's cache too, without the shipped
     duplicates); the retrained model goes to the results folder and is then preferred"""
