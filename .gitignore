@@ -1,12 +1,10 @@
 venv/
+.venv/
 __pycache__/
-*.npz
+.pytest_cache/
 src_old/
 cases/
 results/
-.venv/
-venv/
-__pycache__/
 *.npz
 *.vtk
 *.png
