@@ -250,3 +250,71 @@ def test_vortex_lattice_reference_of_a_3d_wing():
     assert d["source"] == "estimated"
     assert 0.0 < r0["CL"] < r4["CL"] < 0.5                 # camber: lift at 0 deg
     assert r4["eta"][0] > 0 and len(r4["eta"]) == len(r4["clc"])
+
+
+def _rows_thickening_in_one_layer():
+    """wall rows (geometric, 1e-4 first) re-spaced to 200x thicker rows in one thin
+    spanwise layer, fanned out: the cells beyond a wing tip's trailing edge"""
+    nx, ny = 12, 10
+    xs = np.linspace(0.0, 0.05, nx + 1)
+    rows = [np.r_[0.0, np.cumsum(h * 1.3 ** np.arange(ny))] for h in (1e-4, 2e-2)]
+    P2 = np.array([[x, y] for y in rows[0] for x in xs])
+    cells = [[j * (nx + 1) + i, j * (nx + 1) + i + 1, (j + 1) * (nx + 1) + i + 1, (j + 1) * (nx + 1) + i]
+             for j in range(ny) for i in range(nx)]
+    edges = {}
+    for c in cells:
+        for a, b in zip(c, c[1:] + c[:1]):
+            edges[(min(a, b), max(a, b))] = edges.get((min(a, b), max(a, b)), 0) + 1
+    ep = {k: "side" for k, v in edges.items() if v == 1}
+
+    def xyz(lv):
+        Q = np.array([[x + 6.0 * y * x, y] for y in rows[min(lv, 1)] for x in xs])
+        return np.c_[Q, np.full(len(Q), 0.001 * lv)]
+    return FVMesh3D(G.extrude(P2, cells, ep, 4, xyz=xyz))
+
+
+def test_lagged_skew_corrected_gradient_iteration_is_kept_contractive():
+    """the solver's pressure gradient: grad_gg with its own previous result as the
+    skewness-correction lag, boundary values extrapolated with it. On a wing at the
+    fine level the iteration's spectral radius beyond the tip trailing edge was 1.13
+    (the gradient blew up after ~150 iterations); here it is just below 1"""
+    m = _rows_thickening_in_one_layer()
+    c = m.bcell
+
+    def step(phi, g, mask):
+        phib = phi[c] + np.einsum("ij,ij->i", g[c], m.db)
+        lag = g.copy()
+        lag[mask] = m.grad(phi, phib)[mask]
+        return m.grad_gg(phi, phib, grad_skew=lag)
+
+    def rho(mask):
+        g, z, ns = np.random.default_rng(1).standard_normal((m.ncells, 3)), np.zeros(m.ncells), []
+        for _ in range(150):
+            g = step(z, g, mask)
+            ns.append(np.linalg.norm(g))
+            g /= ns[-1]
+        return np.prod(ns[-10:]) ** 0.1
+    bad = m.lagged_grad_unstable()
+    assert rho(np.zeros(m.ncells, bool)) > 0.95
+    assert 0 < bad.sum() < m.ncells and rho(bad) < 0.9
+    g, phi = np.zeros((m.ncells, 3)), lin(m.xc)
+    for _ in range(100):
+        g = step(phi, g, bad)
+    assert np.allclose(g, LIN, atol=1e-6)                  # still exact for linear fields
+
+
+def test_thin_trailing_edge_is_closed_with_quads_in_the_tip_cap():
+    from aerolab.fv3d.wingmesh import _fill_airfoil
+    from aerolab.validation import validate_naca0012_sa as v
+    from aerolab.airfoil import airfoil_geom as ag
+    wall, _ = ag.load_airfoil("naca0006", n_side=40)
+    m2 = v.airfoil_mesh(0.25, 0.0, wall=wall, re=1e6, farfield=6.0)
+    P2 = np.asarray(m2["points"], float)
+    we = np.asarray(m2["patches"]["airfoil"])
+    h = 0.8 * float(np.median(np.linalg.norm(P2[we[:, 0]] - P2[we[:, 1]], axis=1)))
+    fP, fill = _fill_airfoil(P2, we, h, 40)
+    P = np.vstack([P2, fP])
+    te = [c for c in fill if P[c, 0].min() > 0.97]
+    assert te and all(len(c) >= 4 for c in te)          # no sliver triangles at the trailing edge
+    wall_nodes = set(np.unique(we).tolist())
+    assert all(set(c) <= wall_nodes for c in te)
