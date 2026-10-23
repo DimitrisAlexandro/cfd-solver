@@ -75,16 +75,31 @@ def section_start(info, alpha, re, max_iter=1500, log=print):
     # first-order upwind settles the wake of the blunt trailing edge from the uniform
     # start (the coarse wing section mesh diverges otherwise), then second order
     s2 = SimpleSolver(fvm, bc2, 1.0 / re, turbulence="sa", U0=(ca, sa), second_order=False)
-    it = s2.solve(tol=1e-6, max_iter=300, verbose=False)
-    keep = (s2.U.copy(), s2.p.copy(), s2.turb.nuT.copy())
-    s2.second_order = True
-    try:
-        it += s2.solve(tol=1e-6, max_iter=max_iter, verbose=False)
-    except (ValueError, FloatingPointError, np.linalg.LinAlgError):    # NaN in the linear solvers
-        s2.U[:] = np.nan
-    if not (np.isfinite(s2.U).all() and np.abs(s2.U).max() < 10):
-        s2.U, s2.p, s2.turb.nuT = keep                    # second order did not settle: first order
-    log(f"[wing3d] 2D section start at alpha {alpha:g}: {it} it, {time.time() - t0:.0f}s")
+    free = (s2.U.copy(), s2.p.copy(), s2.turb.nuT.copy())
+
+    def settled():
+        return np.isfinite(s2.U).all() and np.isfinite(s2.p).all() and np.abs(s2.U).max() < 10
+
+    def attempt(n):
+        # a run that blows up can also fail inside the linear solvers (NaN matrix)
+        try:
+            return s2.solve(tol=1e-6, max_iter=n, verbose=False)
+        except (ValueError, FloatingPointError, ArithmeticError, np.linalg.LinAlgError):
+            s2.U[:] = np.nan
+            return n
+    it = attempt(300)
+    how = ""
+    if not settled():                                      # not even first order: free stream
+        s2.U, s2.p, s2.turb.nuT = free
+        how = " (diverged: free-stream start)"
+    else:
+        keep = (s2.U.copy(), s2.p.copy(), s2.turb.nuT.copy())
+        s2.second_order = True
+        it += attempt(max_iter)
+        if not settled():
+            s2.U, s2.p, s2.turb.nuT = keep                # second order did not settle: first order
+            how = " (second order diverged: first-order start)"
+    log(f"[wing3d] 2D section start at alpha {alpha:g}: {it} it, {time.time() - t0:.0f}s{how}")
     c2, zc = info["cell_2d"], info["z_cell"]
     sec = c2 < info["n_section_cells"]
     j = np.where(sec, c2, 0)
@@ -205,13 +220,16 @@ def run(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedral=0.0
         c = coefficients(s, info, a)
         sl = span_loading(s, info, a)
         ok = s.converged
+        status = "converged" if ok else "diverged" if s.diverged else "not converged"
         res.append({"alpha": a, **c, "iterations": it, "time_s": round(time.time() - t1, 1),
-                    "status": "converged" if ok else "not converged", "span": sl, "history": hist})
+                    "status": status, "span": sl, "history": hist})
         log(f"[wing3d] alpha {a:g}: CL {c['CL']:.4f}  CD {c['CD']:.5f} (pressure {c['CDp']:.5f})  Cm {c['Cm']:+.4f}  "
-            f"{it} it, {time.time() - t1:.0f}s, {'converged' if ok else 'NOT converged'}")
+            f"{it} it, {time.time() - t1:.0f}s, {status.upper() if not ok else status}")
         if out:
             Path(out).mkdir(parents=True, exist_ok=True)
             save_fields(Path(out) / f"fields_a{a:g}.npz", s, info, pm, a, c)
+        if s.diverged:                                       # no warm start from a blown-up field
+            continue
         init = (a, s.U.copy(), s.p.copy(), s.turb.nuT.copy())
     info_out = {k: v for k, v in info.items()
                 if k not in ("chord", "section", "z_levels", "section_mesh", "cell_layer", "cell_2d", "z_cell", "cells2")}
