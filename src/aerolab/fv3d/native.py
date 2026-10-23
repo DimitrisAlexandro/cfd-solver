@@ -231,6 +231,21 @@ def sgs(A, X, B, rtol=0.05, max_sweeps=100):
     return sw
 
 
+def _coarse_inverse(Ac):
+    """pseudo-inverse of the coarsest AMG level (dense, symmetric)"""
+    if not np.isfinite(Ac).all():
+        raise FloatingPointError("AMG: non-finite pressure matrix (the solution diverged)")
+    Ac = 0.5 * (Ac + Ac.T)
+    try:
+        return np.linalg.pinv(Ac, hermitian=True)
+    except np.linalg.LinAlgError:
+        # the divide-and-conquer SVD can fail on badly scaled matrices; gesvd is slower but robust
+        import scipy.linalg
+        u, s, vt = scipy.linalg.svd(Ac, lapack_driver="gesvd")
+        cut = s > 1e-15 * s.max()
+        return (vt[cut].T / s[cut]) @ u[:, cut].T
+
+
 class AMG:
     """algebraic multigrid hierarchy (pyamg Ruge-Stuben) + V-cycle preconditioned CG in C++"""
 
@@ -250,7 +265,7 @@ class AMG:
                                 P.shape[1], _c(P.indptr, np.int64), _c(P.indices, np.int64), _c(P.data),
                                 _c(R.indptr, np.int64), _c(R.indices, np.int64), _c(R.data))
             Ac = lv[-1].A.toarray()
-            L.amg_set_coarse(self.h, Ac.shape[0], _c(np.linalg.pinv(Ac)))
+            L.amg_set_coarse(self.h, Ac.shape[0], _c(_coarse_inverse(Ac)))
 
     def solve(self, A, b, x0=None, rtol=0.1, maxit=200):
         """returns (x, iterations); iterations < 0: not converged"""
