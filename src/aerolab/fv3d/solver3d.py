@@ -70,6 +70,7 @@ class Solver3D:
         self.pat = N.CsrPattern(n, m.own, m.nei)
         self._amg, self._amg_age, self._amg_it0 = None, 0, None
         self.amg_rebuild_max = amg_rebuild
+        self.converged = self.diverged = False
         self.stats = {"sweeps": 0, "p_iters": 0, "amg_setups": 0, "t_mom": 0.0, "t_p": 0.0, "t_turb": 0.0,
                       "t_grad": 0.0}
 
@@ -261,6 +262,13 @@ class Solver3D:
         dh = 1.0 / np.sqrt(pdiag) if self.p_scale else np.ones(n)
         Ap = self.pat.matrix(pdiag * dh * dh, -cf * dh[own] * dh[nei], -cf * dh[nei] * dh[own])
         rhs = rhs * dh
+        if not (np.isfinite(Ap.data).all() and np.isfinite(rhs).all()):
+            # the solution blew up: report it (solve() stops on a non-finite residual)
+            # instead of failing inside the multigrid setup
+            self.diverged = True
+            res = {"cont": np.nan, "Ux": resU[0], "Uy": resU[1], "Uz": resU[2]}
+            self.history.append(res)
+            return res
         # the multigrid hierarchy is reused while it still works: rebuilt when CG needs
         # clearly more iterations than right after the last setup (the matrix changes
         # slowly), at the latest every amg_rebuild_max iterations
@@ -302,7 +310,7 @@ class Solver3D:
 
     def solve(self, tol=1e-6, max_iter=5000, verbose=True, every=100, callback=None):
         t0 = time.time()
-        self.converged = False
+        self.converged = self.diverged = False
         r = {}
         for it in range(1, max_iter + 1):
             r = self.iterate()
@@ -315,6 +323,7 @@ class Solver3D:
                 print(f"  it {it:5d}  " + "  ".join(f"{k} {v:.2e}" for k, v in r.items()) +
                       f"  ({time.time() - t0:.1f}s)", flush=True)
             if not np.isfinite(max(r.values())):
+                self.diverged = True
                 if verbose:
                     print(f"  DIVERGED at iteration {it}", flush=True)
                 return it

@@ -202,13 +202,16 @@ def run(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedral=0.0
         c = coefficients(s, info, a)
         sl = span_loading(s, info, a)
         ok = s.converged
+        status = "converged" if ok else "diverged" if s.diverged else "not converged"
         res.append({"alpha": a, **c, "iterations": it, "time_s": round(time.time() - t1, 1),
-                    "status": "converged" if ok else "not converged", "span": sl, "history": hist})
+                    "status": status, "span": sl, "history": hist})
         log(f"[wing3d] alpha {a:g}: CL {c['CL']:.4f}  CD {c['CD']:.5f} (pressure {c['CDp']:.5f})  Cm {c['Cm']:+.4f}  "
-            f"{it} it, {time.time() - t1:.0f}s, {'converged' if ok else 'NOT converged'}")
+            f"{it} it, {time.time() - t1:.0f}s, {status.upper() if not ok else status}")
         if out:
             Path(out).mkdir(parents=True, exist_ok=True)
             save_fields(Path(out) / f"fields_a{a:g}.npz", s, info, pm, a, c)
+        if s.diverged:                                       # no warm start from a blown-up field
+            continue
         init = (a, s.U.copy(), s.p.copy(), s.turb.nuT.copy())
     info_out = {k: v for k, v in info.items()
                 if k not in ("chord", "section", "z_levels", "section_mesh", "cell_layer", "cell_2d", "z_cell", "cells2")}
