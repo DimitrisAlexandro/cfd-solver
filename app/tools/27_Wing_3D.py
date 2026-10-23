@@ -20,7 +20,7 @@ ui.header("Wing 3D CFD", "3D RANS (Spalart–Allmaras) of a half wing: a wing of
                          "entered here, root and tip sections, taper, sweep, dihedral and twist. CL, CD, Cm "
                          "and span loading, next to the vortex lattice the aircraft pages use.")
 
-LEVELS = {0.3: "coarse (about 150k cells)", 0.4: "medium (about 300k cells)", 0.5: "fine (about 500k cells)"}
+LEVELS = {0.3: "coarse (about 180k cells)", 0.4: "medium (about 300k cells)", 0.5: "fine (about 500k cells)"}
 
 
 def wing3d_results(out):
