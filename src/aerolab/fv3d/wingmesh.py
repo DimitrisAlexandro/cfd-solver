@@ -80,11 +80,42 @@ def _wall_loop(wall_edges):
     return loop
 
 
-def _fill_airfoil(P2, wall_edges, h):
-    """triangles inside the airfoil loop (wall nodes kept; our CDT), size h.
-    Returns (new points, triangles in global node numbering)."""
+def _te_strip(P2, loop, n_side, h):
+    """Quads across the thin trailing-edge end of the airfoil interior: the upper and
+    lower wall points are repanelled at the same x, so wall points k of both sides
+    face each other. Triangles there are slivers (panels much longer than the
+    thickness: up to ~80 deg non-orthogonality beyond the tip, and a thin or cusped
+    trailing edge diverged there); quads between the facing points are orthogonal.
+    Returns (polygons, rest of the loop to triangulate; it closes across the strip's
+    inner end), or None when the loop is not two n_side sides plus a base."""
+    N = len(loop)
+    i_le = int(np.argmin(P2[loop, 0]))
+    kte = n_side - 1
+    if N < 2 * n_side - 1 or n_side < 4:
+        return None
+    A = [loop[(i_le + k) % N] for k in range(n_side)]
+    B = [loop[(i_le - k) % N] for k in range(n_side)]
+    t = np.linalg.norm(P2[A] - P2[B], axis=1)
+    if t[kte - 1] >= h:                                # thick enough: triangles are fine
+        return None
+    k_in = kte - 1
+    while k_in > n_side // 2 and t[k_in - 1] < h:
+        k_in -= 1
+    # trailing-edge cell: pair kte-1, the two corners and the base between them
+    te = [loop[(i_le + k) % N] for k in range(kte - 1, N - kte + 2)]
+    polys = [te] + [[A[k - 1], A[k], B[k], B[k - 1]] for k in range(kte - 1, k_in, -1)]
+    rest = [loop[(i_le + k) % N] for k in range(-k_in, k_in + 1)]
+    return polys, rest
+
+
+def _fill_airfoil(P2, wall_edges, h, n_side=None):
+    """cells inside the airfoil loop (wall nodes kept), size h: quads across a thin
+    trailing edge (_te_strip, with the wall's points per side n_side), our CDT
+    triangles elsewhere. Returns (new points, cells in global node numbering)."""
     from aerolab.mesh.cdt2d import CDT
     loop = _wall_loop(wall_edges)
+    strip = _te_strip(P2, loop, n_side, h) if n_side else None
+    quads, loop = strip if strip else ([], loop)
     P = P2[loop]
     x0, y0 = P.min(0) - 0.5
     x1, y1 = P.max(0) + 0.5
@@ -104,7 +135,7 @@ def _fill_airfoil(P2, wall_edges, h):
                 newpts.append((cdt.x[v], cdt.y[v]))
             tt.append(gmap[v] if v in gmap else new[v])
         out.append(tt)
-    return np.array(newpts).reshape(-1, 2), out
+    return np.array(newpts).reshape(-1, 2), out + quads
 
 
 def _geom_dist(h, n, L):
@@ -287,7 +318,7 @@ def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedr
     we = np.asarray(m2["patches"]["airfoil"])
     h_fill = 0.8 * float(np.median(np.linalg.norm(P2[we[:, 0]] - P2[we[:, 1]], axis=1)))
     h_fill *= n_side / max(int(round(160 * level)), 1)
-    fillP, fill = _fill_airfoil(P2, we, h_fill)
+    fillP, fill = _fill_airfoil(P2, we, h_fill, n_side)
     M = np.asarray(m2["layers"]).shape[1]
     tipQ = relax_map(P2, cells, m2["n_bl"], M, we)
     P2 = np.vstack([P2, fillP])

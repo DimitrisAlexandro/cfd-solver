@@ -260,6 +260,44 @@ class FVMesh3D:
                     + np.bincount(self.bcell[bi], cb[:, k], self.ncells)
         return g / self.vol[:, None]
 
+    def lagged_grad_unstable(self, b_extrap=None, rho_max=0.9, iters=50, rounds=10):
+        """Cells whose lagged gradient must not feed grad_gg's skewness correction.
+        grad_gg(phi, phi_b, grad_skew=g) iterated with its own result is a fixed-point
+        iteration g <- f + M g; on strongly skewed cells (the wall rows re-spaced in one
+        layer beyond a blunt trailing edge at the tip) M has eigenvalues beyond 1 and the
+        gradient grows without bound while phi stays put: the run converged, then the
+        pressure gradient there blew up after ~100-200 iterations. Power iteration on M
+        finds the growing modes; the cells they live in take the least-squares gradient
+        as the lag instead (no feedback, also exact for linear fields), until the
+        spectral radius is below rho_max. b_extrap: boundary faces whose value is
+        extrapolated with the lagged gradient (phi_b = phi + g . db), default all."""
+        n, c = self.ncells, self.bcell
+        db = self.db if b_extrap is None else self.db * np.asarray(b_extrap, float)[:, None]
+        z = np.zeros(n)
+        bad = np.zeros(n, bool)
+
+        def M(g):
+            gb = np.einsum("ij,ij->i", g[c], db)
+            if bad.any():
+                g = g.copy()
+                g[bad] = self.grad(z, gb)[bad]
+            return self.grad_gg(z, gb, grad_skew=g)
+        rng = np.random.default_rng(0)
+        for _ in range(rounds):
+            g = rng.standard_normal((n, 3))
+            norms = []
+            for _ in range(iters):
+                g = M(g)
+                norms.append(np.linalg.norm(g))
+                if not norms[-1] > 0:
+                    return bad
+                g /= norms[-1]
+            if np.prod(norms[-4:]) ** 0.25 < rho_max:
+                break
+            a = np.linalg.norm(g, axis=1)
+            bad |= a > 1e-2 * a.max()
+        return bad
+
     def interp(self, phi):
         return N.matvec(self._W, phi)
 
