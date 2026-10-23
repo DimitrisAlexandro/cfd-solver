@@ -221,6 +221,20 @@ def test_tip_section_morphs_from_root_to_tip():
     assert rel(m) < 1.5 * rel(m0)
 
 
+def test_section_walls_resolve_the_leading_edge():
+    """coarse levels get more wall points where the nose would turn by more than
+    18 deg per panel (NACA 0012 at level 0.3: 21 deg at 48 points, the second-order
+    runs diverged at the leading edge); levels that already resolve it are unchanged"""
+    from aerolab.fv3d.wingmesh import le_turn, section_walls
+    walls, n = section_walls(["naca0012"], 0.3)
+    assert n > 48 and le_turn(walls[0]) <= 18.0
+    walls, n = section_walls(["naca0012"], 0.4)
+    assert n == 64
+    # root and tip are repanelled alike: the sharper nose decides for both
+    (w0, w1), n = section_walls(["naca0015", "naca0009"], 0.3)
+    assert len(w0) == len(w1) and max(le_turn(w0), le_turn(w1)) <= 18.0
+
+
 def test_tip_section_far_from_the_root_is_refused():
     from aerolab.fv3d.wingmesh import wing_mesh
     with pytest.raises(ValueError):
