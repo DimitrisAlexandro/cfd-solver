@@ -69,6 +69,7 @@ class Solver3D:
         self.adj = N.Adjacency(m)
         self.pat = N.CsrPattern(n, m.own, m.nei)
         self._amg, self._amg_age, self._amg_it0 = None, 0, None
+        self._p_lsq = None
         self.amg_rebuild_max = amg_rebuild
         self.converged = self.diverged = False
         self.stats = {"sweeps": 0, "p_iters": 0, "amg_setups": 0, "t_mom": 0.0, "t_p": 0.0, "t_turb": 0.0,
@@ -158,7 +159,14 @@ class Solver3D:
         Ub, pb = self._boundary_values()
         gU = self._grads(Ub)
         self.gU = gU
-        self.gradp = m.grad_gg(self.p, pb, grad_skew=self.gradp)
+        if self._p_lsq is None:                    # once per solver (the mesh and the outlets are fixed)
+            self._p_lsq = m.lagged_grad_unstable(~self.b_outlet)
+            self.stats["p_lsq_cells"] = int(self._p_lsq.sum())
+        glag = self.gradp
+        if self._p_lsq.any():                      # cells where the lagged correction would amplify itself
+            glag = glag.copy()
+            glag[self._p_lsq] = m.grad(self.p, pb)[self._p_lsq]
+        self.gradp = m.grad_gg(self.p, pb, grad_skew=glag)
         if second and self.limiter is not None:
             fixed = self.b_fixedU & ~self.b_sym           # walls and inlets (symmetry: local velocity)
             uref = max(np.abs(self.Ub[fixed]).max() if fixed.any() else 0.0, 1e-30)
