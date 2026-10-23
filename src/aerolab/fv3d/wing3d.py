@@ -78,7 +78,10 @@ def section_start(info, alpha, re, max_iter=1500, log=print):
     it = s2.solve(tol=1e-6, max_iter=300, verbose=False)
     keep = (s2.U.copy(), s2.p.copy(), s2.turb.nuT.copy())
     s2.second_order = True
-    it += s2.solve(tol=1e-6, max_iter=max_iter, verbose=False)
+    try:
+        it += s2.solve(tol=1e-6, max_iter=max_iter, verbose=False)
+    except (ValueError, FloatingPointError, np.linalg.LinAlgError):    # NaN in the linear solvers
+        s2.U[:] = np.nan
     if not (np.isfinite(s2.U).all() and np.abs(s2.U).max() < 10):
         s2.U, s2.p, s2.turb.nuT = keep                    # second order did not settle: first order
     log(f"[wing3d] 2D section start at alpha {alpha:g}: {it} it, {time.time() - t0:.0f}s")
