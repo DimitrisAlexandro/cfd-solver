@@ -3,6 +3,8 @@
 Method
   1. 2D hybrid airfoil mesh (the validated mesher: quad boundary layer at y+ < 1,
      triangles outside, wake refinement), far field `farfield` root chords away.
+     Wall points per side: 160 x level, more if the nose would otherwise turn by
+     more than 18 deg per panel (section_walls; coarse levels, sharp noses).
   2. Flat tip cap: the airfoil interior is triangulated (our CDT, cells sized like
      the wall panels) and used beyond the tip only. Beyond the tip the wall-resolving
      rows are re-spaced over `tip_relax` spanwise levels (default 2) so that their
@@ -265,6 +267,33 @@ def tip_morph(P2, cells, n_bl, M, wall_root, wall_tip, farfield_edges):
     return D
 
 
+def le_turn(wall, x_max=0.3):
+    """largest turn (deg) between neighbouring wall panels near the leading edge
+    (x < x_max: the blunt trailing-edge corners and a flap hinge are left out)"""
+    t = np.roll(wall, -1, 0) - wall
+    a = np.arctan2(t[:, 1], t[:, 0])
+    d = np.degrees(np.abs(np.angle(np.exp(1j * (a - np.roll(a, 1))))))
+    return float(d[wall[:, 0] < x_max].max())
+
+
+def section_walls(airfoils, level, max_turn=18.0, n_max=200):
+    """the wall loops of the sections, repanelled alike: round(160 level) points per
+    side, more where needed so that no two wall panels near the leading edge turn
+    by more than max_turn degrees. The wall rows (y+ ~ 1, aspect ratio ~300) then
+    follow the nose closely enough for the linear-upwind reconstruction: at ~21 deg
+    per panel (NACA 0012 at level 0.3, 48 points per side) the reconstructed face
+    values along the curved first row pick up the steep wall-normal gradient, and the
+    second-order run diverges at the leading edge in 2D and at the tip in 3D. Sharp
+    noses (NACA 63-series: 25 deg at 48 points) need this at any level."""
+    from aerolab.airfoil import airfoil_geom as ag
+    n = int(round(160 * level))
+    while True:
+        walls = [ag.load_airfoil(a, n_side=n)[0] for a in airfoils]
+        if n >= n_max or max(le_turn(w) for w in walls) <= max_turn:
+            return walls, n
+        n = min(n + 4, n_max)
+
+
 def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedral=0.0, twist=0.0,
               tip_airfoil=None, re=3e6, level=0.5, farfield=12.0, tip_first=0.01, growth=1.3,
               blend=(0.5, None), tip_relax=2, verbose=False, wake_alphas=(0.0, 8.0), vortex_band=0.3, tip_smooth=0.5):
@@ -272,12 +301,11 @@ def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedr
     twist: tip incidence relative to the root (deg, nose up +, linear); sweep_c4 and
     dihedral in degrees. tip_airfoil: the tip section (None = the root's); the
     section shape changes linearly from root to tip (tip_morph)."""
-    from aerolab.airfoil import airfoil_geom as ag
     from aerolab.validation import validate_naca0012_sa as v
     if tip_airfoil in ("", airfoil):
         tip_airfoil = None
-    n_side = int(round(160 * level))
-    wall, _ = ag.load_airfoil(airfoil, n_side=n_side)
+    walls, n_side = section_walls([airfoil] + ([tip_airfoil] if tip_airfoil else []), level)
+    wall = walls[0]
     # the section mesh carries a wake band covering the run's angles (one mesh for all)
     m2 = v.airfoil_mesh(level, 0.0, wall=wall, re=re, farfield=farfield, wake_alphas=list(wake_alphas),
                         wake_growth=0.012)
@@ -285,9 +313,11 @@ def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedr
     cells = [list(c) for c in m2["cells"]]
     nouter = len(cells)
     # tip cap closure: the airfoil interior is triangulated (cells used beyond the tip
-    # only), sized like the wall panels
+    # only), sized like the level's wall panels (not the extra leading-edge points of
+    # section_walls: smaller fill triangles invert sooner when the tip section morphs)
     we = np.asarray(m2["patches"]["airfoil"])
     h_fill = 0.8 * float(np.median(np.linalg.norm(P2[we[:, 0]] - P2[we[:, 1]], axis=1)))
+    h_fill *= n_side / max(int(round(160 * level)), 1)
     fillP, fill = _fill_airfoil(P2, we, h_fill, n_side)
     M = np.asarray(m2["layers"]).shape[1]
     tipQ = relax_map(P2, cells, m2["n_bl"], M, we)
@@ -296,8 +326,7 @@ def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedr
     edge_patch = {(min(a, b), max(a, b)): "farfield" for a, b in m2["patches"]["farfield"]}
     D = None
     if tip_airfoil is not None:
-        wall_t, _ = ag.load_airfoil(tip_airfoil, n_side=n_side)
-        D = tip_morph(P2, cells, m2["n_bl"], M, wall, wall_t, m2["patches"]["farfield"])
+        D = tip_morph(P2, cells, m2["n_bl"], M, wall, walls[1], m2["patches"]["farfield"])
         for Q in (P2, tipQ(1.0, P2)):                        # the tip section, plain and relaxed
             if np.any(signed_areas(Q + D, cells) * np.sign(signed_areas(Q, cells)) <= 0):
                 raise ValueError(f"the tip section {tip_airfoil} is too different from the root section "
@@ -366,7 +395,7 @@ def wing_mesh(airfoil="naca0012", semi_span=3.0, taper=1.0, sweep_c4=0.0, dihedr
     info = {"airfoil": airfoil, "tip_airfoil": tip_airfoil or airfoil, "semi_span": semi_span, "taper": ct, "sweep_c4": sweep_c4, "dihedral": dihedral,
             "twist": twist, "re_root": re, "level": level, "farfield": farfield, "S_half": S_half, "mac": mac,
             "aspect_ratio": (2 * semi_span) ** 2 / (2 * S_half), "z_levels": z.tolist(), "itip": itip,
-            "cells_2d": len(cells), "layers": K, "x_ref": 0.25, "chord": lambda zz: 1.0 + (ct - 1.0) * np.clip(zz / semi_span, 0, 1),
+            "cells_2d": len(cells), "layers": K, "n_side": n_side, "x_ref": 0.25, "chord": lambda zz: 1.0 + (ct - 1.0) * np.clip(zz / semi_span, 0, 1),
             "section": section,
             # the 2D section mesh (to start the 3D run from a 2D solution) and the map
             "section_mesh": {"points": np.asarray(m2["points"], float), "cells": [list(c) for c in m2["cells"]],
