@@ -75,13 +75,31 @@ def section_start(info, alpha, re, max_iter=1500, log=print):
     # first-order upwind settles the wake of the blunt trailing edge from the uniform
     # start (the coarse wing section mesh diverges otherwise), then second order
     s2 = SimpleSolver(fvm, bc2, 1.0 / re, turbulence="sa", U0=(ca, sa), second_order=False)
-    it = s2.solve(tol=1e-6, max_iter=300, verbose=False)
-    keep = (s2.U.copy(), s2.p.copy(), s2.turb.nuT.copy())
-    s2.second_order = True
-    it += s2.solve(tol=1e-6, max_iter=max_iter, verbose=False)
-    if not (np.isfinite(s2.U).all() and np.abs(s2.U).max() < 10):
-        s2.U, s2.p, s2.turb.nuT = keep                    # second order did not settle: first order
-    log(f"[wing3d] 2D section start at alpha {alpha:g}: {it} it, {time.time() - t0:.0f}s")
+    free = (s2.U.copy(), s2.p.copy(), s2.turb.nuT.copy())
+
+    def settled():
+        return np.isfinite(s2.U).all() and np.isfinite(s2.p).all() and np.abs(s2.U).max() < 10
+
+    def attempt(n):
+        # a run that blows up can also fail inside the linear solvers (NaN matrix)
+        try:
+            return s2.solve(tol=1e-6, max_iter=n, verbose=False)
+        except (ValueError, FloatingPointError, ArithmeticError, np.linalg.LinAlgError):
+            s2.U[:] = np.nan
+            return n
+    it = attempt(300)
+    how = ""
+    if not settled():                                      # not even first order: free stream
+        s2.U, s2.p, s2.turb.nuT = free
+        how = " (diverged: free-stream start)"
+    else:
+        keep = (s2.U.copy(), s2.p.copy(), s2.turb.nuT.copy())
+        s2.second_order = True
+        it += attempt(max_iter)
+        if not settled():
+            s2.U, s2.p, s2.turb.nuT = keep                # second order did not settle: first order
+            how = " (second order diverged: first-order start)"
+    log(f"[wing3d] 2D section start at alpha {alpha:g}: {it} it, {time.time() - t0:.0f}s{how}")
     c2, zc = info["cell_2d"], info["z_cell"]
     sec = c2 < info["n_section_cells"]
     j = np.where(sec, c2, 0)
