@@ -43,6 +43,14 @@ tip with a flat cap and relaxes the wall layers beyond the tip. A graded wake ba
 is capped around the tip vortex. Outputs: CL, CD (pressure/friction), Cm, span
 loading c_l c(eta).
 
+The tip cap closes a thin (or cusped) trailing edge with quads between facing upper and
+lower wall points instead of sliver triangles. The pressure gradient's skewness correction
+lags the previous gradient. Where that fixed-point iteration would amplify itself (the wall
+rows re-spaced in one layer beyond the tip trailing edge: on the fine mesh the gradient grew
+without bound after ~150 iterations), the solver finds the cells once by power iteration and
+lags the least-squares gradient there instead. A run that still blows up is stopped and
+reported as `diverged` for that angle. The next angle restarts from the 2D section solution.
+
 Rectangular, tapered, swept and twisted wings converge. Against the vortex lattice, CL
 is within 2 %:
 
