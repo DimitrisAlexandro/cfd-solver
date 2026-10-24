@@ -53,7 +53,7 @@ def test_coupled_channel_matches_simple(linear):
 def test_coupled_naca_sa_matches_simple():
     """turbulent NACA 0012 (SA, validated mesh), alpha 4: same lift/drag as
     SIMPLEC within the documented offset (Cl -6e-4 at small angles, see
-    claude/phase4b-coupled.md), in far fewer iterations"""
+    validation/phase4b_report.md), in far fewer iterations"""
     from aerolab.airfoil import polar as pl
     a, b = (pl.run_point("tmr0012", 6e6, 4.0, transition="off", solver=sv)[0]
             for sv in ("coupled", "simple"))
