@@ -3,4 +3,4 @@
      13056 cells   0.002735          +0.24%   0.002891   1621   0.46
      52224 cells   0.002730          +0.04%   0.002885   5729   0.23
 reference: Cf(0.97) incompressible SA 0.002729 ; M=0.2 SA 0.0027056, CD 0.0028599
-saved /home/claude/cfd-solver/validation/flatplate_sa.png
+saved validation/flatplate_sa.png
