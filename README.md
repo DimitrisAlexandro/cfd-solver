@@ -118,3 +118,7 @@ Docker image, on every pull request (`.github/workflows/ci.yml`).
 - [Aircraft design and structure](docs/aircraft-design.md): sizing, wing structure, aeroelasticity.
 - [Low-Reynolds-number airfoils](docs/low-reynolds.md).
 - [Research tools](docs/research-tools.md): adjoint, transition physics, machine learning.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
